@@ -1,7 +1,7 @@
 #!/usr/bin/env julia
 
 # Main entry point for AirSim + RxInfer.jl project
-# This ties together all components for drone navigation
+# This ties together all components for drone navigation using active inference
 
 using Pkg
 Pkg.activate(@__DIR__)  # Use the local project environment
@@ -12,12 +12,14 @@ include("src/Fusion.jl")
 include("src/State.jl")
 include("src/Inference.jl")
 include("src/Planning.jl")
+include("src/InferenceModel.jl")  # New dedicated inference model
 
 using .Sensors
 using .Fusion
 using .State
 using .Inference
 using .Planning
+using .InferenceModel  # Import the new module
 using PyCall
 using LinearAlgebra
 
@@ -38,16 +40,19 @@ function main(; target_position=[10.0, 10.0, -5.0],
               control_interval=0.2, 
               stop_distance=0.5)
     
-    println("Starting AirSim + RxInfer Drone Navigation")
+    println("Starting AirSim + RxInfer Drone Navigation with Active Inference")
     println("Target position: $target_position")
     
-    # Initialize components
+    # Initialize planner with active inference parameters
     planner = Planning.ActionPlanner(
-        distance_weight = 1.0,
-        obstacle_weight = 2.0,
+        pragmatic_weight = 1.0,    # Target-seeking behavior weight
+        risk_weight = 2.0,         # Obstacle avoidance weight
+        epistemic_weight = 0.2,    # Exploration weight
         safety_distance = 1.5,
         max_step_size = 0.5,
-        lookahead_steps = 5
+        lookahead_steps = 5,
+        num_directions = 12,
+        num_step_sizes = 3
     )
     
     # Initialize drone position
@@ -78,15 +83,16 @@ function main(; target_position=[10.0, 10.0, -5.0],
     # Process initial data to create point cloud
     point_cloud, _ = Fusion.fuse_sensor_data(rgb_img, depth_img, lidar_points)
     
-    # Create initial state
+    # Create initial state with voxel grid
     initial_state = State.extract_state(
         point_cloud, 
         current_position, 
-        target_position
+        target_position,
+        voxel_size = 0.5
     )
     
-    # Initialize beliefs
-    beliefs = Inference.initialize_beliefs(initial_state)
+    # Initialize beliefs using the InferenceModel
+    beliefs = nothing  # Will be initialized in the first loop iteration
     
     # Main control loop
     arrived = false
@@ -114,12 +120,11 @@ function main(; target_position=[10.0, 10.0, -5.0],
             end
             
             # Update state based on latest data
-            # In practice, we would get drone position from AirSim client
-            # Here we just update it using the action taken in the previous iteration
             current_state = State.extract_state(
                 voxelized_points, 
                 current_position, 
-                target_position
+                target_position,
+                voxel_size = 0.5
             )
             
             # Check if we're close enough to target to consider arrived
@@ -132,15 +137,50 @@ function main(; target_position=[10.0, 10.0, -5.0],
             
             println("Iteration $iteration: Distance to target: $distance_to_target")
             
-            # Plan next action
-            action = Planning.plan_next_action(planner, current_state, beliefs)
+            # Update beliefs using the new InferenceModel
+            # First time initialize, then update
+            if isnothing(beliefs)
+                beliefs = InferenceModel.update_belief_states(current_state)
+            else
+                beliefs = InferenceModel.update_belief_states(current_state, beliefs)
+            end
             
-            # Update beliefs using the state and action
-            beliefs = Inference.update_beliefs(beliefs, current_state, action)
+            # Plan next action using active inference
+            # Generate potential actions
+            potential_actions = Planning.generate_potential_actions(planner, current_state)
+            
+            # Find the action with the minimum expected free energy
+            best_action = nothing
+            best_efe = Inf
+            
+            for action in potential_actions
+                # Calculate EFE for this action using the InferenceModel
+                efe = InferenceModel.calculate_efe(
+                    current_state, 
+                    beliefs, 
+                    action,
+                    pragmatic_weight = planner.params.pragmatic_weight,
+                    risk_weight = planner.params.risk_weight,
+                    epistemic_weight = planner.params.epistemic_weight
+                )
+                
+                if efe < best_efe
+                    best_efe = efe
+                    best_action = action
+                end
+            end
+            
+            # Use safe default if no good action found
+            if isnothing(best_action)
+                direction = current_state.direction_to_target
+                best_action = direction * min(planner.params.max_step_size / 2, 0.1)
+            end
             
             # Simulate execution of the action (update position)
             # In practice, this would be handled by the AirSim controller
-            current_position = current_position + action
+            current_position = current_position + best_action
+            
+            println("  Action: $(round.(best_action, digits=2)), EFE: $(round(best_efe, digits=2))")
             
             # Sleep for control interval
             sleep(control_interval)
