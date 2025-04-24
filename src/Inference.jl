@@ -1,258 +1,336 @@
 module Inference
 
-export StateBeliefs, initialize_beliefs, update_beliefs, predict_next_state, compute_free_energy
+export DroneBeliefs, initialize_beliefs, update_beliefs_vfe, calculate_efe, expected_state
 
-using RxInfer
+using Distributions
 using LinearAlgebra
 using StaticArrays
-using ..State
+using RxInfer
+
+# Constants for state space dimensions
+const MAX_DISTANCE = 50      # Maximum distance in meters
+const NUM_AZIMUTH = 24       # 24 azimuth bins (15° each)
+const NUM_ELEVATION = 12     # 12 elevation bins (15° each)
+const NUM_SUITABILITY = 11   # 11 suitability bins (0.1 each)
 
 """
-struct StateBeliefs
-
-A structure to store beliefs about the drone's state
+DroneBeliefs represents probabilistic beliefs over the state space
 """
-struct StateBeliefs
-    # State 1: Distance from target (scalar)
-    distance_mean::Float64
-    distance_var::Float64
+struct DroneBeliefs
+    # Belief distributions over state variables
+    distance_belief::Vector{Float64}      # P(distance)
+    azimuth_belief::Vector{Float64}       # P(azimuth)
+    elevation_belief::Vector{Float64}     # P(elevation)
+    suitability_belief::Vector{Float64}   # P(suitability)
     
-    # State 2: Angle/direction vector to target (3D vector)
-    direction_mean::SVector{3, Float64}
-    direction_var::SVector{3, Float64}
+    # Joint belief (if factorized, this is just for convenience)
+    joint_belief::Array{Float64, 4}       # P(distance, azimuth, elevation, suitability)
     
-    # State 3: Obstacle positions (voxel grid representation)
-    obstacle_positions_mean::Vector{SVector{3, Float64}}
-    obstacle_positions_var::Vector{SVector{3, Float64}}
-    
-    # Additional state information for internal use
-    position_mean::SVector{3, Float64}
-    position_var::SVector{3, Float64}
-    target_position_mean::SVector{3, Float64}
-    target_position_var::SVector{3, Float64}
-    
-    # Dynamics parameters
-    process_noise::Float64
-    observation_noise::Float64
+    # Observation likelihood models
+    distance_likelihood::Matrix{Float64}    # P(obs_distance | s_distance)
+    azimuth_likelihood::Matrix{Float64}     # P(obs_azimuth | s_azimuth)
+    elevation_likelihood::Matrix{Float64}   # P(obs_elevation | s_elevation)
+    suitability_likelihood::Matrix{Float64} # P(obs_obstacle | s_suitability)
 end
 
 """
-    initialize_beliefs(initial_state::State)
+    initialize_beliefs()
 
-Initialize the beliefs over the drone state with reasonable priors.
+Initialize beliefs with uniform priors over state space.
 """
-function initialize_beliefs(initial_state::State)
-    # State 1: Distance from target
-    distance_mean = initial_state.distance_to_target
-    distance_var = 0.1
+function initialize_beliefs()
+    # Create uniform priors
+    distance_prior = ones(MAX_DISTANCE) / MAX_DISTANCE
+    azimuth_prior = ones(NUM_AZIMUTH) / NUM_AZIMUTH
+    elevation_prior = ones(NUM_ELEVATION) / NUM_ELEVATION
+    suitability_prior = ones(NUM_SUITABILITY) / NUM_SUITABILITY
     
-    # State 2: Direction vector to target
-    direction = normalize(initial_state.target_position - initial_state.position)
-    direction_mean = direction
-    direction_var = SVector{3, Float64}(0.1, 0.1, 0.1)
+    # Initialize joint belief
+    joint_prior = ones(MAX_DISTANCE, NUM_AZIMUTH, NUM_ELEVATION, NUM_SUITABILITY)
+    joint_prior = joint_prior / sum(joint_prior)
     
-    # State 3: Obstacle positions in voxel grid
-    obstacle_positions_mean = initial_state.obstacles
-    obstacle_positions_var = [SVector{3, Float64}(0.2, 0.2, 0.2) for _ in initial_state.obstacles]
+    # Initialize likelihood matrices
+    # For distance: Gaussian centered at true distance, with sigma=1m
+    distance_likelihood = zeros(MAX_DISTANCE, MAX_DISTANCE)
+    for i in 1:MAX_DISTANCE
+        for j in 1:MAX_DISTANCE
+            # Gaussian likelihood centered at actual state
+            distance_likelihood[i, j] = exp(-0.5 * ((i - j) / 1.0)^2)
+        end
+        # Normalize
+        if sum(distance_likelihood[i, :]) > 0
+            distance_likelihood[i, :] = distance_likelihood[i, :] / sum(distance_likelihood[i, :])
+        end
+    end
     
-    # Additional state information
-    position_mean = initial_state.position
-    position_var = SVector{3, Float64}(0.1, 0.1, 0.1)
+    # For azimuth: Von Mises (approximated by wrapped Gaussian) with kappa=8
+    azimuth_likelihood = zeros(NUM_AZIMUTH, NUM_AZIMUTH)
+    for i in 1:NUM_AZIMUTH
+        for j in 1:NUM_AZIMUTH
+            # Calculate circular distance (shortest distance on circle)
+            diff = min(abs(i - j), NUM_AZIMUTH - abs(i - j))
+            # Wrapped Gaussian 
+            azimuth_likelihood[i, j] = exp(-0.5 * (diff / 1.5)^2)
+        end
+        # Normalize
+        azimuth_likelihood[i, :] = azimuth_likelihood[i, :] / sum(azimuth_likelihood[i, :])
+    end
     
-    target_position_mean = initial_state.target_position
-    target_position_var = SVector{3, Float64}(0.1, 0.1, 0.1)
+    # For elevation: similar to azimuth
+    elevation_likelihood = zeros(NUM_ELEVATION, NUM_ELEVATION)
+    for i in 1:NUM_ELEVATION
+        for j in 1:NUM_ELEVATION
+            # Calculate circular distance (shortest distance on circle)
+            diff = min(abs(i - j), NUM_ELEVATION - abs(i - j))
+            # Wrapped Gaussian 
+            elevation_likelihood[i, j] = exp(-0.5 * (diff / 1.5)^2)
+        end
+        # Normalize
+        elevation_likelihood[i, :] = elevation_likelihood[i, :] / sum(elevation_likelihood[i, :])
+    end
     
-    process_noise = 0.01
-    observation_noise = 0.05
+    # For suitability: based on obstacle distance
+    suitability_likelihood = zeros(NUM_SUITABILITY, NUM_SUITABILITY)
+    for i in 1:NUM_SUITABILITY
+        # Calculate expected obstacle distance for each suitability level
+        for j in 1:NUM_SUITABILITY
+            # Closer to diagonal = higher likelihood
+            diff = abs(i - j)
+            suitability_likelihood[i, j] = exp(-diff)
+        end
+        # Normalize
+        suitability_likelihood[i, :] = suitability_likelihood[i, :] / sum(suitability_likelihood[i, :])
+    end
     
-    return StateBeliefs(
-        distance_mean,
-        distance_var,
-        direction_mean,
-        direction_var,
-        obstacle_positions_mean,
-        obstacle_positions_var,
-        position_mean,
-        position_var,
-        target_position_mean,
-        target_position_var,
-        process_noise,
-        observation_noise
+    return DroneBeliefs(
+        distance_prior,
+        azimuth_prior,
+        elevation_prior,
+        suitability_prior,
+        joint_prior,
+        distance_likelihood,
+        azimuth_likelihood,
+        elevation_likelihood,
+        suitability_likelihood
     )
 end
 
 """
-    DroneInferenceModel
+    calculate_suitability(obstacle_distance::Float64; beta::Float64=3.0)
 
-Define the generative model for active inference.
+Calculate suitability measure (0-1) based on distance to nearest obstacle.
+Uses exponential transformation with parameter beta.
 """
-@model function drone_inference_model()
-    # Latent state priors
-    s₁ ~ Normal(0, 10)                     # S1: Distance (meters)
-    s₂ ~ MvNormal(zeros(3), 5.0 * I(3))    # S2: 3D angle/direction vector
-    s₃ ~ MvNormal(zeros(6), 10.0 * I(6))   # S3: Voxel-based obstacle layout (simplified as 2 obstacle points in 3D)
-    
-    # Observations modeled as noisy versions of states
-    o₁ ~ Normal(s₁, 1.0)                   # Noisy distance sensor
-    o₂ ~ MvNormal(s₂, 0.5 * I(3))          # Noisy camera vector
-    o₃ ~ MvNormal(s₃, 2.0 * I(6))          # Noisy voxel perception
+function calculate_suitability(obstacle_distance::Float64; beta::Float64=3.0)
+    # Exponential transformation: higher penalty as you get closer to obstacle
+    # Returns value in [0,1] where 1 is most suitable (far from obstacles)
+    return min(1.0, exp(-beta / (obstacle_distance + 1e-3)))
 end
 
 """
-    run_inference(observations::NamedTuple)
+    discretize_state(distance::Float64, azimuth::Float64, 
+                    elevation::Float64, suitability::Float64)
 
-Run Bayesian inference on the generative model given observations.
+Discretize continuous values according to our state space definition.
+Returns tuple of discretized (integer) values.
 """
-function run_inference(observations::NamedTuple)
-    model = drone_inference_model()
-    result = infer(model, observations)
+function discretize_state(distance::Float64, azimuth::Float64, 
+                         elevation::Float64, suitability::Float64)
+    # Discretize distance by 1m increments
+    distance_idx = max(1, min(MAX_DISTANCE, Int(floor(distance))))
     
-    return (
-        s1 = mean(result.posteriors[:s₁]),
-        s2 = mean(result.posteriors[:s₂]),
-        s3 = mean(result.posteriors[:s₃])
-    )
+    # Discretize azimuth by 15° increments (24 possible values)
+    # Convert from radians to 0-23 index (15° = π/12 radians)
+    azimuth_normalized = mod(azimuth, 2π)  # Normalize to [0, 2π)
+    azimuth_idx = Int(floor(azimuth_normalized / (π/12))) + 1
+    azimuth_idx = max(1, min(NUM_AZIMUTH, azimuth_idx))
+    
+    # Discretize elevation by 15° increments (12 possible values)
+    # Convert from radians to 0-11 index
+    elevation_normalized = clamp(elevation, -π/2, π/2)  # Clamp to [-π/2, π/2]
+    elevation_idx = Int(floor((elevation_normalized + π/2) / (π/12))) + 1
+    elevation_idx = max(1, min(NUM_ELEVATION, elevation_idx))
+    
+    # Discretize suitability by 0.1 increments (0 to 1.0)
+    suitability_idx = Int(floor(suitability * 10)) + 1
+    suitability_idx = max(1, min(NUM_SUITABILITY, suitability_idx))
+    
+    return distance_idx, azimuth_idx, elevation_idx, suitability_idx
 end
 
 """
-    update_beliefs(beliefs::StateBeliefs, current_state::State, action::AbstractVector)
+    update_beliefs_vfe(beliefs::DroneBeliefs, observation)
 
-Update beliefs about the state using variational free energy minimization.
+Update beliefs using variational free energy minimization.
+Returns updated beliefs.
 """
-function update_beliefs(beliefs::StateBeliefs, current_state::State, action::AbstractVector)
-    # Update position based on action
-    new_position_mean = beliefs.position_mean + action
-    new_position_var = beliefs.position_var .+ beliefs.process_noise
+function update_beliefs_vfe(beliefs::DroneBeliefs, observation)
+    # Extract observation data
+    obs_distance = observation.obs_distance
+    obs_azimuth = observation.obs_azimuth
+    obs_elevation = observation.obs_elevation
+    obs_nearest_obstacle = observation.obs_nearest_obstacle
     
-    # Create observations for the inference model
-    # State 1: Distance from target
-    observed_distance = current_state.distance_to_target
+    # Calculate suitability from nearest obstacle distance
+    suitability = calculate_suitability(obs_nearest_obstacle)
     
-    # State 2: Direction vector to target
-    observed_direction = normalize(current_state.target_position - current_state.position)
+    # Discretize observation
+    obs_distance_idx, obs_azimuth_idx, obs_elevation_idx, obs_suitability_idx = 
+        discretize_state(obs_distance, obs_azimuth, obs_elevation, suitability)
     
-    # State 3: Obstacle positions (simplified for this example - using first two obstacles or zeros)
-    observed_obstacles = Vector{Float64}()
-    for i in 1:min(2, length(current_state.obstacles))
-        append!(observed_obstacles, current_state.obstacles[i])
-    end
+    # Extract likelihood vectors for this observation
+    distance_lh = beliefs.distance_likelihood[obs_distance_idx, :]
+    azimuth_lh = beliefs.azimuth_likelihood[obs_azimuth_idx, :]
+    elevation_lh = beliefs.elevation_likelihood[obs_elevation_idx, :]
+    suitability_lh = beliefs.suitability_likelihood[obs_suitability_idx, :]
     
-    # Pad with zeros if needed
-    while length(observed_obstacles) < 6
-        push!(observed_obstacles, 0.0)
-    end
+    # VFE minimization (simplified as sequential Bayesian updates)
+    # In full active inference, this would be iterative with proper message passing
     
-    # Run inference with observations
-    observations = (
-        o₁ = observed_distance,
-        o₂ = observed_direction,
-        o₃ = observed_obstacles
-    )
+    # Prior beliefs
+    distance_prior = beliefs.distance_belief
+    azimuth_prior = beliefs.azimuth_belief
+    elevation_prior = beliefs.elevation_belief
+    suitability_prior = beliefs.suitability_belief
     
-    inference_result = run_inference(observations)
+    # Bayesian updates (factorized approximate posterior)
+    distance_posterior = distance_lh .* distance_prior
+    azimuth_posterior = azimuth_lh .* azimuth_prior
+    elevation_posterior = elevation_lh .* elevation_prior 
+    suitability_posterior = suitability_lh .* suitability_prior
     
-    # Extract inferred states
-    inferred_distance = inference_result.s1
-    inferred_direction = SVector{3, Float64}(inference_result.s2)
+    # Normalize
+    distance_posterior = distance_posterior / sum(distance_posterior)
+    azimuth_posterior = azimuth_posterior / sum(azimuth_posterior)
+    elevation_posterior = elevation_posterior / sum(elevation_posterior)
+    suitability_posterior = suitability_posterior / sum(suitability_posterior)
     
-    # Extract obstacle information
-    obstacle_vector = inference_result.s3
-    inferred_obstacles = Vector{SVector{3, Float64}}()
+    # Reconstruct joint belief (factorized approximation)
+    joint_belief = ones(MAX_DISTANCE, NUM_AZIMUTH, NUM_ELEVATION, NUM_SUITABILITY)
     
-    # Reconstruct obstacle positions
-    for i in 1:2
-        obstacle_pos = SVector{3, Float64}(
-            obstacle_vector[3*i-2], 
-            obstacle_vector[3*i-1], 
-            obstacle_vector[3*i]
-        )
-        push!(inferred_obstacles, obstacle_pos)
-    end
-    
-    # Additional obstacles from observation
-    for i in 3:length(current_state.obstacles)
-        push!(inferred_obstacles, current_state.obstacles[i])
+    for d in 1:MAX_DISTANCE, a in 1:NUM_AZIMUTH, e in 1:NUM_ELEVATION, s in 1:NUM_SUITABILITY
+        joint_belief[d, a, e, s] = distance_posterior[d] * 
+                                 azimuth_posterior[a] * 
+                                 elevation_posterior[e] * 
+                                 suitability_posterior[s]
     end
     
     # Return updated beliefs
-    return StateBeliefs(
-        inferred_distance,
-        beliefs.distance_var,
-        inferred_direction,
-        beliefs.direction_var,
-        inferred_obstacles,
-        [SVector{3, Float64}(0.2, 0.2, 0.2) for _ in inferred_obstacles],
-        new_position_mean,
-        new_position_var,
-        beliefs.target_position_mean,
-        beliefs.target_position_var,
-        beliefs.process_noise,
-        beliefs.observation_noise
+    return DroneBeliefs(
+        distance_posterior,
+        azimuth_posterior,
+        elevation_posterior,
+        suitability_posterior,
+        joint_belief,
+        beliefs.distance_likelihood,
+        beliefs.azimuth_likelihood,
+        beliefs.elevation_likelihood,
+        beliefs.suitability_likelihood
     )
 end
 
 """
-    predict_next_state(beliefs::StateBeliefs, action::AbstractVector; steps=1)
+    expected_state(beliefs::DroneBeliefs)
 
-Predict the future state given current beliefs and an action.
+Calculate expected values for each state dimension.
 """
-function predict_next_state(beliefs::StateBeliefs, action::AbstractVector; steps=1)
-    # Initialize state prediction
-    predicted_positions = Vector{SVector{3, Float64}}(undef, steps + 1)
-    predicted_positions[1] = beliefs.position_mean
+function expected_state(beliefs::DroneBeliefs)
+    # Calculate expected values
+    exp_distance = sum(beliefs.distance_belief .* (1:MAX_DISTANCE))
     
-    for i in 1:steps
-        # Motion model - simple linear dynamics
-        new_position = predicted_positions[i] + action
-        
-        # Store prediction
-        predicted_positions[i+1] = new_position
+    # For circular variables like azimuth and elevation, we need vector averaging
+    azimuth_x = 0.0
+    azimuth_y = 0.0
+    for i in 1:NUM_AZIMUTH
+        angle = (i - 1) * (2π / NUM_AZIMUTH)
+        azimuth_x += cos(angle) * beliefs.azimuth_belief[i]
+        azimuth_y += sin(angle) * beliefs.azimuth_belief[i]
     end
+    exp_azimuth = atan(azimuth_y, azimuth_x)
     
-    return predicted_positions
+    elevation_x = 0.0
+    elevation_y = 0.0
+    for i in 1:NUM_ELEVATION
+        angle = (i - 1) * (π / (NUM_ELEVATION-1)) - π/2  # -π/2 to π/2
+        elevation_x += cos(angle) * beliefs.elevation_belief[i]
+        elevation_y += sin(angle) * beliefs.elevation_belief[i]
+    end
+    exp_elevation = atan(elevation_y, elevation_x)
+    
+    exp_suitability = sum(beliefs.suitability_belief .* ((0:10) ./ 10))
+    
+    return (
+        distance = exp_distance,
+        azimuth = exp_azimuth,
+        elevation = exp_elevation,
+        suitability = exp_suitability
+    )
 end
 
 """
-    compute_free_energy(state::State, beliefs::StateBeliefs, action::AbstractVector)
+    calculate_efe(state, beliefs, action;
+                 pragmatic_weight=1.0, epistemic_weight=0.2, risk_weight=2.0)
 
-Compute the expected free energy of a potential action given the current state and beliefs.
-Incorporates pragmatic (target-seeking) and epistemic (uncertainty-reducing) value.
+Calculate the Expected Free Energy for a potential action.
+Balances pragmatic value (reaching target) with epistemic value (exploration) and risk (safety).
 """
-function compute_free_energy(state::State, beliefs::StateBeliefs, action::AbstractVector)
-    # Predict next position after taking this action
-    predicted_position = beliefs.position_mean + action
+function calculate_efe(state, beliefs, action;
+                      pragmatic_weight=1.0, epistemic_weight=0.2, risk_weight=2.0)
+    # Calculate predicted position after action
+    predicted_position = state.position + action
     
-    # Calculate distance to target after action
-    predicted_distance = norm(predicted_position - beliefs.target_position_mean)
+    # Calculate predicted distance to target
+    target_vector = state.target_position - predicted_position
+    predicted_distance = norm(target_vector)
     
-    # Calculate distance to obstacles after action
-    obstacle_distances = [norm(predicted_position - obstacle) for obstacle in beliefs.obstacle_positions_mean]
-    min_obstacle_distance = isempty(obstacle_distances) ? Inf : minimum(obstacle_distances)
+    # Calculate improvement in distance (negative because we want to minimize EFE)
+    distance_improvement = state.raw_distance - predicted_distance
+    pragmatic_value = -pragmatic_weight * distance_improvement
     
-    # Pragmatic value: lower distance to target is better
-    pragmatic_value = -predicted_distance  # Negative because we want to minimize free energy
+    # Get expected state values
+    expected = expected_state(beliefs)
     
-    # Risk value: penalize getting too close to obstacles
-    safety_margin = 1.5  # Minimum safe distance from obstacles
+    # Calculate risk value (obstacle avoidance)
     risk_value = 0.0
-    if min_obstacle_distance < safety_margin
-        risk_value = -10.0 * (safety_margin - min_obstacle_distance)^2
+    safety_distance = 1.5
+    
+    # Check if action brings us too close to obstacles
+    for (voxel_coords, _) in state.voxel_grid
+        # Convert voxel to world coordinates (approximate center)
+        # Assuming 0.5 voxel size
+        voxel_pos = SVector{3, Float64}(
+            voxel_coords[1] * 0.5 + 0.25,
+            voxel_coords[2] * 0.5 + 0.25,
+            voxel_coords[3] * 0.5 + 0.25
+        )
+        
+        # Calculate distance to obstacle
+        obstacle_distance = norm(predicted_position - voxel_pos)
+        
+        # Add penalty if too close
+        if obstacle_distance < safety_distance
+            risk_value += risk_weight * (safety_distance - obstacle_distance)^2
+        end
     end
     
-    # Epistemic value: preference for reducing uncertainty
-    # Higher uncertainty = higher epistemic value for exploration
-    position_uncertainty = sum(beliefs.position_var)
-    obstacle_uncertainty = length(beliefs.obstacle_positions_mean) > 0 ? 
-                          sum(sum(var) for var in beliefs.obstacle_positions_var) : 1.0
+    # Calculate entropy of beliefs (measure of uncertainty)
+    dist_entropy = -sum(beliefs.distance_belief .* log.(beliefs.distance_belief .+ 1e-10))
+    azim_entropy = -sum(beliefs.azimuth_belief .* log.(beliefs.azimuth_belief .+ 1e-10))
+    elev_entropy = -sum(beliefs.elevation_belief .* log.(beliefs.elevation_belief .+ 1e-10))
+    suit_entropy = -sum(beliefs.suitability_belief .* log.(beliefs.suitability_belief .+ 1e-10))
     
-    # Weight epistemic value (exploration) based on overall uncertainty
-    epistemic_weight = 0.2  # Adjust to balance exploration vs. exploitation
-    epistemic_value = -epistemic_weight * (position_uncertainty + obstacle_uncertainty)
+    # Total entropy
+    total_entropy = dist_entropy + azim_entropy + elev_entropy + suit_entropy
     
-    # Total expected free energy (negative because we want to minimize free energy)
-    expected_free_energy = -(pragmatic_value + risk_value + epistemic_value)
+    # Epistemic value - we want to reduce uncertainty where it matters
+    # Scale by action magnitude (prefer larger movements when uncertain)
+    action_mag = norm(action)
+    epistemic_value = -epistemic_weight * total_entropy * action_mag
     
-    return expected_free_energy
+    # Total Expected Free Energy (lower is better)
+    efe = pragmatic_value + risk_value + epistemic_value
+    
+    return efe
 end
 
 end # module
