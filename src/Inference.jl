@@ -1,6 +1,6 @@
 module Inference
 
-export DroneBeliefs, initialize_beliefs, update_beliefs_vfe, calculate_efe, expected_state
+export DroneBeliefs, initialize_beliefs, update_beliefs_vfe, expected_state
 
 using Distributions
 using LinearAlgebra
@@ -265,72 +265,6 @@ function expected_state(beliefs::DroneBeliefs)
         elevation = exp_elevation,
         suitability = exp_suitability
     )
-end
-
-"""
-    calculate_efe(state, beliefs, action;
-                 pragmatic_weight=1.0, epistemic_weight=0.2, risk_weight=2.0)
-
-Calculate the Expected Free Energy for a potential action.
-Balances pragmatic value (reaching target) with epistemic value (exploration) and risk (safety).
-"""
-function calculate_efe(state, beliefs, action;
-                      pragmatic_weight=1.0, epistemic_weight=0.2, risk_weight=2.0)
-    # Calculate predicted position after action
-    predicted_position = state.position + action
-    
-    # Calculate predicted distance to target
-    target_vector = state.target_position - predicted_position
-    predicted_distance = norm(target_vector)
-    
-    # Calculate improvement in distance (negative because we want to minimize EFE)
-    distance_improvement = state.raw_distance - predicted_distance
-    pragmatic_value = -pragmatic_weight * distance_improvement
-    
-    # Get expected state values
-    expected = expected_state(beliefs)
-    
-    # Calculate risk value (obstacle avoidance)
-    risk_value = 0.0
-    safety_distance = 1.5
-    
-    # Check if action brings us too close to obstacles
-    for (voxel_coords, _) in state.voxel_grid
-        # Convert voxel to world coordinates (approximate center)
-        # Assuming 0.5 voxel size
-        voxel_pos = SVector{3, Float64}(
-            voxel_coords[1] * 0.5 + 0.25,
-            voxel_coords[2] * 0.5 + 0.25,
-            voxel_coords[3] * 0.5 + 0.25
-        )
-        
-        # Calculate distance to obstacle
-        obstacle_distance = norm(predicted_position - voxel_pos)
-        
-        # Add penalty if too close
-        if obstacle_distance < safety_distance
-            risk_value += risk_weight * (safety_distance - obstacle_distance)^2
-        end
-    end
-    
-    # Calculate entropy of beliefs (measure of uncertainty)
-    dist_entropy = -sum(beliefs.distance_belief .* log.(beliefs.distance_belief .+ 1e-10))
-    azim_entropy = -sum(beliefs.azimuth_belief .* log.(beliefs.azimuth_belief .+ 1e-10))
-    elev_entropy = -sum(beliefs.elevation_belief .* log.(beliefs.elevation_belief .+ 1e-10))
-    suit_entropy = -sum(beliefs.suitability_belief .* log.(beliefs.suitability_belief .+ 1e-10))
-    
-    # Total entropy
-    total_entropy = dist_entropy + azim_entropy + elev_entropy + suit_entropy
-    
-    # Epistemic value - we want to reduce uncertainty where it matters
-    # Scale by action magnitude (prefer larger movements when uncertain)
-    action_mag = norm(action)
-    epistemic_value = -epistemic_weight * total_entropy * action_mag
-    
-    # Total Expected Free Energy (lower is better)
-    efe = pragmatic_value + risk_value + epistemic_value
-    
-    return efe
 end
 
 end # module
