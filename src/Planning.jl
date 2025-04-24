@@ -1,6 +1,6 @@
 module Planning
 
-export ActionPlanner, select_action, generate_actions, calculate_efe
+export ActionPlanner, select_action, generate_waypoints, calculate_efe, simulate_transition, calculate_suitability_for_waypoint
 
 using LinearAlgebra
 using StaticArrays
@@ -51,37 +51,76 @@ function ActionPlanner(;
 end
 
 """
-    generate_actions(planner::ActionPlanner)
+    generate_waypoints(current_position::SVector{3, Float64}, distance::Float64, num_angles::Int, num_elevations::Int)::Vector{SVector{3, Float64}}
 
-Generate a set of possible actions (3D vectors) to evaluate.
+Generate waypoints at a fixed radius from current_position in azimuth and elevation sweeps.
 """
-function generate_actions(planner::ActionPlanner)
-    actions = Vector{SVector{3, Float64}}()
+function generate_waypoints(current_position::SVector{3, Float64}, distance::Float64, num_angles::Int, num_elevations::Int)::Vector{SVector{3, Float64}}
+    waypoints = Vector{SVector{3, Float64}}()
     
-    # Add "stay in place" action
-    push!(actions, SVector{3, Float64}(0.0, 0.0, 0.0))
+    # Include current position as a waypoint (stay in place)
+    push!(waypoints, current_position)
     
-    # Generate actions in horizontal plane (XY)
-    for angle_idx in 1:planner.num_angles
-        angle = 2π * (angle_idx - 1) / planner.num_angles
+    for elev_idx in 1:num_elevations
+        elevation = π * (elev_idx - 1) / (num_elevations - 1) - π/2  # from -pi/2 to pi/2
         
-        for step_idx in 1:planner.num_step_sizes
-            step_size = planner.max_step_size * step_idx / planner.num_step_sizes
+        for angle_idx in 1:num_angles
+            azimuth = 2π * (angle_idx - 1) / num_angles
             
-            # Calculate XY components
-            dx = step_size * cos(angle)
-            dy = step_size * sin(angle)
+            dx = distance * cos(elevation) * cos(azimuth)
+            dy = distance * cos(elevation) * sin(azimuth)
+            dz = distance * sin(elevation)
             
-            # Add horizontal actions
-            push!(actions, SVector{3, Float64}(dx, dy, 0.0))
-            
-            # Add actions with vertical components
-            push!(actions, SVector{3, Float64}(dx, dy, step_size / 2))
-            push!(actions, SVector{3, Float64}(dx, dy, -step_size / 2))
+            waypoint = current_position + SVector{3, Float64}(dx, dy, dz)
+            push!(waypoints, waypoint)
         end
     end
     
-    return actions
+    return waypoints
+end
+
+"""
+    calculate_suitability_for_waypoint(waypoint::SVector{3, Float64})::Float64
+
+Mock function to calculate suitability score for a waypoint.
+Returns exp(-1.0 / distance_to_nearest_obstacle(waypoint)) for now.
+"""
+function calculate_suitability_for_waypoint(waypoint::SVector{3, Float64})::Float64
+    # Mock distance to nearest obstacle - replace with actual sensing or map query
+    function distance_to_nearest_obstacle(p::SVector{3, Float64})::Float64
+        # Placeholder: assume no obstacles nearby, return large value
+        return 10.0
+    end
+    
+    dist = distance_to_nearest_obstacle(waypoint)
+    return exp(-1.0 / dist)
+end
+
+"""
+    simulate_transition(state::StateSpace.DroneState, waypoint::SVector{3, Float64}, target_position::SVector{3, Float64})::StateSpace.DroneState
+
+Simulate the predicted next state given the current state and a waypoint.
+Computes distance to target, azimuth and elevation from waypoint to target,
+and leaves suitability to be filled later.
+"""
+function simulate_transition(state::StateSpace.DroneState, waypoint::SVector{3, Float64}, target_position::SVector{3, Float64})::StateSpace.DroneState
+    # Vector from waypoint to target
+    to_target = target_position - waypoint
+    dist_to_target = norm(to_target)
+    
+    # Compute azimuth and elevation angles
+    azimuth = atan(to_target[2], to_target[1])  # atan(y, x)
+    elevation = atan(to_target[3], sqrt(to_target[1]^2 + to_target[2]^2))
+    
+    # Construct new DroneState with updated fields
+    # Assuming DroneState has fields: distance, azimuth, elevation, suitability
+    # Suitability left blank or zero for now
+    return StateSpace.DroneState(
+        distance = dist_to_target,
+        azimuth = azimuth,
+        elevation = elevation,
+        suitability = 0.0
+    )
 end
 
 """
@@ -124,42 +163,66 @@ function calculate_efe(state, beliefs, action;
 end
 
 """
-    select_action(state::StateSpace.DroneState, beliefs::Inference.DroneBeliefs, planner::ActionPlanner)
+    select_action(state::StateSpace.DroneState, beliefs::Inference.DroneBeliefs, planner::ActionPlanner, current_position::SVector{3, Float64}, target_position::SVector{3, Float64}; num_policies::Int = 5)
 
-Select the best action by minimizing expected free energy.
-Returns the selected action and its EFE value.
+Select the best actions by minimizing expected free energy.
+Generates continuous waypoints, computes suitability, simulates transitions,
+calculates EFE, and returns top num_policies actions and their EFE values.
 """
-function select_action(state::StateSpace.DroneState, beliefs::Inference.DroneBeliefs, planner::ActionPlanner)
-    # Generate potential actions
-    actions = generate_actions(planner)
+function select_action(state::StateSpace.DroneState, beliefs::Inference.DroneBeliefs, planner::ActionPlanner, current_position::SVector{3, Float64}, target_position::SVector{3, Float64}; num_policies::Int = 5)
+    # Generate baseline continuous waypoints
+    waypoints = generate_waypoints(current_position, planner.max_step_size, planner.num_angles, planner.num_step_sizes)
     
-    # Evaluate each action using EFE
-    best_action = nothing
-    best_efe = Inf
+    # Compute suitability for each waypoint
+    waypoint_suitabilities = [(wp, calculate_suitability_for_waypoint(wp)) for wp in waypoints]
     
-    for action in actions
+    # Sort by suitability descending
+    sorted_waypoints = sort(waypoint_suitabilities, by = x -> x[2], rev=true)
+    
+    # Select top 100 waypoints by suitability (or fewer if less available)
+    top_n = min(100, length(sorted_waypoints))
+    top_waypoints = sorted_waypoints[1:top_n]
+    
+    # For each, simulate transition state and calculate EFE
+    candidate_actions = Vector{Tuple{SVector{3, Float64}, Float64}}()
+    
+    for (wp, suitability) in top_waypoints
+        # Simulate transition state
+        next_state = simulate_transition(state, wp, target_position)
+        
+        # Update suitability in next_state
+        next_state = StateSpace.DroneState(
+            distance = next_state.distance,
+            azimuth = next_state.azimuth,
+            elevation = next_state.elevation,
+            suitability = suitability
+        )
+        
+        # Calculate action vector from current position to waypoint
+        action = wp - current_position
+        
+        # Calculate EFE for this action
         efe = calculate_efe(
-            state, 
-            beliefs, 
+            next_state,
+            beliefs,
             action,
             pragmatic_weight=planner.pragmatic_weight,
             epistemic_weight=planner.epistemic_weight,
             risk_weight=planner.risk_weight
         )
         
-        if efe < best_efe
-            best_efe = efe
-            best_action = action
-        end
+        push!(candidate_actions, (action, efe))
     end
     
-    # If no good action found, use a safe default
-    if isnothing(best_action)
-        best_action = SVector{3, Float64}(0.1, 0.0, 0.0)  # Move slightly forward as default
-        best_efe = Inf
-    end
+    # Sort candidate actions by EFE ascending (lower is better)
+    sorted_candidates = sort(candidate_actions, by = x -> x[2])
     
-    return best_action, best_efe
+    # Select top num_policies actions
+    top_k = min(num_policies, length(sorted_candidates))
+    selected = sorted_candidates[1:top_k]
+    
+    # Return top actions and their EFE values
+    return selected
 end
 
 end # module
