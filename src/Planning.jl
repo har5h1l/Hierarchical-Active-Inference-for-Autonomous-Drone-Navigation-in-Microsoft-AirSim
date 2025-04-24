@@ -1,6 +1,6 @@
 module Planning
 
-export ActionPlanner, select_action, generate_actions
+export ActionPlanner, select_action, generate_actions, calculate_efe
 
 using LinearAlgebra
 using StaticArrays
@@ -85,6 +85,45 @@ function generate_actions(planner::ActionPlanner)
 end
 
 """
+    calculate_efe(state, beliefs, action;
+                 pragmatic_weight=1.0, epistemic_weight=0.2, risk_weight=2.0)
+
+Calculate the Expected Free Energy for a potential action.
+Balances pragmatic value (reaching target) with epistemic value (exploration) and risk (safety).
+"""
+function calculate_efe(state, beliefs, action;
+                      pragmatic_weight=1.0, epistemic_weight=0.2, risk_weight=2.0)
+    # Use expected_state from beliefs to determine predicted state qualities
+    expected = Inference.expected_state(beliefs)
+    
+    # Calculate improvement in distance (negative because we want to minimize EFE)
+    # Use the expected distance from beliefs and estimated improvement based on action
+    pragmatic_value = -pragmatic_weight * norm(action) * cos(expected.azimuth)
+    
+    # Calculate epistemic value - we want to reduce uncertainty where it matters
+    # Extract entropy from belief distributions
+    dist_entropy = -sum(beliefs.distance_belief .* log.(beliefs.distance_belief .+ 1e-10))
+    azim_entropy = -sum(beliefs.azimuth_belief .* log.(beliefs.azimuth_belief .+ 1e-10))
+    elev_entropy = -sum(beliefs.elevation_belief .* log.(beliefs.elevation_belief .+ 1e-10))
+    suit_entropy = -sum(beliefs.suitability_belief .* log.(beliefs.suitability_belief .+ 1e-10))
+    
+    # Total entropy
+    total_entropy = dist_entropy + azim_entropy + elev_entropy + suit_entropy
+    
+    # Scale by action magnitude (prefer larger movements when uncertain)
+    action_mag = norm(action)
+    epistemic_value = -epistemic_weight * total_entropy * action_mag
+    
+    # For risk, use suitability from beliefs
+    risk_value = risk_weight * (1 - expected.suitability) * action_mag
+    
+    # Total Expected Free Energy (lower is better)
+    efe = pragmatic_value + risk_value + epistemic_value
+    
+    return efe
+end
+
+"""
     select_action(state::StateSpace.DroneState, beliefs::Inference.DroneBeliefs, planner::ActionPlanner)
 
 Select the best action by minimizing expected free energy.
@@ -99,7 +138,7 @@ function select_action(state::StateSpace.DroneState, beliefs::Inference.DroneBel
     best_efe = Inf
     
     for action in actions
-        efe = Inference.calculate_efe(
+        efe = calculate_efe(
             state, 
             beliefs, 
             action,
@@ -116,9 +155,7 @@ function select_action(state::StateSpace.DroneState, beliefs::Inference.DroneBel
     
     # If no good action found, use a safe default
     if isnothing(best_action)
-        # Move slightly toward target as default
-        direction = normalize(state.target_position - state.position)
-        best_action = direction * min(planner.max_step_size / 4, 0.1)
+        best_action = SVector{3, Float64}(0.1, 0.0, 0.0)  # Move slightly forward as default
         best_efe = Inf
     end
     
