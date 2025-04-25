@@ -17,33 +17,24 @@ class EnvironmentScanner:
     def get_obstacle_coordinates(self):
         """Main function to perform sensor sweep and return obstacle coordinates"""
         try:
-            print("Collecting sensor data...")
             points = self.collect_sensor_data()
             
             if points is None or len(points) == 0:
                 raise Exception("No valid point cloud data collected")
                 
-            print(f"Creating voxel grid from {len(points)} points...")
             voxel_coordinates = self.create_obstacle_voxel_grid(points)
             
             if voxel_coordinates is None or len(voxel_coordinates) == 0:
                 raise Exception("No valid voxels created")
             
-            print("Finding nearest obstacles...")
             nearest_obstacles = self.find_nearest_obstacles(voxel_coordinates)
             
-            # Create lists of coordinates for each obstacle
+            # Create lists of coordinates for each obstacle without printing
             obstacle_lists = []
-            for i, obstacle in enumerate(nearest_obstacles):
-                print(f"\nObstacle {i+1}:")
-                print(f"Distance from drone: {obstacle['distance']:.2f}m")
-                print(f"Number of voxels: {len(obstacle['points'])}")
-                
-                # Convert points to list of tuples and round to 2 decimal places
+            for obstacle in nearest_obstacles:
                 coords = [(round(float(p[0]), 2), round(float(p[1]), 2), round(float(p[2]), 2)) 
                          for p in obstacle['points']]
                 obstacle_lists.append(coords)
-                print(f"Coordinates: {coords}")
                 
             return obstacle_lists
             
@@ -75,11 +66,8 @@ class EnvironmentScanner:
     def collect_sensor_data(self):
         """Collect both LiDAR and camera data from current position"""
         try:
-            # Get drone's pose for debugging
+            # Get drone's pose
             drone_pose = self.client.simGetVehiclePose(vehicle_name="Drone1")
-            position = drone_pose.position
-            orientation = drone_pose.orientation
-            print(f"Drone position: {position}, orientation: {orientation}")
             
             # Get LiDAR data
             lidar_data = self.client.getLidarData(lidar_name="Lidar1", vehicle_name="Drone1")
@@ -90,24 +78,20 @@ class EnvironmentScanner:
             ], vehicle_name="Drone1")
             
             if len(lidar_data.point_cloud) < 3:
-                print("Warning: Not enough LiDAR points")
                 return None
                 
             if not responses:
-                print("Warning: No camera response received")
                 return None
             
             # Process LiDAR points - transform to correct frame
             lidar_points = np.array(lidar_data.point_cloud).reshape((-1, 3))
             
-            # Filter LiDAR points by FOV (approximately match settings.json)
+            # Filter LiDAR points by FOV
             lidar_angles = np.arctan2(lidar_points[:, 1], lidar_points[:, 0]) * 180 / np.pi
             vertical_angles = np.arctan2(lidar_points[:, 2], np.sqrt(lidar_points[:, 0]**2 + lidar_points[:, 1]**2)) * 180 / np.pi
             
-            # Keep only points within horizontal FOV (-180 to 180 but mainly forward)
-            # and vertical FOV (-10 to 10 degrees)
             valid_lidar = np.logical_and(
-                np.abs(lidar_angles) < 90,  # Forward 180-degree cone
+                np.abs(lidar_angles) < 90,
                 np.logical_and(vertical_angles >= -10, vertical_angles <= 10)
             )
             lidar_points = lidar_points[valid_lidar]
@@ -125,16 +109,14 @@ class EnvironmentScanner:
             f = width / (2 * np.tan(fov * pi / 360))
             
             camera_points = []
-            for i in range(0, height, 2):  # Sample every other pixel for performance
+            for i in range(0, height, 2):
                 for j in range(0, width, 2):
                     depth = depth_img[i, j]
-                    if depth > 0 and depth < 100:  # Ignore very far points
-                        # Convert to camera frame (right-handed: X forward, Y left, Z up)
+                    if depth > 0 and depth < 100:
                         x = depth
                         y = -(j - width/2) * depth / f
                         z = -(i - height/2) * depth / (f/aspect)
                         
-                        # Only keep points in front of camera (positive X)
                         if x > 0:
                             camera_points.append([x, y, z])
             
@@ -156,9 +138,6 @@ class EnvironmentScanner:
                     np.linalg.norm(lidar_points, axis=1) < max_distance
                 )]
             
-            print(f"Filtered LiDAR points: {len(lidar_points)}")
-            print(f"Filtered camera points: {len(camera_points)}")
-            
             # Combine points
             all_points = []
             if len(lidar_points) > 0:
@@ -170,9 +149,6 @@ class EnvironmentScanner:
                 raise Exception("No valid points collected")
                 
             combined_points = np.vstack(all_points)
-            print(f"Total combined points: {len(combined_points)}")
-            print(f"Point cloud bounds: min={np.min(combined_points, axis=0)}, max={np.max(combined_points, axis=0)}")
-            
             return combined_points
             
         except Exception as e:
@@ -192,7 +168,7 @@ class EnvironmentScanner:
             # Initialize voxel storage using dictionary to merge points in same voxel
             voxel_dict = {}
             
-            # Convert points to voxel coordinates
+            # Convert points to voxel coordinates silently
             for point in points:
                 x_idx = int((point[0] - grid_bounds['x_min']) / voxel_size)
                 y_idx = int((point[1] - grid_bounds['y_min']) / voxel_size)
@@ -240,18 +216,15 @@ class EnvironmentScanner:
             for label, points in clusters.items():
                 points_array = np.array(points)
                 
-                # Skip if too few voxels
                 if len(points_array) < min_voxels:
                     continue
                 
-                # Reduce number of points by averaging nearby points
                 reduced_points = self.reduce_points(points_array, reduction_threshold=0.6)
                 
-                if len(reduced_points) < 5:  # Skip if too few points after reduction
+                if len(reduced_points) < 5:
                     continue
                 
-                # Calculate distance to this obstacle (minimum distance to any point)
-                distances = np.linalg.norm(reduced_points, axis=1)  # Distance from origin (drone position)
+                distances = np.linalg.norm(reduced_points, axis=1)
                 min_distance = round(float(np.min(distances)), 2)
                 
                 obstacle_info.append({
@@ -260,10 +233,8 @@ class EnvironmentScanner:
                 })
             
             if not obstacle_info:
-                print("No significant obstacles found (all had too few voxels)")
                 return []
             
-            # Sort by distance and get nearest n obstacles
             obstacle_info.sort(key=lambda x: x['distance'])
             return obstacle_info[:n_obstacles]
             

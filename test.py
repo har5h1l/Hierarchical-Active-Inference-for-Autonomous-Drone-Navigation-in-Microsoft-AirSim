@@ -16,8 +16,8 @@ POLICY_LENGTH = 3  # Number of steps in the policy
 DENSITY_RADIUS = 5.0  # Radius for density evaluation
 ARRIVAL_THRESHOLD = 1.0  # Distance in meters to consider target reached
 MAX_ITERATIONS = 50  # Maximum number of iterations before stopping
-INTERFACE_DIR = "./interface"  # Directory for JSON exchange with Julia
-JULIA_PATH = "julia"  # Path to Julia executable
+INTERFACE_DIR = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "interface"))
+JULIA_PATH = "julia --project=."  # Path to Julia executable with project environment
 
 # Add the airsim directory to the Python path
 sys.path.append(path.join(path.dirname(path.abspath(__file__)), 'airsim'))
@@ -130,7 +130,7 @@ class DroneController:
         # Ensure interface directory exists
         os.makedirs(INTERFACE_DIR, exist_ok=True)
         
-        filepath = os.path.join(INTERFACE_DIR, "obs_input.json")
+        filepath = os.path.normpath(os.path.join(INTERFACE_DIR, "obs_input.json"))
         with open(filepath, 'w') as f:
             json.dump(observation, f, indent=2)
         print(f"Observation saved to {filepath}")
@@ -140,18 +140,19 @@ class DroneController:
         """Execute Julia scripts for inference and planning"""
         try:
             # Run inference script
-            inference_script = "./run_inference.jl"
+            inference_script = os.path.normpath("./run_inference.jl")
             print(f"Running Julia inference: {inference_script}")
-            subprocess.run([JULIA_PATH, inference_script], check=True)
+            subprocess.run(["julia", "--project=.", inference_script], check=True)
             
             # Run planning script
-            planning_script = "./run_planning.jl"
+            planning_script = os.path.normpath("./run_planning.jl")
             print(f"Running Julia planning: {planning_script}")
-            subprocess.run([JULIA_PATH, planning_script], check=True)
+            subprocess.run(["julia", "--project=.", planning_script], check=True)
             
             return True
         except subprocess.CalledProcessError as e:
             print(f"Error running Julia scripts: {str(e)}")
+            print(f"Command output: {e.output if hasattr(e, 'output') else 'No output available'}")
             return False
         except Exception as e:
             print(f"Unexpected error running Julia scripts: {str(e)}")
@@ -160,7 +161,7 @@ class DroneController:
     def load_action_from_json(self):
         """Load the action from the JSON file created by Julia"""
         try:
-            filepath = os.path.join(INTERFACE_DIR, "action_output.json")
+            filepath = os.path.normpath(os.path.join(INTERFACE_DIR, "action_output.json"))
             with open(filepath, 'r') as f:
                 action_data = json.load(f)
             
@@ -181,9 +182,9 @@ class DroneController:
         # Simple conversion - just add to current position
         # In a more advanced implementation, this would account for drone orientation
         global_waypoint = [
-            self.current_position[0] + egocentric_waypoint[0],
-            self.current_position[1] + egocentric_waypoint[1],
-            self.current_position[2] + egocentric_waypoint[2]
+            round(self.current_position[0] + egocentric_waypoint[0], 2),
+            round(self.current_position[1] + egocentric_waypoint[1], 2),
+            round(self.current_position[2] + egocentric_waypoint[2], 2)
         ]
         print(f"Converted to global waypoint: {global_waypoint}")
         return global_waypoint
@@ -192,26 +193,60 @@ class DroneController:
         """Command the drone to move to the specified waypoint"""
         print(f"Moving drone from {self.current_position} to {waypoint}")
         
-        # Ensure waypoint is within simulation boundaries
+        # Ensure waypoint is within simulation boundaries and round coordinates
         waypoint = [
-            min(max(waypoint[0], -100), 100),  # X between -100 and 100
-            min(max(waypoint[1], -100), 100),  # Y between -100 and 100
-            min(max(waypoint[2], -20), 0)      # Z between -20 and 0 (remember NED)
+            round(min(max(waypoint[0], -100), 100), 2),  # X between -100 and 100
+            round(min(max(waypoint[1], -100), 100), 2),  # Y between -100 and 100
+            round(min(max(waypoint[2], -20), 0), 2)      # Z between -20 and 0 (remember NED)
         ]
         
-        self.client.moveToPositionAsync(
-            waypoint[0], waypoint[1], waypoint[2], 
-            velocity=5,  # 5 m/s
-            drivetrain=airsim.DrivetrainType.MaxDegreeOfFreedom,
-            yaw_mode=airsim.YawMode(is_rate=False)
-        ).join()
-        
-        # Wait briefly for stability
-        time.sleep(1)
-        
-        # Update state after movement
-        self.update_drone_state()
-        print(f"Drone now at position: {self.current_position}")
+        try:
+            print("Starting movement...")
+            
+            # Move to waypoint using AirSim's moveToPositionAsync
+            self.client.moveToPositionAsync(
+                x=waypoint[0],
+                y=waypoint[1],
+                z=waypoint[2],
+                velocity=2,
+                timeout_sec=15,  # Timeout after 15 seconds
+                drivetrain=airsim.DrivetrainType.MaxDegreeOfFreedom,
+                yaw_mode=airsim.YawMode(is_rate=False),
+                lookahead=-1,
+                adaptive_lookahead=1
+            ).join()
+            
+            # Update state after movement
+            self.update_drone_state()
+            
+            # Verify movement accuracy
+            final_distance = sqrt(sum((a - b) ** 2 for a, b in zip(self.current_position, waypoint)))
+            
+            if final_distance > 0.5:  # More than 0.5m away
+                # Attempt final precision adjustment if close enough
+                if final_distance < 2.0:
+                    print("Making final precision adjustment...")
+                    self.client.moveToPositionAsync(
+                        x=waypoint[0],
+                        y=waypoint[1],
+                        z=waypoint[2],
+                        velocity=1,  # Slower for precision
+                        timeout_sec=10,
+                        drivetrain=airsim.DrivetrainType.MaxDegreeOfFreedom,
+                        yaw_mode=airsim.YawMode(is_rate=False),
+                        lookahead=-1,
+                        adaptive_lookahead=1
+                    ).join()
+                    self.update_drone_state()
+            else:
+                print(f"Successfully reached waypoint. Final position: {self.current_position}")
+                
+        except Exception as e:
+            print(f"Error during movement: {str(e)}")
+            # Try to stabilize the drone
+            print("Attempting to stabilize drone...")
+            self.client.hoverAsync().join()
+            self.update_drone_state()
     
     def distance_to_target(self):
         """Calculate the Euclidean distance from the current position to the target"""
@@ -238,7 +273,8 @@ class DroneController:
             "policy": [direction, direction, direction]  # Just repeat the same action
         }
         
-        with open(os.path.join(INTERFACE_DIR, "action_output.json"), 'w') as f:
+        filepath = os.path.normpath(os.path.join(INTERFACE_DIR, "action_output.json"))
+        with open(filepath, 'w') as f:
             json.dump(action, f, indent=2)
 
 

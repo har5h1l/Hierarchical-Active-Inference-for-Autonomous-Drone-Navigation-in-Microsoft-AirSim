@@ -1,6 +1,8 @@
 module Planning
 
-export ActionPlanner, select_action, generate_waypoints, calculate_efe, simulate_transition, calculate_suitability_for_waypoint, PreferenceModel, evaluate_preference
+export ActionPlanner, select_action, generate_waypoints, calculate_efe
+export simulate_transition, calculate_suitability_for_waypoint
+export PreferenceModel, evaluate_preference
 
 using LinearAlgebra
 using StaticArrays
@@ -32,11 +34,11 @@ end
 Constructor with default parameters for the preference model.
 """
 function PreferenceModel(;
-    distance_weight = 1.0,
-    distance_scaling = 0.1,
-    angle_weight = 0.8,
-    angle_sharpness = 5.0,
-    suitability_weight = 1.5,
+    distance_weight = 2.0,         # Increased from 1.0 to emphasize distance more
+    distance_scaling = 0.05,       # Reduced from 0.1 to make distance preference decay more gradually
+    angle_weight = 0.5,           # Reduced from 0.8 to prioritize distance over angle
+    angle_sharpness = 3.0,        # Reduced from 5.0 for smoother angle preferences
+    suitability_weight = 1.0,      # Reduced from 1.5 to prioritize distance
     suitability_threshold = 0.3,
     max_distance = 50.0
 )
@@ -55,15 +57,15 @@ end
     evaluate_distance_preference(distance::Float64, model::PreferenceModel)::Float64
 
 Evaluate preference for a given distance to target.
-For S1: lower distance is better, returns high score for low distances.
+Modified to more strongly prefer shorter distances.
 """
 function evaluate_distance_preference(distance::Float64, model::PreferenceModel)::Float64
-    # Normalize distance to [0,1] range (clamping at max distance)
+    # Normalize distance to [0,1] range
     normalized_dist = min(distance / model.max_distance, 1.0)
     
     # Transform to preference score: 1 when distance=0, approaching 0 as distance increases
-    # Exponential decay provides steeper preference for closer distances
-    preference = exp(-model.distance_scaling * distance)
+    # Using quadratic decay for stronger preference of shorter distances
+    preference = (1.0 - normalized_dist)^2 * exp(-model.distance_scaling * distance)
     
     return preference
 end
@@ -291,43 +293,44 @@ end
     calculate_efe(state, beliefs, action, preference_model;
                  pragmatic_weight=1.0, epistemic_weight=0.2, risk_weight=2.0)
 
-Calculate the Expected Free Energy for a potential action using the preference model.
-Balances pragmatic value (reaching target) with epistemic value (exploration) and risk (safety).
+Calculate the Expected Free Energy with stronger emphasis on distance reduction.
 """
-function calculate_efe(state, beliefs, action, preference_model;
-                      pragmatic_weight=1.0, epistemic_weight=0.2, risk_weight=2.0)
+function calculate_efe(state::StateSpace.DroneState, 
+                      beliefs::Inference.DroneBeliefs, 
+                      action::SVector{3, Float64}, 
+                      preference_model::PreferenceModel;
+                      pragmatic_weight=1.0, 
+                      epistemic_weight=0.2, 
+                      risk_weight=2.0)
     # Use expected_state from beliefs
     expected = Inference.expected_state(beliefs)
     
-    # Calculate pragmatic value using preference model (higher preference should lower EFE)
+    # Calculate pragmatic value using preference model
     preference_score = evaluate_preference(state, preference_model)
     
-    # Invert preference score since we want to minimize EFE
-    # Scale by action magnitude (prefer actions that improve preference)
+    # Add distance reduction bonus - strongly reward actions that decrease distance
     action_mag = norm(action)
-    pragmatic_value = -pragmatic_weight * preference_score * action_mag
+    distance_reduction = expected.distance - state.distance
+    distance_bonus = distance_reduction > 0 ? 2.0 * distance_reduction : 0.0
     
-    # Calculate epistemic value - we want to reduce uncertainty where it matters
-    # Extract entropy from belief distributions
+    # Modified pragmatic value with distance bonus
+    pragmatic_value = -pragmatic_weight * (preference_score + distance_bonus) * action_mag
+    
+    # Calculate epistemic value from belief distributions (reduced weight)
     dist_entropy = -sum(beliefs.distance_belief .* log.(beliefs.distance_belief .+ 1e-10))
     azim_entropy = -sum(beliefs.azimuth_belief .* log.(beliefs.azimuth_belief .+ 1e-10))
     elev_entropy = -sum(beliefs.elevation_belief .* log.(beliefs.elevation_belief .+ 1e-10))
     suit_entropy = -sum(beliefs.suitability_belief .* log.(beliefs.suitability_belief .+ 1e-10))
     dens_entropy = -sum(beliefs.density_belief .* log.(beliefs.density_belief .+ 1e-10))
     
-    # Total entropy
     total_entropy = dist_entropy + azim_entropy + elev_entropy + suit_entropy + dens_entropy
+    epistemic_value = -epistemic_weight * 0.5 * total_entropy * action_mag  # Reduced epistemic influence
     
-    # Scale by action magnitude (prefer larger movements when uncertain)
-    epistemic_value = -epistemic_weight * total_entropy * action_mag
-    
-    # For risk, use suitability from state
+    # Risk value from state suitability (maintained for safety)
     risk_value = risk_weight * (1 - state.suitability) * action_mag
     
     # Total Expected Free Energy (lower is better)
-    efe = pragmatic_value + risk_value + epistemic_value
-    
-    return efe
+    return pragmatic_value + risk_value + epistemic_value
 end
 
 """
@@ -336,16 +339,24 @@ end
                  obstacle_distance::Float64 = 10.0, obstacle_density::Float64 = 0.0, 
                  num_policies::Int = 5)
 
-Select the best actions by minimizing expected free energy.
-Generates continuous waypoints, computes suitability, simulates transitions,
-calculates EFE, and returns top num_policies actions and their EFE values.
+Select the best actions with emphasis on distance reduction.
 """
 function select_action(state::StateSpace.DroneState, beliefs::Inference.DroneBeliefs, planner::ActionPlanner, 
                      current_position::SVector{3, Float64}, target_position::SVector{3, Float64};
                      obstacle_distance::Float64 = 10.0, obstacle_density::Float64 = 0.0, 
                      num_policies::Int = 5)
-    # Generate baseline continuous waypoints
-    waypoints = generate_waypoints(current_position, planner.max_step_size, planner.num_angles, planner.num_step_sizes)
+    # Generate waypoints with smaller step sizes for more precise control
+    waypoints = generate_waypoints(current_position, planner.max_step_size * 0.8, planner.num_angles + 4, planner.num_step_sizes + 2)
+    
+    # Calculate vector to target
+    to_target = target_position - current_position
+    target_direction = normalize(to_target)
+    
+    # Add direct-to-target waypoints with various step sizes
+    for step in [0.2, 0.4, 0.6, 0.8] .* planner.max_step_size
+        direct_waypoint = current_position + step * target_direction
+        push!(waypoints, direct_waypoint)
+    end
     
     # Compute suitability for each waypoint
     waypoint_suitabilities = [(wp, calculate_suitability_for_waypoint(wp, obstacle_distance, obstacle_density, planner.density_weight)) for wp in waypoints]

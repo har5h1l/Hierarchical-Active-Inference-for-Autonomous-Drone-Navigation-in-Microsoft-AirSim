@@ -1,20 +1,25 @@
 #!/usr/bin/env julia
 
-# Add the current directory to the load path
-push!(LOAD_PATH, @__DIR__)
+# Activate the project environment
+import Pkg
+println("Activating project environment...")
+Pkg.activate(@__DIR__)
+Pkg.develop(path=joinpath(@__DIR__, "actinf"))
+println("Installing dependencies...")
+Pkg.instantiate()
 
 # Import required modules
+println("Loading packages...")
 using JSON
 using LinearAlgebra
 using StaticArrays
-import actinf.StateSpace
-import actinf.Inference
-import actinf.Planning
+println("Loading actinf package...")
+using actinf
 
 # Constants and parameters
-const INTERFACE_DIR = "./interface"
-const INFERRED_STATE_PATH = joinpath(INTERFACE_DIR, "inferred_state.json")
-const ACTION_OUTPUT_PATH = joinpath(INTERFACE_DIR, "action_output.json")
+const INTERFACE_DIR = abspath(joinpath(@__DIR__, "interface"))
+const INFERRED_STATE_PATH = abspath(joinpath(INTERFACE_DIR, "inferred_state.json"))
+const ACTION_OUTPUT_PATH = abspath(joinpath(INTERFACE_DIR, "action_output.json"))
 
 # Hyperparameters
 const MARGIN = 1.5  # Safety margin for waypoint generation (meters)
@@ -38,7 +43,7 @@ function main()
     
     # Extract state, beliefs, and positions
     state_dict = data["state"]
-    current_state = StateSpace.DroneState(
+    current_state = DroneState(
         distance = state_dict["distance"],
         azimuth = state_dict["azimuth"],
         elevation = state_dict["elevation"],
@@ -47,57 +52,48 @@ function main()
     )
     
     # Get beliefs including voxel grid
-    beliefs = Inference.deserialize_beliefs(data["beliefs"])
+    beliefs = deserialize_beliefs(data["beliefs"])
     
     # Extract other data
-    drone_position = get(data, "drone_position", [0.0, 0.0, 0.0])
-    target_position = get(data, "target_position", [10.0, 0.0, -3.0])
+    drone_position = SVector{3, Float64}(get(data, "drone_position", [0.0, 0.0, 0.0])...)
+    target_position = SVector{3, Float64}(get(data, "target_position", [10.0, 0.0, -3.0])...)
     nearest_obstacle_distances = get(data, "nearest_obstacle_distances", [100.0, 100.0])
     obstacle_density = get(data, "obstacle_density", 0.0)
     
-    # Convert to SVector
-    drone_pos = SVector{3, Float64}(drone_position...)
-    target_pos = SVector{3, Float64}(target_position...)
-    
-    # Get the nearest obstacle distances from the inferred state
-    # This is used to determine the safe radius for waypoint generation
-    min_obstacle_distance = minimum(nearest_obstacle_distances)
-    
-    # Create a preference model tuned for our environment
-    preference_model = Planning.PreferenceModel(
-        distance_weight = 1.2,
+    # Initialize preference model and action planner
+    preference_model = PreferenceModel(
+        distance_weight = 1.0,
         distance_scaling = 0.1,
-        angle_weight = 0.9,
-        angle_sharpness = 4.0,
-        suitability_weight = 2.0,  # Higher emphasis on safety
-        suitability_threshold = 0.4,  # Minimum acceptable suitability
+        angle_weight = 0.8,
+        angle_sharpness = 5.0,
+        suitability_weight = 1.5,
+        suitability_threshold = 0.3,
         max_distance = 50.0
     )
     
-    # Create a planner with appropriate parameters
-    planner = Planning.ActionPlanner(
-        max_step_size = min(min_obstacle_distance / 2 + MARGIN, 2.0),  # Limit to 2m max
-        num_angles = 12,  # More angles for finer control
+    planner = ActionPlanner(
+        max_step_size = 1.0,
+        num_angles = 8,
         num_step_sizes = 3,
         pragmatic_weight = 1.0,
-        epistemic_weight = 0.3,
+        epistemic_weight = 0.2,
         risk_weight = 2.0,
         safety_distance = MARGIN,
-        density_weight = 1.5,  # Emphasize density consideration
+        density_weight = 1.0,
         preference_model = preference_model
     )
     
-    println("Selecting best action using voxel data ($(length(beliefs.voxel_grid)) voxels)...")
-    # Generate and select the best actions
-    actions_with_efe = Planning.select_action(
-        current_state, 
-        beliefs, 
-        planner, 
-        drone_pos, 
-        target_pos,
-        obstacle_distance = min_obstacle_distance,
-        obstacle_density = obstacle_density,
-        num_policies = POLICY_LENGTH
+    # Select best actions using the planner
+    obstacle_distance = isempty(nearest_obstacle_distances) ? 100.0 : minimum(nearest_obstacle_distances)
+    actions_with_efe = select_action(
+        current_state,
+        beliefs,
+        planner,
+        drone_position,
+        target_position,
+        obstacle_distance=obstacle_distance,
+        obstacle_density=obstacle_density,
+        num_policies=POLICY_LENGTH
     )
     
     # Extract the top action and policy
