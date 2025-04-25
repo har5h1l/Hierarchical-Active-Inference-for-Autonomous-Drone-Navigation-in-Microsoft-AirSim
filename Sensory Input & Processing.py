@@ -52,6 +52,27 @@ class EnvironmentScanner:
             print(f"Error getting obstacle coordinates: {str(e)}")
             return []
 
+    def fetch_density_distances(self):
+        """
+        Returns the number of obstacles detected and their distances from the drone.
+        
+        Returns:
+            tuple: (number of obstacles, list of distances)
+        """
+        try:
+            obstacle_lists = self.get_obstacle_coordinates()
+            num_obstacles = len(obstacle_lists)
+            
+            # Use find_nearest_obstacles to get distances since it's already calculated there
+            obstacle_info = self.find_nearest_obstacles(np.array([coord for obstacle in obstacle_lists for coord in obstacle]))
+            distances = [obs['distance'] for obs in obstacle_info]
+            
+            return num_obstacles, distances
+            
+        except Exception as e:
+            print(f"Error getting obstacle summary: {str(e)}")
+            return 0, []
+
     def collect_sensor_data(self):
         """Collect both LiDAR and camera data from current position"""
         try:
@@ -277,25 +298,3 @@ class EnvironmentScanner:
             reduced.append(np.mean(cluster, axis=0))
         
         return np.array(reduced)
-
-if __name__ == "__main__":
-    try:
-        # Create AirSim client
-        client = airsim.MultirotorClient()
-        client.confirmConnection()
-        
-        # Create scanner and get obstacle coordinates
-        scanner = EnvironmentScanner(client)
-        obstacles = scanner.get_obstacle_coordinates()
-        
-        # Print results
-        if obstacles:
-            print("\nDetected obstacles:")
-            for i, obstacle in enumerate(obstacles):
-                print(f"Obstacle {i+1}: {len(obstacle)} points")
-        else:
-            print("No obstacles detected")
-            
-    except Exception as e:
-        print(f"Program terminated with error: {str(e)}")
-
