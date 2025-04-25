@@ -35,7 +35,7 @@ end
 
 Initialize uniform beliefs and update with current state observation.
 """
-function initialize_beliefs(state::StateSpace.DroneState; num_bins=50, voxel_grid=Vector{SVector{3, Float64}}())
+function initialize_beliefs(state::StateSpace.DroneState; num_bins=50, voxel_grid=Vector{SVector{3, Float64}}(), obstacle_density=0.0)
     # Define ranges for each state variable
     distance_range = collect(range(0.0, stop=50.0, length=num_bins))
     azimuth_range = collect(range(-π, stop=π, length=num_bins))
@@ -66,7 +66,7 @@ function initialize_beliefs(state::StateSpace.DroneState; num_bins=50, voxel_gri
     )
     
     # Update with initial state
-    update_beliefs!(beliefs, state)
+    update_beliefs!(beliefs, state; obstacle_density=obstacle_density)
     
     return beliefs
 end
@@ -77,7 +77,7 @@ end
 Update belief distributions based on new state observation.
 Uses a Gaussian kernel to update beliefs with stronger weighting for target-related beliefs.
 """
-function update_beliefs!(beliefs::DroneBeliefs, state::StateSpace.DroneState; kernel_width=0.1, voxel_grid=nothing)
+function update_beliefs!(beliefs::DroneBeliefs, state::StateSpace.DroneState; kernel_width=0.1, voxel_grid=nothing, obstacle_density=0.0)
     # Adjust kernel widths based on state variables
     distance_kernel = kernel_width * (1.0 + 0.5 * state.distance/50.0)  # Wider kernel for larger distances
     azimuth_kernel = kernel_width * 2.0  # Wider kernel for angles
@@ -96,7 +96,7 @@ function update_beliefs!(beliefs::DroneBeliefs, state::StateSpace.DroneState; ke
     
     # Update environment-related beliefs
     update_belief_dim!(beliefs.suitability_belief, beliefs.suitability_range, state.suitability, kernel_width)
-    update_belief_dim!(beliefs.density_belief, beliefs.density_range, state.obstacle_density, kernel_width)
+    update_belief_dim!(beliefs.density_belief, beliefs.density_range, obstacle_density, kernel_width)
     
     # Update voxel grid if provided
     if voxel_grid !== nothing
@@ -169,8 +169,7 @@ function expected_state(beliefs::DroneBeliefs)
         distance = exp_distance,
         azimuth = exp_azimuth,
         elevation = exp_elevation,
-        suitability = adjusted_suitability,
-        obstacle_density = exp_density
+        suitability = adjusted_suitability
     )
 end
 

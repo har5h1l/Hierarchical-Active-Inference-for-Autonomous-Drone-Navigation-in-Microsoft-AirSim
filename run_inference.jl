@@ -84,13 +84,13 @@ function main()
             prev_beliefs = haskey(prev_beliefs_json, "beliefs") ? 
                           deserialize_beliefs(prev_beliefs_json["beliefs"]) :
                           initialize_beliefs(current_state, voxel_grid=voxel_grid)
-            update_beliefs!(prev_beliefs, current_state; voxel_grid=voxel_grid)
+            update_beliefs!(prev_beliefs, current_state; voxel_grid=voxel_grid, obstacle_density=obstacle_density)
         else
-            initialize_beliefs(current_state, voxel_grid=voxel_grid)
+            initialize_beliefs(current_state, voxel_grid=voxel_grid, obstacle_density=obstacle_density)
         end
     catch e
         # If there's any error reading/parsing previous beliefs, initialize new ones
-        initialize_beliefs(current_state, voxel_grid=voxel_grid)
+        initialize_beliefs(current_state, voxel_grid=voxel_grid, obstacle_density=obstacle_density)
     end
     
     # Get expected state from beliefs
@@ -102,7 +102,7 @@ function main()
     println("Current azimuth to target: $(round(rad2deg(current_state.azimuth), digits=2))°")
     println("Current elevation to target: $(round(rad2deg(current_state.elevation), digits=2))°")
     println("Path suitability: $(round(current_state.suitability, digits=2))")
-    println("Obstacle density: $(round(current_state.obstacle_density, digits=2))")
+    println("Obstacle density: $(round(obstacle_density, digits=2))")
     
     # Print target and drone positions in global coordinates
     println("\nGlobal Coordinates:")
@@ -119,15 +119,13 @@ function main()
             "distance" => current_state.distance,
             "azimuth" => current_state.azimuth,
             "elevation" => current_state.elevation,
-            "suitability" => current_state.suitability,
-            "obstacle_density" => current_state.obstacle_density
+            "suitability" => current_state.suitability
         ),
         "expected_state" => Dict(
             "distance" => expected_drone_state.distance,
             "azimuth" => expected_drone_state.azimuth,
             "elevation" => expected_drone_state.elevation,
-            "suitability" => expected_drone_state.suitability,
-            "obstacle_density" => expected_drone_state.obstacle_density
+            "suitability" => expected_drone_state.suitability
         ),
         "beliefs" => serialize_beliefs(beliefs),
         "drone_position" => [drone_position[1], drone_position[2], drone_position[3]],

@@ -75,16 +75,25 @@ end
 
 Evaluate preference for a given angle (azimuth or elevation).
 For S2/S3: 0 degrees (directly toward target) is best.
+Includes a constant baseline preference (0.2) to gently bias the agent toward facing the target.
 """
 function evaluate_angle_preference(angle::Float64, sharpness::Float64)::Float64
     # Convert angle to absolute value in radians (we care about magnitude, not direction)
     abs_angle = abs(angle)
     
+    # Constant baseline preference - gently bias toward facing target
+    constant_baseline = 0.2
+    
     # Prefer angles closer to 0 (directly toward target)
     # Using cosine: 1 when angle=0, decreasing as angle increases
     # Raised to a power for sharper preference peak
-    preference = (cos(abs_angle) + 1) / 2
-    preference = preference ^ sharpness
+    variable_preference = (cos(abs_angle) + 1) / 2
+    variable_preference = variable_preference ^ sharpness
+    
+    # Combine the baseline and variable components
+    # This ensures there's always some preference for facing the target,
+    # but also maintains the existing angle preference structure
+    preference = constant_baseline + (1.0 - constant_baseline) * variable_preference
     
     return preference
 end
@@ -219,14 +228,9 @@ Calculate suitability score for a waypoint based on distance to nearest obstacle
 Higher suitability means the waypoint is safer to navigate to.
 """
 function calculate_suitability_for_waypoint(waypoint::SVector{3, Float64}, obstacle_distance::Float64, obstacle_density::Float64, density_weight::Float64 = 1.0)::Float64
-    # Safety factor increases with distance to obstacle (exp(-1/d))
-    safety_factor = exp(-1.0 / max(obstacle_distance, 0.1))
-    
-    # Density factor decreases with higher obstacle density (exp(-density * weight))
-    density_factor = exp(-obstacle_density * density_weight * 5.0)
-    
-    # Combine factors - both should be high for good suitability
-    return safety_factor * density_factor
+    # Use our shared calculation function for consistent suitability calculation
+    return StateSpace.calculate_suitability(obstacle_distance, obstacle_density, 
+                                          obstacle_weight=0.7, density_weight=0.3*density_weight)
 end
 
 """
@@ -270,22 +274,16 @@ function simulate_transition(state::StateSpace.DroneState, waypoint::SVector{3, 
         end
     end
     
-    # Safety factor increases with distance to obstacle (exp(-1/d))
-    safety_factor = exp(-1.0 / max(local_obstacle_distance, 0.1))
-    
-    # Density factor decreases with higher obstacle density (exp(-density * weight))
-    density_factor = exp(-local_density * density_weight * 5.0)
-    
-    # Combine factors - both should be high for good suitability
-    suitability = safety_factor * density_factor
+    # Calculate suitability using the shared function for consistency
+    suitability = StateSpace.calculate_suitability(local_obstacle_distance, local_density, 
+                                                 obstacle_weight=0.7, density_weight=0.3*density_weight)
     
     # Construct new DroneState with updated fields
     return StateSpace.DroneState(
         distance = dist_to_target,
         azimuth = azimuth,
         elevation = elevation,
-        suitability = suitability,
-        obstacle_density = local_density
+        suitability = suitability
     )
 end
 
@@ -340,20 +338,58 @@ end
                  num_policies::Int = 5)
 
 Select the best actions with emphasis on distance reduction.
+Dynamically adjusts waypoint radius, policy length, and waypoint sampling based on environment suitability.
 """
 function select_action(state::StateSpace.DroneState, beliefs::Inference.DroneBeliefs, planner::ActionPlanner, 
                      current_position::SVector{3, Float64}, target_position::SVector{3, Float64};
                      obstacle_distance::Float64 = 10.0, obstacle_density::Float64 = 0.0, 
                      num_policies::Int = 5)
-    # Generate waypoints with smaller step sizes for more precise control
-    waypoints = generate_waypoints(current_position, planner.max_step_size * 0.8, planner.num_angles + 4, planner.num_step_sizes + 2)
+    # Constants for adaptive parameters
+    const MIN_RADIUS = 0.5
+    const MAX_RADIUS = 3.0
+    const MIN_POLICY_LEN = 2
+    const MAX_POLICY_LEN = 5
+    const MIN_WAYPOINTS = 15
+    const MAX_WAYPOINTS = 75
+    
+    # Dynamically adjust parameters based on state suitability
+    # For suitability, higher values (closer to 1) mean safer navigation conditions
+    suitability_factor = clamp(state.suitability, 0.0, 1.0)  # Ensure it's in valid range
+    
+    # 1. Adjust waypoint radius (step size) - inverse relationship with suitability
+    # Low suitability -> smaller radius (safer, shorter steps)
+    # High suitability -> larger radius (faster exploitation)
+    adaptive_radius = MIN_RADIUS + suitability_factor * (MAX_RADIUS - MIN_RADIUS)
+    
+    # 2. Adjust policy length - inverse relationship with suitability
+    # Low suitability -> longer policy (more careful planning)
+    # High suitability -> shorter policy (less planning needed)
+    adaptive_policy_length = MAX_POLICY_LEN - suitability_factor * (MAX_POLICY_LEN - MIN_POLICY_LEN)
+    adaptive_policy_length = round(Int, adaptive_policy_length)
+    
+    # 3. Adjust number of waypoints - inverse relationship with suitability
+    # Low suitability -> more waypoints (greater caution, more exploration)
+    # High suitability -> fewer waypoints (less exploration needed)
+    adaptive_waypoint_count = MAX_WAYPOINTS - suitability_factor * (MAX_WAYPOINTS - MIN_WAYPOINTS)
+    adaptive_waypoint_count = round(Int, adaptive_waypoint_count)
+    
+    # Calculate appropriate number of angles and elevations to achieve target waypoint count
+    # Target is adaptive_waypoint_count total waypoints
+    # Formula: num_angles * num_elevations + 1 ≈ adaptive_waypoint_count
+    # where +1 accounts for the current position waypoint
+    total_angle_divisions = max(4, round(Int, sqrt(adaptive_waypoint_count - 1)))
+    num_angles = max(4, round(Int, total_angle_divisions * 1.5))  # More horizontal than vertical divisions
+    num_elevations = max(2, round(Int, total_angle_divisions / 1.5))  # Fewer vertical divisions
+    
+    # Generate waypoints with adaptive radius for adaptive exploration
+    waypoints = generate_waypoints(current_position, adaptive_radius, num_angles, num_elevations)
     
     # Calculate vector to target
     to_target = target_position - current_position
     target_direction = normalize(to_target)
     
     # Add direct-to-target waypoints with various step sizes
-    for step in [0.2, 0.4, 0.6, 0.8] .* planner.max_step_size
+    for step in [0.3, 0.6, 0.9] .* adaptive_radius
         direct_waypoint = current_position + step * target_direction
         push!(waypoints, direct_waypoint)
     end
@@ -364,8 +400,8 @@ function select_action(state::StateSpace.DroneState, beliefs::Inference.DroneBel
     # Sort by suitability descending
     sorted_waypoints = sort(waypoint_suitabilities, by = x -> x[2], rev=true)
     
-    # Select top 100 waypoints by suitability (or fewer if less available)
-    top_n = min(100, length(sorted_waypoints))
+    # Select top waypoints by suitability (or fewer if less available)
+    top_n = min(adaptive_waypoint_count, length(sorted_waypoints))
     top_waypoints = sorted_waypoints[1:top_n]
     
     # For each, simulate transition state and calculate EFE
@@ -395,8 +431,8 @@ function select_action(state::StateSpace.DroneState, beliefs::Inference.DroneBel
     # Sort candidate actions by EFE ascending (lower is better)
     sorted_candidates = sort(candidate_actions, by = x -> x[2])
     
-    # Select top num_policies actions
-    top_k = min(num_policies, length(sorted_candidates))
+    # Use the adaptive policy length instead of fixed num_policies
+    top_k = min(adaptive_policy_length, length(sorted_candidates))
     selected = sorted_candidates[1:top_k]
     
     # Return top actions and their EFE values

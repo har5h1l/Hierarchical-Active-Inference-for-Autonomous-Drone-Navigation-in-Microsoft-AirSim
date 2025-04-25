@@ -3,7 +3,7 @@ module StateSpace
 using StaticArrays
 using LinearAlgebra
 
-export DroneState, DroneObservation, create_state_from_observation, global_to_egocentric, egocentric_to_global
+export DroneState, DroneObservation, create_state_from_observation, global_to_egocentric, egocentric_to_global, calculate_suitability
 
 """
     DroneState
@@ -15,7 +15,6 @@ struct DroneState
     azimuth::Float64        # Horizontal angle to target (radians)
     elevation::Float64      # Vertical angle to target (radians)
     suitability::Float64    # Environmental suitability measure (0-1)
-    obstacle_density::Float64 # Density of obstacles around the drone (optional)
 end
 
 """
@@ -25,10 +24,9 @@ function DroneState(;
     distance = 0.0,
     azimuth = 0.0,
     elevation = 0.0, 
-    suitability = 1.0,
-    obstacle_density = 0.0
+    suitability = 1.0
 )
-    return DroneState(distance, azimuth, elevation, suitability, obstacle_density)
+    return DroneState(distance, azimuth, elevation, suitability)
 end
 
 """
@@ -120,6 +118,42 @@ function egocentric_to_global(ego_point::SVector{3, Float64}, drone_pos::SVector
 end
 
 """
+    calculate_suitability(obstacle_distance::Float64, obstacle_density::Float64; 
+                         obstacle_weight::Float64=0.7, density_weight::Float64=0.3)::Float64
+
+Calculate environmental suitability based on obstacle distance and density.
+Higher values (closer to 1.0) indicate safer navigation conditions.
+
+Parameters:
+- obstacle_distance: Distance to nearest obstacle (meters)
+- obstacle_density: Density of obstacles in local region (0-1)
+- obstacle_weight: Weight for obstacle distance factor (default: 0.7)
+- density_weight: Weight for density factor (default: 0.3)
+
+Returns:
+- Suitability score (0-1)
+"""
+function calculate_suitability(obstacle_distance::Float64, obstacle_density::Float64; 
+                             obstacle_weight::Float64=0.7, density_weight::Float64=0.3)::Float64
+    # Safety factor increases with distance to obstacle using exponential decay
+    # exp(-1/d) approaches 1 as d increases, and approaches 0 as d approaches 0
+    safety_factor = exp(-1.0 / max(obstacle_distance, 0.1))
+    
+    # Density factor decreases with higher obstacle density using exponential
+    density_factor = exp(-5.0 * obstacle_density)
+    
+    # Combine factors with relative weights - both should be high for good suitability
+    # Ensure weights sum to 1.0 for proper scaling
+    weight_sum = obstacle_weight + density_weight
+    normalized_obstacle_weight = obstacle_weight / weight_sum
+    normalized_density_weight = density_weight / weight_sum
+    
+    suitability = normalized_obstacle_weight * safety_factor + normalized_density_weight * density_factor
+    
+    return clamp(suitability, 0.0, 1.0)  # Ensure result is between 0 and 1
+end
+
+"""
     create_state_from_observation(observation::DroneObservation)::DroneState
 
 Convert a DroneObservation to a DroneState by calculating relevant state variables.
@@ -145,26 +179,19 @@ function create_state_from_observation(observation::DroneObservation)::DroneStat
     # Negative sign because NED has positive Z pointing down
     elevation = -atan(target_ego[3], sqrt(target_ego[1]^2 + target_ego[2]^2))
     
-    # Calculate suitability with stronger target preference
+    # Get obstacle distance from observation
     obstacle_distance = isempty(observation.nearest_obstacle_distances) ? 100.0 : 
                        minimum(observation.nearest_obstacle_distances)
     
-    # Strong preference for moving towards target
-    target_preference = exp(-distance_to_target / 5.0)  # Increased preference for shorter distances
-    
-    # Safety factors
-    safety_factor = exp(-1.0 / max(obstacle_distance, 0.1))
-    density_factor = exp(-observation.obstacle_density * 5.0)
-    
-    # Combined suitability with stronger weight on target preference
-    suitability = 0.7 * target_preference + 0.3 * (safety_factor * density_factor)
+    # Calculate suitability using the standardized function
+    # Giving higher weight to obstacle distance than density
+    suitability = calculate_suitability(obstacle_distance, observation.obstacle_density)
     
     return DroneState(
         distance = distance_to_target,
         azimuth = azimuth,
         elevation = elevation,
-        suitability = suitability,
-        obstacle_density = observation.obstacle_density
+        suitability = suitability
     )
 end
 

@@ -158,39 +158,34 @@ class DroneController:
             print(f"Unexpected error running Julia scripts: {str(e)}")
             return False
     
-    def load_action_from_json(self):
-        """Load the action from the JSON file created by Julia"""
+    def check_for_obstacles(self, safety_threshold=2.0):
+        """Check if there are obstacles too close to the drone
+        
+        Args:
+            safety_threshold: Minimum safe distance to obstacles (meters)
+            
+        Returns:
+            bool: True if obstacle is detected within threshold, False otherwise
+        """
         try:
-            filepath = os.path.normpath(os.path.join(INTERFACE_DIR, "action_output.json"))
-            with open(filepath, 'r') as f:
-                action_data = json.load(f)
+            # Get updated obstacle information
+            num_obstacles, distances = self.scanner.fetch_density_distances()
             
-            # Extract the egocentric waypoint
-            egocentric_waypoint = action_data.get("next_waypoint", [1.0, 0.0, 0.0])  # Default forward 1m if missing
-            policy = action_data.get("policy", [egocentric_waypoint])
+            # Check if any obstacle is within safety threshold
+            if distances and min(distances) < safety_threshold:
+                nearest_obstacle = min(distances)
+                print(f"⚠️ OBSTACLE DETECTED at {nearest_obstacle:.2f}m! (threshold: {safety_threshold}m)")
+                return True
             
-            print(f"Loaded egocentric waypoint: {egocentric_waypoint}")
-            print(f"Full policy: {policy}")
+            return False
             
-            return egocentric_waypoint, policy
         except Exception as e:
-            print(f"Error loading action from JSON: {str(e)}. Using default action.")
-            return [1.0, 0.0, 0.0], [[1.0, 0.0, 0.0]]
-    
-    def convert_to_global_waypoint(self, egocentric_waypoint):
-        """Convert egocentric waypoint to global AirSim coordinates"""
-        # Simple conversion - just add to current position
-        # In a more advanced implementation, this would account for drone orientation
-        global_waypoint = [
-            round(self.current_position[0] + egocentric_waypoint[0], 2),
-            round(self.current_position[1] + egocentric_waypoint[1], 2),
-            round(self.current_position[2] + egocentric_waypoint[2], 2)
-        ]
-        print(f"Converted to global waypoint: {global_waypoint}")
-        return global_waypoint
+            print(f"Error checking for obstacles: {str(e)}")
+            # Assume there's an obstacle in case of error (safer)
+            return True
     
     def move_to_waypoint(self, waypoint):
-        """Command the drone to move to the specified waypoint"""
+        """Command the drone to move to the specified waypoint with obstacle avoidance"""
         print(f"Moving drone from {self.current_position} to {waypoint}")
         
         # Ensure waypoint is within simulation boundaries and round coordinates
@@ -203,8 +198,8 @@ class DroneController:
         try:
             print("Starting movement...")
             
-            # Move to waypoint using AirSim's moveToPositionAsync
-            self.client.moveToPositionAsync(
+            # Start movement asynchronously (don't join yet)
+            movement_task = self.client.moveToPositionAsync(
                 x=waypoint[0],
                 y=waypoint[1],
                 z=waypoint[2],
@@ -214,10 +209,32 @@ class DroneController:
                 yaw_mode=airsim.YawMode(is_rate=False),
                 lookahead=-1,
                 adaptive_lookahead=1
-            ).join()
+            )
+            
+            # Monitor for obstacles while the drone is moving
+            obstacle_detected = False
+            while not movement_task.is_done():
+                # Check current position
+                self.update_drone_state()
+                
+                # Check for obstacles
+                if self.check_for_obstacles(safety_threshold=2.5):
+                    print("🛑 Stopping movement due to obstacle detection!")
+                    self.client.cancelLastTask()  # Cancel the movement task
+                    self.client.hoverAsync().join()  # Hover in place
+                    obstacle_detected = True
+                    break
+                
+                # Short sleep to avoid CPU overload
+                time.sleep(0.1)
             
             # Update state after movement
             self.update_drone_state()
+            
+            # If an obstacle was detected, trigger a new planning cycle
+            if obstacle_detected:
+                print("Re-planning path due to obstacle...")
+                return "obstacle_detected"
             
             # Verify movement accuracy
             final_distance = sqrt(sum((a - b) ** 2 for a, b in zip(self.current_position, waypoint)))
@@ -226,7 +243,9 @@ class DroneController:
                 # Attempt final precision adjustment if close enough
                 if final_distance < 2.0:
                     print("Making final precision adjustment...")
-                    self.client.moveToPositionAsync(
+                    
+                    # Start precision movement
+                    precision_task = self.client.moveToPositionAsync(
                         x=waypoint[0],
                         y=waypoint[1],
                         z=waypoint[2],
@@ -236,10 +255,24 @@ class DroneController:
                         yaw_mode=airsim.YawMode(is_rate=False),
                         lookahead=-1,
                         adaptive_lookahead=1
-                    ).join()
+                    )
+                    
+                    # Monitor for obstacles during precision movement
+                    while not precision_task.is_done():
+                        # Check for obstacles
+                        if self.check_for_obstacles(safety_threshold=2.0):
+                            print("🛑 Stopping precision movement due to obstacle detection!")
+                            self.client.cancelLastTask()
+                            self.client.hoverAsync().join()
+                            return "obstacle_detected"
+                        
+                        time.sleep(0.1)
+                    
                     self.update_drone_state()
             else:
                 print(f"Successfully reached waypoint. Final position: {self.current_position}")
+                
+            return "success"
                 
         except Exception as e:
             print(f"Error during movement: {str(e)}")
@@ -247,6 +280,7 @@ class DroneController:
             print("Attempting to stabilize drone...")
             self.client.hoverAsync().join()
             self.update_drone_state()
+            return "error"
     
     def distance_to_target(self):
         """Calculate the Euclidean distance from the current position to the target"""
@@ -276,6 +310,57 @@ class DroneController:
         filepath = os.path.normpath(os.path.join(INTERFACE_DIR, "action_output.json"))
         with open(filepath, 'w') as f:
             json.dump(action, f, indent=2)
+    
+    def load_action_from_json(self):
+        """Load the next waypoint and policy from Julia's output"""
+        action_path = os.path.normpath(os.path.join(INTERFACE_DIR, "action_output.json"))
+        
+        try:
+            with open(action_path, 'r') as f:
+                action_data = json.load(f)
+                
+            next_waypoint = action_data.get("next_waypoint", [0, 0, 0])
+            policy = action_data.get("policy", [[0, 0, 0]] * POLICY_LENGTH)
+            
+            return next_waypoint, policy
+        except Exception as e:
+            print(f"Error loading action from JSON: {str(e)}")
+            # Return a small default movement in the direction of the target
+            direction = [
+                self.target_location[0] - self.current_position[0],
+                self.target_location[1] - self.current_position[1],
+                self.target_location[2] - self.current_position[2]
+            ]
+            
+            # Normalize to 0.5m step (more cautious default)
+            magnitude = sqrt(sum(d*d for d in direction))
+            if magnitude > 0:
+                direction = [d * 0.5 / magnitude for d in direction]
+                
+            return direction, [direction] * POLICY_LENGTH
+    
+    def convert_to_global_waypoint(self, egocentric_waypoint):
+        """Convert an egocentric waypoint to global coordinates
+        
+        The egocentric waypoint is relative to the drone's current position and orientation.
+        We need to transform it to global coordinates.
+        """
+        # For simplicity, we just add the egocentric vector to current position
+        # This works because egocentric waypoints are in drone's NED frame
+        global_waypoint = [
+            self.current_position[0] + egocentric_waypoint[0],
+            self.current_position[1] + egocentric_waypoint[1],
+            self.current_position[2] + egocentric_waypoint[2]
+        ]
+        
+        # Ensure waypoint is within simulation boundaries
+        global_waypoint = [
+            min(max(global_waypoint[0], -100), 100),  # X between -100 and 100
+            min(max(global_waypoint[1], -100), 100),  # Y between -100 and 100
+            min(max(global_waypoint[2], -20), 0)      # Z between -20 and 0 (remember NED)
+        ]
+        
+        return global_waypoint
 
 
 def main():
@@ -327,7 +412,18 @@ def main():
         global_waypoint = controller.convert_to_global_waypoint(egocentric_waypoint)
         
         print("🚁 Moving to waypoint...")
-        controller.move_to_waypoint(global_waypoint)
+        movement_result = controller.move_to_waypoint(global_waypoint)
+        
+        # Check if an obstacle was detected during movement
+        if movement_result == "obstacle_detected":
+            print("⚠️ Obstacle encountered! Replanning route...")
+            # No need to increment iteration - we'll retry with a fresh plan
+            continue
+        elif movement_result == "error":
+            print("⚠️ Error during movement. Replanning...")
+            # Brief pause to stabilize before replanning
+            time.sleep(1)
+            continue
         
         iteration += 1
     

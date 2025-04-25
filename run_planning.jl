@@ -47,8 +47,7 @@ function main()
         distance = state_dict["distance"],
         azimuth = state_dict["azimuth"],
         elevation = state_dict["elevation"],
-        suitability = state_dict["suitability"],
-        obstacle_density = get(state_dict, "obstacle_density", 0.0)
+        suitability = state_dict["suitability"]
     )
     
     # Get beliefs including voxel grid
