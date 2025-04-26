@@ -72,31 +72,124 @@ class ZMQInterface:
             server_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), 
                                        "actinf", "zmq_server.jl")
             
+            # Verify the script exists
+            if not os.path.isfile(server_script):
+                print(f"❌ Server script not found at: {server_script}")
+                return False
+                
+            print(f"Found server script at: {server_script}")
+            
             # Start the server process
             import subprocess
             cmd = ["julia", "--project=.", server_script]
             print(f"Starting server with command: {' '.join(cmd)}")
             
-            # Use Popen for a non-blocking call, and redirect output to prevent blocking
+            # Use Popen for a non-blocking call, but capture output
             self._server_process = subprocess.Popen(
                 cmd, 
                 stdout=subprocess.PIPE, 
                 stderr=subprocess.PIPE,
-                text=True
+                text=True,
+                bufsize=1,  # Line buffered
+                universal_newlines=True
             )
             
             # Wait for server to start up (check for status file)
             start_time = time.time()
-            while not self._is_server_running() and time.time() - start_time < 10:
+            status_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "zmq_server_running.status")
+            
+            print(f"Waiting for status file: {status_file}")
+            
+            while not os.path.isfile(status_file) and time.time() - start_time < 20:  # Longer timeout
                 time.sleep(0.5)
                 
-            if self._is_server_running():
+                # Check if process has terminated prematurely
+                if self._server_process.poll() is not None:
+                    # Process ended - get output
+                    stdout, stderr = self._server_process.communicate()
+                    print("❌ Server process terminated prematurely")
+                    print("STDOUT:")
+                    print(stdout)
+                    print("STDERR:")
+                    print(stderr)
+                    return False
+            
+            if os.path.isfile(status_file):
                 print("✅ ZMQ server started successfully")
                 # Wait a bit more to ensure the socket is bound
                 time.sleep(1.5)
                 return True
             else:
-                print("❌ Failed to start ZMQ server")
+                # Process is still running but no status file - check output
+                # Read from stdout and stderr (non-blocking)
+                stdout_data = ""
+                stderr_data = ""
+                
+                try:
+                    from queue import Queue, Empty
+                    from threading import Thread
+                    
+                    def read_output(pipe, queue):
+                        while True:
+                            line = pipe.readline()
+                            if not line:
+                                break
+                            queue.put(line)
+                        pipe.close()
+                    
+                    # Create queues and threads
+                    stdout_queue = Queue()
+                    stderr_queue = Queue()
+                    stdout_thread = Thread(target=read_output, args=(self._server_process.stdout, stdout_queue))
+                    stderr_thread = Thread(target=read_output, args=(self._server_process.stderr, stderr_queue))
+                    
+                    # Start threads
+                    stdout_thread.daemon = True
+                    stderr_thread.daemon = True
+                    stdout_thread.start()
+                    stderr_thread.start()
+                    
+                    # Read available output (non-blocking)
+                    start_read = time.time()
+                    while time.time() - start_read < 5:  # Read for up to 5 seconds
+                        try:
+                            while True:  # Read all available lines
+                                line = stdout_queue.get_nowait()
+                                stdout_data += line
+                        except Empty:
+                            pass
+                            
+                        try:
+                            while True:  # Read all available lines
+                                line = stderr_queue.get_nowait()
+                                stderr_data += line
+                        except Empty:
+                            pass
+                            
+                        if stdout_data or stderr_data:
+                            break  # We have some output
+                            
+                        time.sleep(0.1)  # Short sleep to avoid CPU spin
+                except Exception as e:
+                    print(f"Error reading process output: {e}")
+                
+                print("❌ Failed to start ZMQ server (status file not found)")
+                
+                if stdout_data:
+                    print("Server STDOUT:")
+                    print(stdout_data)
+                
+                if stderr_data:
+                    print("Server STDERR:")
+                    print(stderr_data)
+                
+                # Try to terminate the process since it didn't start correctly
+                try:
+                    self._server_process.terminate()
+                    self._server_process = None
+                except:
+                    pass
+                    
                 return False
                 
         except Exception as e:

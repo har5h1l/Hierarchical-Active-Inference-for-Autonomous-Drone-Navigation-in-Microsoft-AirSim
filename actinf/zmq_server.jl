@@ -5,19 +5,115 @@
 
 println("Starting Active Inference ZMQ Server...")
 
-# Activate project environment
-if Base.active_project() != abspath(joinpath(dirname(@__DIR__), "Project.toml"))
-    import Pkg
-    Pkg.activate(dirname(@__DIR__))
-    Pkg.develop(path=@__DIR__)  # Develop the actinf package
+# Explicit package loading with error handling
+function load_package(pkg_name)
+    try
+        println("Loading package: $pkg_name")
+        @eval import Pkg
+        try
+            # First try to use the package if it's already loaded
+            @eval using $pkg_name
+            println("✓ Successfully loaded $pkg_name")
+            return true
+        catch e
+            # If using fails, try adding and then using
+            println("⚠️ Could not load $pkg_name directly, trying to add it...")
+            try
+                Pkg.add("$pkg_name")
+                @eval using $pkg_name
+                println("✓ Successfully added and loaded $pkg_name")
+                return true
+            catch e2
+                println("❌ Failed to add and load $pkg_name: $e2")
+                return false
+            end
+        end
+    catch e
+        println("❌ Critical error with $pkg_name: $e")
+        return false
+    end
 end
 
-# Import all necessary packages
-using ZMQ
-using JSON
-using LinearAlgebra
-using StaticArrays
-using actinf
+# Ensure we can write to the status file before proceeding
+status_file_path = nothing
+try
+    # Create status file path - handle both Windows and UNIX paths
+    if Sys.iswindows()
+        # Use absolute path with proper Windows separators
+        parent_dir = dirname(dirname(abspath(@__FILE__)))
+        status_file_path = joinpath(parent_dir, "zmq_server_running.status")
+    else
+        status_file_path = joinpath(dirname(dirname(@__FILE__)), "zmq_server_running.status")
+    end
+    
+    # Test that we can write to this location
+    println("Testing if we can write status file to: $status_file_path")
+    touch(status_file_path)
+    rm(status_file_path)
+    println("✓ Status file location is writable")
+catch e
+    # Try another location if the first one fails
+    println("❌ Could not write to status file location: $e")
+    try
+        if Sys.iswindows()
+            # Try temp directory on Windows
+            status_file_path = joinpath(tempdir(), "zmq_server_running.status")
+        else
+            status_file_path = joinpath("/tmp", "zmq_server_running.status")
+        end
+        println("Trying alternative status file location: $status_file_path")
+        touch(status_file_path)
+        rm(status_file_path)
+        println("✓ Alternative status file location is writable")
+    catch e2
+        println("❌ Could not write to alternative status file location: $e2")
+        println("Will continue without status file. Client may not detect server properly.")
+        status_file_path = nothing
+    end
+end
+
+# Activate project environment
+println("Setting up Julia environment...")
+if Base.active_project() != abspath(joinpath(dirname(@__DIR__), "Project.toml"))
+    try
+        import Pkg
+        Pkg.activate(dirname(@__DIR__))
+        println("✓ Project activated")
+        try
+            Pkg.develop(path=@__DIR__)  # Develop the actinf package
+            println("✓ Actinf package developed")
+        catch e
+            println("⚠️ Could not develop actinf package: $e")
+        end
+    catch e
+        println("❌ Error activating project: $e")
+    end
+end
+
+# Check Julia version
+println("Running on Julia version: $(VERSION)")
+
+# Import all necessary packages with error handling
+packages_loaded = true
+packages_loaded &= load_package(:ZMQ)
+packages_loaded &= load_package(:JSON)
+packages_loaded &= load_package(:LinearAlgebra)
+packages_loaded &= load_package(:StaticArrays)
+
+# Load actinf package (with special handling)
+try
+    println("Loading actinf package...")
+    @eval using actinf
+    println("✓ actinf package loaded")
+except e
+    println("❌ Failed to load actinf package: $e")
+    packages_loaded = false
+end
+
+if !packages_loaded
+    println("❌ Some required packages failed to load. Cannot continue.")
+    exit(1)
+end
 
 # Define constants
 const SOCKET_ADDRESS = "tcp://*:5555"
@@ -27,6 +123,11 @@ const POLICY_LENGTH = 3  # Number of steps in the policy
 println("Server initialized with:")
 println("- Address: $SOCKET_ADDRESS")
 println("- Policy length: $POLICY_LENGTH")
+if status_file_path !== nothing
+    println("- Status file: $status_file_path")
+else
+    println("- Status file: DISABLED")
+end
 
 # Initialize beliefs as a global variable for persistence across requests
 global current_beliefs = nothing
@@ -41,7 +142,8 @@ function process_observation(observation_data::Dict)
         # Extract data with safety checks
         drone_position = SVector{3, Float64}(get(observation_data, "drone_position", [0.0, 0.0, 0.0])...)
         drone_orientation = SVector{4, Float64}(get(observation_data, "drone_orientation", [1.0, 0.0, 0.0, 0.0])...)
-        target_location = SVector{3, Float64}(get(observation_data, "target_position", [10.0, 0.0, -3.0])...)
+        target_position_key = haskey(observation_data, "target_position") ? "target_position" : "target_location"
+        target_location = SVector{3, Float64}(get(observation_data, target_position_key, [10.0, 0.0, -3.0])...)
         nearest_obstacle_distances = get(observation_data, "nearest_obstacle_distances", [100.0, 100.0])
         obstacle_density = get(observation_data, "obstacle_density", 0.0)
         
@@ -50,7 +152,7 @@ function process_observation(observation_data::Dict)
         voxel_count = length(raw_voxel_grid)
         
         # Only convert voxel grid if it's not too large (optimization)
-        max_voxels = 2000  # Reduced from 5000 for better performance
+        max_voxels = 2000
         if voxel_count > max_voxels
             println("⚠️ Large voxel grid detected ($(voxel_count) points). Sampling to $(max_voxels) points.")
             # Take a random sample to keep processing time reasonable
@@ -186,14 +288,15 @@ function run_server()
     ZMQ.setsockopt(socket, ZMQ.TCP_KEEPALIVE, 1)
     
     # Create a status file to signal that the server is running
-    status_file = joinpath(dirname(@__DIR__), "zmq_server_running.status")
-    try
-        open(status_file, "w") do f
-            write(f, "running")
+    if status_file_path !== nothing
+        try
+            open(status_file_path, "w") do f
+                write(f, "running")
+            end
+            println("Created status file: $status_file_path")
+        catch e
+            println("Warning: Could not create status file: $e")
         end
-        println("Created status file: $status_file")
-    catch e
-        println("Warning: Could not create status file: $e")
     end
     
     try
@@ -286,13 +389,15 @@ function run_server()
         ZMQ.term(context)
         
         # Remove status file
-        try
-            if isfile(status_file)
-                rm(status_file)
-                println("Removed status file")
+        if status_file_path !== nothing
+            try
+                if isfile(status_file_path)
+                    rm(status_file_path)
+                    println("Removed status file")
+                end
+            catch e
+                println("Warning: Could not remove status file: $e")
             end
-        catch e
-            println("Warning: Could not remove status file: $e")
         end
     end
 end
