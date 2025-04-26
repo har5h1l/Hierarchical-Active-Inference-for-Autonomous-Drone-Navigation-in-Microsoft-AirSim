@@ -35,7 +35,7 @@ except ImportError:
 class ZMQInterface:
     """ZeroMQ-based interface for communication with Julia inference and planning server."""
     
-    def __init__(self, server_address=ZMQ_SERVER_ADDRESS, timeout=5000, max_retries=3):
+    def __init__(self, server_address=ZMQ_SERVER_ADDRESS, timeout=30000, max_retries=3):
         """Initialize ZeroMQ client interface.
         
         Args:
@@ -50,9 +50,17 @@ class ZMQInterface:
         self._context = None
         self._socket = None
         self._connected = False
+        self._high_water_mark = 10  # Same as server
+        self._buffer_size = 8 * 1024 * 1024  # 8MB buffer size
         
         # Initialize connection
         self._setup_connection()
+        
+        # Test connection with a simple ping
+        if self._connected:
+            if not self._test_connection():
+                print("⚠️ Initial connection test failed")
+                self._reset_socket(force=True)  # Force a complete reset
     
     def _cleanup_socket(self):
         """Clean up ZMQ socket and context properly."""
@@ -71,9 +79,49 @@ class ZMQInterface:
         except Exception as e:
             print(f"Warning during socket cleanup: {str(e)}")
     
-    def _reset_socket(self):
+    def _test_connection(self):
+        """Test the connection with a simple ping to the server.
+        
+        Returns:
+            bool: True if connection is working, False otherwise
+        """
+        if not self._connected or self._socket is None:
+            return False
+            
+        try:
+            # Use shorter timeout for ping test
+            old_timeout = self._socket.getsockopt(zmq.RCVTIMEO)
+            self._socket.setsockopt(zmq.RCVTIMEO, 2000)  # 2 second timeout for ping
+            
+            print("Testing connection with ping...")
+            self._socket.send_string("ping")
+            response = self._socket.recv_string()
+            
+            # Restore original timeout
+            self._socket.setsockopt(zmq.RCVTIMEO, old_timeout)
+            
+            if response == "pong":
+                print("✅ Connection test successful")
+                return True
+            else:
+                print(f"❌ Unexpected ping response: {response}")
+                return False
+                
+        except zmq.ZMQError:
+            print("❌ Connection test failed")
+            # Restore original timeout if possible
+            try:
+                self._socket.setsockopt(zmq.RCVTIMEO, self.timeout)
+            except:
+                pass
+            return False
+    
+    def _reset_socket(self, force=False):
         """Reset the ZMQ socket to recover from an inconsistent state.
         
+        Args:
+            force: If True, always perform a complete reset regardless of socket state
+            
         This is crucial for the REQ-REP pattern where the state machine must be
         reset after errors to maintain the send-receive sequence.
         """
@@ -82,17 +130,30 @@ class ZMQInterface:
         # Clean up existing socket and context
         self._cleanup_socket()
         
-        # Wait a moment before reconnecting
-        time.sleep(0.5)
+        # Wait a moment before reconnecting - longer pause for better stability
+        time.sleep(1.0)
         
-        # Create new context and socket
-        self._context = zmq.Context()
+        # Create new context with IO threads for better performance
+        self._context = zmq.Context(io_threads=2)
         self._socket = self._context.socket(zmq.REQ)
         
         # Set socket options
         self._socket.setsockopt(zmq.LINGER, 0)  # Don't wait for unsent messages on close
         self._socket.setsockopt(zmq.RCVTIMEO, self.timeout)
         self._socket.setsockopt(zmq.SNDTIMEO, self.timeout)
+        
+        # Set high water mark to prevent memory issues with large messages
+        self._socket.setsockopt(zmq.RCVHWM, self._high_water_mark)
+        self._socket.setsockopt(zmq.SNDHWM, self._high_water_mark)
+        
+        # Set larger buffer sizes for large messages
+        self._socket.setsockopt(zmq.RCVBUF, self._buffer_size)
+        self._socket.setsockopt(zmq.SNDBUF, self._buffer_size)
+        
+        # Enable keep-alive for better detection of server disconnects
+        self._socket.setsockopt(zmq.TCP_KEEPALIVE, 1)
+        self._socket.setsockopt(zmq.TCP_KEEPALIVE_IDLE, 120)
+        self._socket.setsockopt(zmq.TCP_KEEPALIVE_INTVL, 60)
         
         # Reconnect
         try:
@@ -107,31 +168,30 @@ class ZMQInterface:
     
     def _setup_connection(self):
         """Set up the ZMQ connection with proper context and socket."""
-        try:
-            # Clean up any existing socket and context
-            self._cleanup_socket()
+        # This is just a wrapper around reset_socket for the initial connection
+        return self._reset_socket(force=True)
+    
+    def _reduce_voxel_grid(self, observation, max_voxels=2000):
+        """Reduce the size of the voxel grid if it's too large.
+        
+        This improves performance by sending fewer obstacle points.
+        
+        Args:
+            observation: The observation dictionary
+            max_voxels: Maximum number of voxels to include
             
-            # Create new context and socket
-            self._context = zmq.Context()
-            self._socket = self._context.socket(zmq.REQ)
-            
-            # Set timeout to avoid hanging indefinitely
-            self._socket.setsockopt(zmq.LINGER, 0)
-            self._socket.setsockopt(zmq.RCVTIMEO, self.timeout)
-            self._socket.setsockopt(zmq.SNDTIMEO, self.timeout)
-            
-            # Connect to the server
-            print(f"Connecting to ZMQ server at {self.server_address}...")
-            self._socket.connect(self.server_address)
-            
-            self._connected = True
-            print("✅ Connected to ZMQ server")
-            return True
-            
-        except Exception as e:
-            print(f"❌ Error setting up ZMQ connection: {str(e)}")
-            self._connected = False
-            return False
+        Returns:
+            Modified observation with reduced voxel grid
+        """
+        if "voxel_grid" in observation and len(observation["voxel_grid"]) > max_voxels:
+            original_count = len(observation["voxel_grid"])
+            # Take random sample to reduce size but maintain coverage
+            import random
+            indices = random.sample(range(original_count), max_voxels)
+            observation["voxel_grid"] = [observation["voxel_grid"][i] for i in indices]
+            print(f"⚙️ Reduced voxel grid from {original_count} to {max_voxels} points")
+        
+        return observation
     
     def send_observation_and_receive_action(self, observation):
         """Send observation to Julia server and receive inferred state and planned action.
@@ -160,21 +220,39 @@ class ZMQInterface:
         # Ensure target_position key is used instead of target_location
         if "target_location" in observation and "target_position" not in observation:
             observation["target_position"] = observation.pop("target_location")
-            
-        # Convert observation to JSON string
+        
+        # Optimize message size by reducing voxel grid if necessary
+        observation = self._reduce_voxel_grid(observation)
+        
+        # Convert observation to JSON string once, outside the retry loop
         obs_json = json.dumps(observation)
+        msg_size = len(obs_json) / 1024  # Size in KB
         
         # Try to send observation and receive response
         for attempt in range(self.max_retries):
             try:
                 # Send observation
-                print(f"📤 Sending observation data ({len(obs_json)} bytes)...")
+                print(f"📤 Sending observation data ({round(msg_size, 1)} KB)...")
                 self._socket.send_string(obs_json)
                 
-                # Receive response
-                print("⏳ Waiting for response...")
+                # Receive response with a longer timeout for first attempt
+                if attempt == 0:
+                    # First attempt gets a longer timeout for processing
+                    original_timeout = self._socket.getsockopt(zmq.RCVTIMEO)
+                    self._socket.setsockopt(zmq.RCVTIMEO, 60000)  # 60 seconds for first try
+                    print(f"⏳ Waiting for response (timeout: 60s)...")
+                else:
+                    print(f"⏳ Waiting for response (timeout: {self.timeout/1000}s)...")
+                
+                # Receive the response
                 response_json = self._socket.recv_string()
-                print(f"📥 Received response ({len(response_json)} bytes)")
+                
+                # Reset timeout to original value if we changed it
+                if attempt == 0:
+                    self._socket.setsockopt(zmq.RCVTIMEO, original_timeout)
+                
+                resp_size = len(response_json) / 1024  # Size in KB
+                print(f"📥 Received response ({round(resp_size, 1)} KB)")
                 
                 # Parse response
                 response = json.loads(response_json)
@@ -188,7 +266,7 @@ class ZMQInterface:
                 expected_state = response.get("expected_state", default_state)
                 action = response.get("action", default_action)
                 
-                print(f"✅ Received action: {action}")
+                print(f"✅ Received action: {[round(x, 3) for x in action]}")
                 return expected_state, action
                 
             except zmq.ZMQError as e:
@@ -206,11 +284,17 @@ class ZMQInterface:
                 # Always reset the socket on ZMQ errors
                 if attempt < self.max_retries - 1:
                     # Complete socket reset is necessary for REQ-REP pattern after errors
-                    success = self._reset_socket()
+                    success = self._reset_socket(force=True)
                     if not success:
                         print("❌ Failed to reset socket, cannot continue")
                         break
-                    time.sleep(1)  # Wait before retrying
+                    
+                    # Test the new connection
+                    if not self._test_connection():
+                        print("❌ Connection test failed after reset")
+                    
+                    # Wait longer between retries for better stability
+                    time.sleep(2)  # Longer wait between retries
                 
             except Exception as e:
                 print(f"❌ Unexpected error during attempt {attempt+1}/{self.max_retries}: {str(e)}")
@@ -218,7 +302,7 @@ class ZMQInterface:
                 if attempt < self.max_retries - 1:
                     print("🔄 Retrying with fresh connection...")
                     self._setup_connection()
-                    time.sleep(1)  # Wait before retrying
+                    time.sleep(2)  # Longer wait between retries
         
         # If all attempts failed
         print("❌ All attempts to communicate with the server failed")
