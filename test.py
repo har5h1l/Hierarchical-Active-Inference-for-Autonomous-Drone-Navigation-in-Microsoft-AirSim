@@ -239,7 +239,38 @@ class DroneController:
             obstacle_detected = False
             check_interval = 0.1  # Check every 100ms
             
-            while not movement_task.is_done():
+            # Monitor movement until completion or obstacle detection
+            start_time = time.time()
+            previous_position = self.current_position.copy()
+            movement_complete = False
+            
+            while not movement_complete:
+                # Sleep to avoid CPU overload
+                time.sleep(check_interval)
+                
+                # Update current position
+                self.update_drone_state()
+                
+                # Check if we've reached the destination
+                current_distance_to_waypoint = sqrt(sum((a - b) ** 2 for a, b in zip(self.current_position, waypoint)))
+                
+                # Check for movement progress
+                distance_moved = sqrt(sum((a - b) ** 2 for a, b in zip(self.current_position, previous_position)))
+                previous_position = self.current_position.copy()
+                
+                # Determine if movement is complete by checking:
+                # 1. If we're very close to the target
+                # 2. Or if we've stopped moving for a while
+                if current_distance_to_waypoint < 0.5:  # Within 0.5m of target
+                    movement_complete = True
+                elif time.time() - start_time > 15:  # Timeout after 15 seconds
+                    print("Movement timed out")
+                    movement_complete = True
+                elif distance_moved < 0.01 and time.time() - start_time > 2:  # Stopped moving
+                    # Only consider it complete if we've been trying for at least 2 seconds
+                    # and haven't moved more than 1cm recently
+                    movement_complete = True
+                
                 # Check for obstacles
                 if self.check_for_obstacles(safety_threshold=2.5):
                     print("🛑 Stopping movement due to obstacle detection!")
@@ -247,12 +278,10 @@ class DroneController:
                     self.client.hoverAsync().join()  # Hover in place
                     obstacle_detected = True
                     break
-                
-                # Short sleep to avoid CPU overload
-                time.sleep(check_interval)
-                
-                # Update current position
-                self.update_drone_state()
+            
+            # Wait for any pending movement to settle
+            if not obstacle_detected:
+                self.client.hoverAsync().join()
             
             # Update state after movement
             self.update_drone_state()
@@ -284,24 +313,43 @@ class DroneController:
                     )
                     
                     # Monitor for obstacles during precision movement
-                    while not precision_task.is_done():
+                    start_time = time.time()
+                    previous_position = self.current_position.copy()
+                    movement_complete = False
+                    
+                    while not movement_complete:
+                        # Sleep to avoid CPU overload
+                        time.sleep(check_interval)
+                        
+                        # Update current position
+                        self.update_drone_state()
+                        
+                        # Calculate distance to target and movement rate
+                        current_distance_to_waypoint = sqrt(sum((a - b) ** 2 for a, b in zip(self.current_position, waypoint)))
+                        distance_moved = sqrt(sum((a - b) ** 2 for a, b in zip(self.current_position, previous_position)))
+                        previous_position = self.current_position.copy()
+                        
+                        # Check if movement is complete
+                        if current_distance_to_waypoint < 0.3:  # Closer threshold for precision
+                            movement_complete = True
+                        elif time.time() - start_time > 10:  # Timeout after 10 seconds
+                            print("Precision movement timed out")
+                            movement_complete = True
+                        elif distance_moved < 0.005 and time.time() - start_time > 2:  # Stopped moving (smaller threshold)
+                            movement_complete = True
+                        
                         # Check for obstacles
                         if self.check_for_obstacles(safety_threshold=2.0):
                             print("🛑 Stopping precision movement due to obstacle detection!")
                             self.client.cancelLastTask()
                             self.client.hoverAsync().join()
                             return "obstacle_detected"
-                        
-                        # Short sleep to avoid CPU overload
-                        time.sleep(check_interval)
-                        
-                        # Update current position
-                        self.update_drone_state()
                     
+                    # Ensure final stabilization
+                    self.client.hoverAsync().join()
                     self.update_drone_state()
-            else:
-                print(f"Successfully reached waypoint. Final position: {self.current_position}")
-                
+            
+            print(f"Successfully reached waypoint. Final position: {self.current_position}")
             return "success"
                 
         except Exception as e:
