@@ -237,23 +237,22 @@ class DroneController:
             
             # Monitor for obstacles while the drone is moving
             obstacle_detected = False
-            while True:
-                try:
-                    # Try to join with a short timeout
-                    movement_task.join(timeout_sec=0.1)
-                    # If we get here, the movement is complete
+            check_interval = 0.1  # Check every 100ms
+            
+            while not movement_task.is_done():
+                # Check for obstacles
+                if self.check_for_obstacles(safety_threshold=2.5):
+                    print("🛑 Stopping movement due to obstacle detection!")
+                    self.client.cancelLastTask()  # Cancel the movement task
+                    self.client.hoverAsync().join()  # Hover in place
+                    obstacle_detected = True
                     break
-                except TimeoutError:
-                    # Check current position
-                    self.update_drone_state()
-                    
-                    # Check for obstacles
-                    if self.check_for_obstacles(safety_threshold=2.5):
-                        print("🛑 Stopping movement due to obstacle detection!")
-                        self.client.cancelLastTask()  # Cancel the movement task
-                        self.client.hoverAsync().join()  # Hover in place
-                        obstacle_detected = True
-                        break
+                
+                # Short sleep to avoid CPU overload
+                time.sleep(check_interval)
+                
+                # Update current position
+                self.update_drone_state()
             
             # Update state after movement
             self.update_drone_state()
@@ -285,19 +284,19 @@ class DroneController:
                     )
                     
                     # Monitor for obstacles during precision movement
-                    while True:
-                        try:
-                            # Try to join with a short timeout
-                            precision_task.join(timeout_sec=0.1)
-                            # If we get here, the movement is complete
-                            break
-                        except TimeoutError:
-                            # Check for obstacles
-                            if self.check_for_obstacles(safety_threshold=2.0):
-                                print("🛑 Stopping precision movement due to obstacle detection!")
-                                self.client.cancelLastTask()
-                                self.client.hoverAsync().join()
-                                return "obstacle_detected"
+                    while not precision_task.is_done():
+                        # Check for obstacles
+                        if self.check_for_obstacles(safety_threshold=2.0):
+                            print("🛑 Stopping precision movement due to obstacle detection!")
+                            self.client.cancelLastTask()
+                            self.client.hoverAsync().join()
+                            return "obstacle_detected"
+                        
+                        # Short sleep to avoid CPU overload
+                        time.sleep(check_interval)
+                        
+                        # Update current position
+                        self.update_drone_state()
                     
                     self.update_drone_state()
             else:
