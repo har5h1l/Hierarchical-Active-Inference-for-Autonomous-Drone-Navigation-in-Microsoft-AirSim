@@ -15,6 +15,7 @@ println("Importing and precompiling packages...")
     using JSON
     using LinearAlgebra
     using StaticArrays
+    using ZMQ
     using actinf
 end
 
@@ -57,6 +58,13 @@ println("Precompiling specific functionality...")
         obstacle_distance=10.0,
         obstacle_density=0.0
     )
+    
+    # ZMQ precompilation
+    println("Precompiling ZMQ functionality...")
+    dummy_context = ZMQ.Context()
+    dummy_socket = ZMQ.Socket(dummy_context, ZMQ.REP)
+    ZMQ.close(dummy_socket)
+    ZMQ.term(dummy_context)
 end
 
 println("Precompilation complete! All Julia components are ready for execution.")

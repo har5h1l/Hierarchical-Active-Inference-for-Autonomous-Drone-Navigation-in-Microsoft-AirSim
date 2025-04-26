@@ -5,6 +5,7 @@ import os
 import json
 import subprocess
 import sys
+import zmq
 from math import sqrt
 from os import path
 
@@ -18,6 +19,7 @@ ARRIVAL_THRESHOLD = 1.0  # Distance in meters to consider target reached
 MAX_ITERATIONS = 50  # Maximum number of iterations before stopping
 INTERFACE_DIR = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "interface"))
 JULIA_PATH = "julia --project=."  # Path to Julia executable with project environment
+ZMQ_SERVER_ADDRESS = "tcp://localhost:5555"  # ZeroMQ server address
 
 # Add the airsim directory to the Python path
 sys.path.append(path.join(path.dirname(path.abspath(__file__)), 'airsim'))
@@ -27,7 +29,147 @@ try:
     from Sensory_Input_Processing import EnvironmentScanner
 except ImportError:
     # Try with the original filename if renamed file not found
-    from airsim.EnvironmentScanner import EnvironmentScanner
+    from airsim.Sensory_Input_Processing import EnvironmentScanner
+
+
+class ZMQInterface:
+    """ZeroMQ-based interface for communication with Julia inference and planning server."""
+    
+    def __init__(self, server_address=ZMQ_SERVER_ADDRESS, timeout=5000, max_retries=3):
+        """Initialize ZeroMQ client interface.
+        
+        Args:
+            server_address: Address of the ZMQ server
+            timeout: Socket timeout in milliseconds
+            max_retries: Maximum number of connection retries
+        """
+        self.server_address = server_address
+        self.timeout = timeout
+        self.max_retries = max_retries
+        
+        self._context = None
+        self._socket = None
+        self._connected = False
+        
+        # Initialize connection
+        self._setup_connection()
+    
+    def _setup_connection(self):
+        """Set up the ZMQ connection with proper context and socket."""
+        try:
+            # Create new context and socket
+            if self._context is not None:
+                self._context.term()
+                
+            self._context = zmq.Context()
+            self._socket = self._context.socket(zmq.REQ)
+            
+            # Set timeout to avoid hanging indefinitely
+            self._socket.setsockopt(zmq.LINGER, 0)
+            self._socket.setsockopt(zmq.RCVTIMEO, self.timeout)
+            self._socket.setsockopt(zmq.SNDTIMEO, self.timeout)
+            
+            # Connect to the server
+            print(f"Connecting to ZMQ server at {self.server_address}...")
+            self._socket.connect(self.server_address)
+            
+            self._connected = True
+            print("✅ Connected to ZMQ server")
+            return True
+            
+        except Exception as e:
+            print(f"❌ Error setting up ZMQ connection: {str(e)}")
+            self._connected = False
+            return False
+    
+    def send_observation_and_receive_action(self, observation):
+        """Send observation to Julia server and receive inferred state and planned action.
+        
+        Args:
+            observation: Dictionary containing drone observation data
+            
+        Returns:
+            Tuple of (expected_state, action) if successful, or (None, default_action) if failed
+        """
+        if not self._connected:
+            # Try to reconnect if not connected
+            if not self._setup_connection():
+                print("❌ Not connected to ZMQ server and reconnection failed")
+                return None, [0.0, 0.0, 0.0]
+        
+        # Default values in case of failure
+        default_state = {
+            "distance": 10.0,
+            "azimuth": 0.0,
+            "elevation": 0.0,
+            "suitability": 0.5
+        }
+        default_action = [0.0, 0.0, 0.0]
+        
+        # Ensure target_position key is used instead of target_location
+        if "target_location" in observation and "target_position" not in observation:
+            observation["target_position"] = observation.pop("target_location")
+            
+        # Try to send observation and receive response
+        for attempt in range(self.max_retries):
+            try:
+                # Convert observation to JSON string
+                obs_json = json.dumps(observation)
+                
+                # Send observation
+                print(f"📤 Sending observation data ({len(obs_json)} bytes)...")
+                self._socket.send_string(obs_json)
+                
+                # Receive response
+                print("⏳ Waiting for response...")
+                response_json = self._socket.recv_string()
+                print(f"📥 Received response ({len(response_json)} bytes)")
+                
+                # Parse response
+                response = json.loads(response_json)
+                
+                # Check for errors in the response
+                if "error" in response:
+                    print(f"⚠️ Error from server: {response['error']}")
+                    return default_state, response.get("action", default_action)
+                
+                # Extract expected state and action
+                expected_state = response.get("expected_state", default_state)
+                action = response.get("action", default_action)
+                
+                print(f"✅ Received action: {action}")
+                return expected_state, action
+                
+            except zmq.ZMQError as e:
+                print(f"❌ ZMQ error during attempt {attempt+1}/{self.max_retries}: {str(e)}")
+                
+                # Reset connection
+                if attempt < self.max_retries - 1:
+                    print("🔄 Resetting connection...")
+                    self._setup_connection()
+                    time.sleep(1)  # Wait before retrying
+                
+            except Exception as e:
+                print(f"❌ Unexpected error during attempt {attempt+1}/{self.max_retries}: {str(e)}")
+                
+                if attempt < self.max_retries - 1:
+                    print("🔄 Retrying...")
+                    time.sleep(1)  # Wait before retrying
+        
+        # If all attempts failed
+        print("❌ All attempts to communicate with the server failed")
+        return default_state, default_action
+    
+    def close(self):
+        """Close the ZMQ connection."""
+        try:
+            if self._socket is not None:
+                self._socket.close()
+            if self._context is not None:
+                self._context.term()
+            print("✅ ZMQ connection closed")
+        except Exception as e:
+            print(f"❌ Error closing ZMQ connection: {str(e)}")
 
 
 class DroneController:
@@ -445,87 +587,91 @@ def main():
     print("Starting autonomous drone navigation test...")
     print(f"Target location: {TARGET_LOCATION}")
     
-    # Ensure interface directory exists
-    os.makedirs(INTERFACE_DIR, exist_ok=True)
-    
-    # Check if Julia scripts exist, otherwise use dummy actions
-    use_julia = os.path.exists("./run_inference.jl") and os.path.exists("./run_planning.jl")
-    
     # Initialize drone controller
     controller = DroneController()
     
-    # Precompile Julia components before starting navigation
-    if use_julia:
-        if not os.path.exists("./precompile.jl"):
-            print("⚠️ Warning: precompile.jl script not found. Performance may be affected.")
-        else:
-            # Run precompilation once before navigation starts
-            if not controller.precompile_julia_components():
-                print("⚠️ Warning: Julia precompilation had errors. Continuing anyway.")
+    # Initialize ZMQ Interface
+    zmq_interface = None
     
-    # Reset AirSim and take off
-    controller.reset_and_takeoff()
-    
-    iteration = 0
-    while iteration < MAX_ITERATIONS:
-        print(f"\n--- Iteration {iteration + 1} ---")
+    try:
+        # Reset AirSim and take off
+        controller.reset_and_takeoff()
         
-        # Check if we've reached the target
-        distance_to_target = controller.distance_to_target()
-        print(f"Distance to target: {distance_to_target:.2f} meters")
-        if distance_to_target < ARRIVAL_THRESHOLD:
-            print("🎯 Target reached! Test complete.")
-            break
+        # Initialize ZMQ interface for communication with Julia server
+        print("Initializing ZeroMQ interface...")
+        zmq_interface = ZMQInterface()
         
-        # 1. Collect sensor data
-        print("📡 Collecting sensor data...")
-        observation = controller.collect_sensor_data()
+        iteration = 0
+        while iteration < MAX_ITERATIONS:
+            print(f"\n--- Iteration {iteration + 1} ---")
+            
+            # Check if we've reached the target
+            distance_to_target = controller.distance_to_target()
+            print(f"Distance to target: {distance_to_target:.2f} meters")
+            if distance_to_target < ARRIVAL_THRESHOLD:
+                print("🎯 Target reached! Test complete.")
+                break
+            
+            # 1. Collect sensor data
+            print("📡 Collecting sensor data...")
+            observation = controller.collect_sensor_data()
+            
+            # 2. Send observation to Julia server via ZMQ and receive expected state and action
+            print("🧠 Sending observation to ZMQ server for processing...")
+            expected_state, egocentric_waypoint = zmq_interface.send_observation_and_receive_action(observation)
+            
+            # If ZMQ communication failed, use local fallback (create a minimal action toward target)
+            if expected_state is None:
+                print("⚠️ ZMQ communication failed, using local fallback action")
+                # Generate a simple direct vector to target as fallback
+                direction = [
+                    controller.target_location[0] - controller.current_position[0],
+                    controller.target_location[1] - controller.current_position[1],
+                    controller.target_location[2] - controller.current_position[2]
+                ]
+                
+                # Normalize to 0.5m step (more cautious default)
+                magnitude = sqrt(sum(d*d for d in direction))
+                if magnitude > 0:
+                    egocentric_waypoint = [d * 0.5 / magnitude for d in direction]
+                else:
+                    egocentric_waypoint = [0.0, 0.0, 0.0]  # Hover in place
+            
+            # 3. Convert to global coordinates and move the drone
+            print("🌐 Converting to global coordinates...")
+            global_waypoint = controller.convert_to_global_waypoint(egocentric_waypoint)
+            
+            print(f"🚁 Moving to waypoint: {global_waypoint}")
+            movement_result = controller.move_to_waypoint(global_waypoint)
+            
+            # Check if an obstacle was detected during movement
+            if movement_result == "obstacle_detected":
+                print("⚠️ Obstacle encountered! Replanning route...")
+                # No need to increment iteration - we'll retry with a fresh plan
+                continue
+            elif movement_result == "error":
+                print("⚠️ Error during movement. Replanning...")
+                # Brief pause to stabilize before replanning
+                time.sleep(1)
+                continue
+            
+            iteration += 1
         
-        # 2. Save observation to JSON for Julia
-        print("📤 Saving observation data...")
-        controller.save_observation_to_json(observation)
+        if iteration >= MAX_ITERATIONS:
+            print("⚠️ Maximum iterations reached without finding target.")
         
-        # 3. Run Julia inference and planning (or simulate it)
-        print("🧠 Running inference and planning...")
-        if use_julia:
-            controller.run_julia_inference_and_planning()
-        else:
-            print("Julia scripts not found, using dummy action generator")
-            controller.create_dummy_action_output()
+    finally:
+        # Cleanup ZMQ connection if it was initialized
+        if zmq_interface is not None:
+            print("Closing ZMQ connection...")
+            zmq_interface.close()
         
-        # 4. Load the next waypoint from Julia's output
-        print("📬 Loading next waypoint...")
-        egocentric_waypoint, policy = controller.load_action_from_json()
-        
-        # 5. Convert to global coordinates and move the drone
-        print("🌐 Converting to global coordinates...")
-        global_waypoint = controller.convert_to_global_waypoint(egocentric_waypoint)
-        
-        print("🚁 Moving to waypoint...")
-        movement_result = controller.move_to_waypoint(global_waypoint)
-        
-        # Check if an obstacle was detected during movement
-        if movement_result == "obstacle_detected":
-            print("⚠️ Obstacle encountered! Replanning route...")
-            # No need to increment iteration - we'll retry with a fresh plan
-            continue
-        elif movement_result == "error":
-            print("⚠️ Error during movement. Replanning...")
-            # Brief pause to stabilize before replanning
-            time.sleep(1)
-            continue
-        
-        iteration += 1
-    
-    if iteration >= MAX_ITERATIONS:
-        print("⚠️ Maximum iterations reached without finding target.")
-    
-    # Land the drone
-    print("Landing drone...")
-    controller.client.landAsync().join()
-    controller.client.armDisarm(False)
-    controller.client.enableApiControl(False)
-    print("Test completed.")
+        # Land the drone
+        print("Landing drone...")
+        controller.client.landAsync().join()
+        controller.client.armDisarm(False)
+        controller.client.enableApiControl(False)
+        print("Test completed.")
 
 
 if __name__ == "__main__":
