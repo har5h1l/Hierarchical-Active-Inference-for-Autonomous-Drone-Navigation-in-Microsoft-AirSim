@@ -54,13 +54,64 @@ class ZMQInterface:
         # Initialize connection
         self._setup_connection()
     
+    def _cleanup_socket(self):
+        """Clean up ZMQ socket and context properly."""
+        try:
+            if self._socket is not None:
+                self._socket.close()
+                self._socket = None
+                print("Socket closed")
+                
+            # Only terminate context if we're creating a new one
+            if self._context is not None:
+                self._context.term()
+                self._context = None
+                print("ZMQ context terminated")
+                
+        except Exception as e:
+            print(f"Warning during socket cleanup: {str(e)}")
+    
+    def _reset_socket(self):
+        """Reset the ZMQ socket to recover from an inconsistent state.
+        
+        This is crucial for the REQ-REP pattern where the state machine must be
+        reset after errors to maintain the send-receive sequence.
+        """
+        print("🔄 Resetting ZMQ socket...")
+        
+        # Clean up existing socket and context
+        self._cleanup_socket()
+        
+        # Wait a moment before reconnecting
+        time.sleep(0.5)
+        
+        # Create new context and socket
+        self._context = zmq.Context()
+        self._socket = self._context.socket(zmq.REQ)
+        
+        # Set socket options
+        self._socket.setsockopt(zmq.LINGER, 0)  # Don't wait for unsent messages on close
+        self._socket.setsockopt(zmq.RCVTIMEO, self.timeout)
+        self._socket.setsockopt(zmq.SNDTIMEO, self.timeout)
+        
+        # Reconnect
+        try:
+            self._socket.connect(self.server_address)
+            self._connected = True
+            print("✅ Socket reset and reconnected")
+            return True
+        except Exception as e:
+            print(f"❌ Failed to reconnect after socket reset: {str(e)}")
+            self._connected = False
+            return False
+    
     def _setup_connection(self):
         """Set up the ZMQ connection with proper context and socket."""
         try:
+            # Clean up any existing socket and context
+            self._cleanup_socket()
+            
             # Create new context and socket
-            if self._context is not None:
-                self._context.term()
-                
             self._context = zmq.Context()
             self._socket = self._context.socket(zmq.REQ)
             
@@ -110,12 +161,12 @@ class ZMQInterface:
         if "target_location" in observation and "target_position" not in observation:
             observation["target_position"] = observation.pop("target_location")
             
+        # Convert observation to JSON string
+        obs_json = json.dumps(observation)
+        
         # Try to send observation and receive response
         for attempt in range(self.max_retries):
             try:
-                # Convert observation to JSON string
-                obs_json = json.dumps(observation)
-                
                 # Send observation
                 print(f"📤 Sending observation data ({len(obs_json)} bytes)...")
                 self._socket.send_string(obs_json)
@@ -141,19 +192,32 @@ class ZMQInterface:
                 return expected_state, action
                 
             except zmq.ZMQError as e:
-                print(f"❌ ZMQ error during attempt {attempt+1}/{self.max_retries}: {str(e)}")
+                err_num = getattr(e, 'errno', None)
                 
-                # Reset connection
+                # Handle specific errors
+                if err_num == zmq.EAGAIN:  # Resource temporarily unavailable
+                    print(f"❌ ZMQ timeout during attempt {attempt+1}/{self.max_retries}: {str(e)}")
+                    print("Socket is in an inconsistent state (EAGAIN error)")
+                elif err_num == zmq.ETERM:  # Context was terminated
+                    print(f"❌ ZMQ context terminated during attempt {attempt+1}/{self.max_retries}")
+                else:
+                    print(f"❌ ZMQ error during attempt {attempt+1}/{self.max_retries}: {str(e)}")
+                
+                # Always reset the socket on ZMQ errors
                 if attempt < self.max_retries - 1:
-                    print("🔄 Resetting connection...")
-                    self._setup_connection()
+                    # Complete socket reset is necessary for REQ-REP pattern after errors
+                    success = self._reset_socket()
+                    if not success:
+                        print("❌ Failed to reset socket, cannot continue")
+                        break
                     time.sleep(1)  # Wait before retrying
                 
             except Exception as e:
                 print(f"❌ Unexpected error during attempt {attempt+1}/{self.max_retries}: {str(e)}")
                 
                 if attempt < self.max_retries - 1:
-                    print("🔄 Retrying...")
+                    print("🔄 Retrying with fresh connection...")
+                    self._setup_connection()
                     time.sleep(1)  # Wait before retrying
         
         # If all attempts failed
@@ -163,10 +227,7 @@ class ZMQInterface:
     def close(self):
         """Close the ZMQ connection."""
         try:
-            if self._socket is not None:
-                self._socket.close()
-            if self._context is not None:
-                self._context.term()
+            self._cleanup_socket()
             print("✅ ZMQ connection closed")
         except Exception as e:
             print(f"❌ Error closing ZMQ connection: {str(e)}")
