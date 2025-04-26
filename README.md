@@ -1,4 +1,4 @@
-# Autonomous Drone Navigation in AirSim With Active Inference
+# Hierarchical Active Inference for Autonomous Drone Navigation in Microsoft AirSim with Environmentally Aware Adaptive Planning
 
 This project implements autonomous drone navigation in the AirSim simulator using Active Inference, a computational framework based on the Free Energy Principle. The system interfaces AirSim with Julia for probabilistic inference using RxInfer.jl.
 
