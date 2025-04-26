@@ -13,18 +13,28 @@ using LinearAlgebra
 using StaticArrays
 using actinf
 
-# Constants and parameters
-const INTERFACE_DIR = abspath(joinpath(@__DIR__, "interface"))
-const OBS_INPUT_PATH = abspath(joinpath(INTERFACE_DIR, "obs_input.json"))
-const INFERRED_STATE_PATH = abspath(joinpath(INTERFACE_DIR, "inferred_state.json"))
+# Constants and parameters with more robust path handling for cross-platform compatibility
+const INTERFACE_DIR = joinpath(@__DIR__, "interface")
+const OBS_INPUT_PATH = joinpath(INTERFACE_DIR, "obs_input.json")
+const INFERRED_STATE_PATH = joinpath(INTERFACE_DIR, "inferred_state.json")
 
 # Make sure interface directory exists and is writable
 try
-    mkpath(INTERFACE_DIR)
-    # Test write access by touching the file
-    touch(INFERRED_STATE_PATH)
+    # Create the directory if it doesn't exist
+    if !isdir(INTERFACE_DIR)
+        mkpath(INTERFACE_DIR)
+        println("Created interface directory: $INTERFACE_DIR")
+    end
+    
+    # Test write access by touching the file - safer approach
+    temp_file = joinpath(INTERFACE_DIR, "test_write_access.tmp")
+    touch(temp_file)
+    if isfile(temp_file)
+        rm(temp_file)  # Clean up the test file if successful
+    end
 catch e
-    error("Failed to create or access interface directory: $e")
+    println("Warning: Issue with interface directory: $e")
+    # Don't error out, let's try to continue and create the directory in the write section
 end
 
 function main()
@@ -73,15 +83,19 @@ function main()
     println("\nUpdating belief state...")
     beliefs = try
         if isfile(INFERRED_STATE_PATH)
+            println("Found existing inferred state file: $INFERRED_STATE_PATH")
             prev_beliefs_json = JSON.parsefile(INFERRED_STATE_PATH)
             prev_beliefs = haskey(prev_beliefs_json, "beliefs") ? 
                           deserialize_beliefs(prev_beliefs_json["beliefs"]) :
                           initialize_beliefs(current_state, voxel_grid=voxel_grid)
             update_beliefs!(prev_beliefs, current_state; voxel_grid=voxel_grid, obstacle_density=obstacle_density)
         else
+            println("No existing inferred state file, initializing new beliefs")
             initialize_beliefs(current_state, voxel_grid=voxel_grid, obstacle_density=obstacle_density)
         end
     catch e
+        println("Error loading previous beliefs: $e")
+        println("Initializing new beliefs")
         # If there's any error reading/parsing previous beliefs, initialize new ones
         initialize_beliefs(current_state, voxel_grid=voxel_grid, obstacle_density=obstacle_density)
     end
@@ -128,17 +142,46 @@ function main()
         "voxel_count" => length(voxel_grid)
     )
     
-    # Write to file with error handling
+    # Write to file with robust error handling
     try
-        # Write JSON data without encoding parameter
+        # Make sure the directory exists again right before writing
+        if !isdir(INTERFACE_DIR)
+            mkpath(INTERFACE_DIR)
+            println("Created interface directory before writing: $INTERFACE_DIR")
+        end
+        
+        println("Writing inferred state to: $INFERRED_STATE_PATH")
         open(INFERRED_STATE_PATH, "w") do f
             JSON.print(f, output_data)
         end
+        
+        # Verify the file was written
+        if isfile(INFERRED_STATE_PATH)
+            println("Successfully wrote inferred state file")
+        else
+            println("Warning: File writing seemed to succeed but file doesn't exist")
+        end
     catch e
-        # If writing fails, try to recreate directory and retry once
-        mkpath(dirname(INFERRED_STATE_PATH))
-        open(INFERRED_STATE_PATH, "w") do f
-            JSON.print(f, output_data)
+        println("Error during first write attempt: $e")
+        try
+            # Try a different approach as fallback
+            mkpath(dirname(INFERRED_STATE_PATH))
+            println("Retrying write with alternative approach...")
+            
+            # Write directly without using a function
+            file = open(INFERRED_STATE_PATH, "w")
+            JSON.print(file, output_data)
+            close(file)
+            
+            println("Alternative write approach completed")
+        catch e2
+            println("Fatal error writing to file: $e2")
+            # Try one last approach with a different filename
+            fallback_path = joinpath(dirname(@__FILE__), "inferred_state_fallback.json")
+            println("Trying last resort to $fallback_path")
+            open(fallback_path, "w") do f
+                JSON.print(f, output_data)
+            end
         end
     end
 end
