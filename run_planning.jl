@@ -1,19 +1,16 @@
 #!/usr/bin/env julia
 
-# Activate the project environment
-import Pkg
-println("Activating project environment...")
-Pkg.activate(@__DIR__)
-Pkg.develop(path=joinpath(@__DIR__, "actinf"))
-println("Installing dependencies...")
-Pkg.instantiate()
+# Activate the project environment if needed
+if Base.active_project() != abspath(joinpath(@__DIR__, "Project.toml"))
+    import Pkg
+    Pkg.activate(@__DIR__)
+    # No need for develop and instantiate as they're done during precompilation
+end
 
-# Import required modules
-println("Loading packages...")
+# Import required modules - already precompiled
 using JSON
 using LinearAlgebra
 using StaticArrays
-println("Loading actinf package...")
 using actinf
 
 # Constants and parameters

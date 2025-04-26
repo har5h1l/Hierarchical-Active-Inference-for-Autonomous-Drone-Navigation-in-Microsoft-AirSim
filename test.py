@@ -44,6 +44,30 @@ class DroneController:
         
         print("DroneController initialized and connected to AirSim")
     
+    def precompile_julia_components(self):
+        """Run the Julia precompilation script to prepare all components"""
+        print("⏳ Precompiling Julia components...")
+        try:
+            precompile_script = os.path.normpath("./precompile.jl")
+            print(f"Running Julia precompilation: {precompile_script}")
+            result = subprocess.run(
+                ["julia", "--project=.", precompile_script],
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True
+            )
+            print("✅ Julia precompilation completed successfully")
+            return True
+        except subprocess.CalledProcessError as e:
+            print(f"❌ Error during Julia precompilation: {str(e)}")
+            print(f"Stdout: {e.stdout if hasattr(e, 'stdout') else 'No output'}")
+            print(f"Stderr: {e.stderr if hasattr(e, 'stderr') else 'No error output'}")
+            return False
+        except Exception as e:
+            print(f"❌ Unexpected error during Julia precompilation: {str(e)}")
+            return False
+    
     def reset_and_takeoff(self):
         """Reset AirSim, arm the drone and take off to default height"""
         print("Resetting AirSim...")
@@ -380,7 +404,19 @@ def main():
     # Check if Julia scripts exist, otherwise use dummy actions
     use_julia = os.path.exists("./run_inference.jl") and os.path.exists("./run_planning.jl")
     
+    # Initialize drone controller
     controller = DroneController()
+    
+    # Precompile Julia components before starting navigation
+    if use_julia:
+        if not os.path.exists("./precompile.jl"):
+            print("⚠️ Warning: precompile.jl script not found. Performance may be affected.")
+        else:
+            # Run precompilation once before navigation starts
+            if not controller.precompile_julia_components():
+                print("⚠️ Warning: Julia precompilation had errors. Continuing anyway.")
+    
+    # Reset AirSim and take off
     controller.reset_and_takeoff()
     
     iteration = 0

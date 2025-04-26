@@ -4,21 +4,14 @@
 if Base.active_project() != abspath(joinpath(@__DIR__, "Project.toml"))
     import Pkg
     Pkg.activate(@__DIR__)
-    Pkg.develop(path=joinpath(@__DIR__, "actinf"))
+    # Note: No need to develop path here as it should be already set up during precompilation
 end
 
-# Precompile necessary packages upfront
-println("Precompiling packages...")
+# Import packages - already precompiled by precompile.jl
 using JSON
 using LinearAlgebra
 using StaticArrays
-@time begin
-    using actinf
-    # Force compilation of critical functions
-    dummy_state = actinf.StateSpace.DroneState()
-    dummy_beliefs = actinf.Inference.initialize_beliefs(dummy_state)
-end
-println("Precompilation complete!")
+using actinf
 
 # Constants and parameters
 const INTERFACE_DIR = abspath(joinpath(@__DIR__, "interface"))
