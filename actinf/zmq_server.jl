@@ -22,17 +22,11 @@ using actinf
 # Define constants
 const SOCKET_ADDRESS = "tcp://*:5555"
 const POLICY_LENGTH = 3  # Number of steps in the policy
-const RECV_TIMEOUT = 30000  # Socket receive timeout in ms (30 seconds)
-const SEND_TIMEOUT = 5000   # Socket send timeout in ms (5 seconds)
-const HIGH_WATER_MARK = 10  # Maximum number of messages to queue
-const SOCKET_BUFFER_SIZE = 8 * 1024 * 1024  # 8MB buffer for large messages
 
 # Print server info
 println("Server initialized with:")
 println("- Address: $SOCKET_ADDRESS")
 println("- Policy length: $POLICY_LENGTH")
-println("- Receive timeout: $(RECV_TIMEOUT/1000)s")
-println("- Buffer size: $(SOCKET_BUFFER_SIZE/1024/1024)MB")
 
 # Initialize beliefs as a global variable for persistence across requests
 global current_beliefs = nothing
@@ -56,7 +50,7 @@ function process_observation(observation_data::Dict)
         voxel_count = length(raw_voxel_grid)
         
         # Only convert voxel grid if it's not too large (optimization)
-        max_voxels = 5000  # Limit processing to reasonable number
+        max_voxels = 2000  # Reduced from 5000 for better performance
         if voxel_count > max_voxels
             println("⚠️ Large voxel grid detected ($(voxel_count) points). Sampling to $(max_voxels) points.")
             # Take a random sample to keep processing time reasonable
@@ -177,26 +171,30 @@ end
 # Main function to run the ZMQ server
 function run_server()
     # Initialize ZMQ context with IO threads
-    context = Context(3)  # Use 3 IO threads for better performance
+    context = Context(2)  # 2 IO threads is sufficient
     
     # Initialize reply socket with robust error handling
     println("Initializing ZMQ REP socket...")
     socket = Socket(context, REP)
     
-    # Set socket options for better handling of large messages
-    ZMQ.setsockopt(socket, ZMQ.RCVTIMEO, RECV_TIMEOUT)
-    ZMQ.setsockopt(socket, ZMQ.SNDTIMEO, SEND_TIMEOUT)
-    ZMQ.setsockopt(socket, ZMQ.RCVHWM, HIGH_WATER_MARK)
-    ZMQ.setsockopt(socket, ZMQ.SNDHWM, HIGH_WATER_MARK)
-    
-    # Set buffer sizes for large messages
-    ZMQ.setsockopt(socket, ZMQ.RCVBUF, SOCKET_BUFFER_SIZE)
-    ZMQ.setsockopt(socket, ZMQ.SNDBUF, SOCKET_BUFFER_SIZE)
+    # Set socket options - keeping them minimal for better performance
+    ZMQ.setsockopt(socket, ZMQ.LINGER, 0)  # Don't wait when closing
+    ZMQ.setsockopt(socket, ZMQ.RCVHWM, 10)  # High water mark
+    ZMQ.setsockopt(socket, ZMQ.SNDHWM, 10)
     
     # Enable keep-alive to detect disconnected clients
     ZMQ.setsockopt(socket, ZMQ.TCP_KEEPALIVE, 1)
-    ZMQ.setsockopt(socket, ZMQ.TCP_KEEPALIVE_IDLE, 120)  # Start probing after 120s
-    ZMQ.setsockopt(socket, ZMQ.TCP_KEEPALIVE_INTVL, 60)  # Probe every 60s
+    
+    # Create a status file to signal that the server is running
+    status_file = joinpath(dirname(@__DIR__), "zmq_server_running.status")
+    try
+        open(status_file, "w") do f
+            write(f, "running")
+        end
+        println("Created status file: $status_file")
+    catch e
+        println("Warning: Could not create status file: $e")
+    end
     
     try
         # Bind to socket address
@@ -213,7 +211,7 @@ function run_server()
                 msg_size = length(msg) / 1024  # Size in KB
                 println("Received request: $(round(msg_size, digits=1)) KB")
                 
-                # Check if it's a ping message (small message to test connection)
+                # Check if it's a ping message
                 if length(msg) < 100
                     ping_msg = String(msg)
                     if occursin("ping", ping_msg)
@@ -223,45 +221,19 @@ function run_server()
                     end
                 end
                 
-                # Parse JSON message with timeout protection
-                local observation, response
-                
-                # Run parsing and processing in a separate task with timeout
-                task = @task begin
-                    try
-                        observation = JSON.parse(String(msg))
-                        # Process observation
-                        println("Processing observation...")
-                        response = process_observation(observation)
-                        println("Processing complete")
-                        return response
-                    catch e
-                        println("Error in processing task: $e")
-                        return Dict(
-                            "error" => "Processing error: $e",
-                            "action" => [0.0, 0.0, 0.0]
-                        )
-                    end
-                end
-                
-                # Schedule the task
-                schedule(task)
-                
-                # Wait for task with timeout
-                timeout = 25  # seconds
-                start_time = time()
-                while !istaskdone(task) && time() - start_time < timeout
-                    sleep(0.1)
-                end
-                
-                if !istaskdone(task)
-                    println("Processing timed out after $timeout seconds")
+                # Parse JSON message and process observation
+                local response
+                try
+                    observation = JSON.parse(String(msg))
+                    println("Processing observation...")
+                    response = process_observation(observation)
+                    println("Processing complete")
+                catch e
+                    println("Error processing request: $e")
                     response = Dict(
-                        "error" => "Processing timed out",
+                        "error" => "Processing error: $e",
                         "action" => [0.0, 0.0, 0.0]
                     )
-                else
-                    response = fetch(task)
                 end
                 
                 # Send response
@@ -276,7 +248,7 @@ function run_server()
             catch e
                 println("Error in request-response cycle: $e")
                 
-                # CRITICAL: Always send a response to maintain REQ-REP pattern
+                # Always try to send a response to maintain REQ-REP pattern
                 try
                     err_response = Dict(
                         "error" => "Server error: $(typeof(e))",
@@ -287,29 +259,19 @@ function run_server()
                 catch send_error
                     println("Failed to send error response: $send_error")
                     
-                    # Reset socket state if we can't send a response
-                    # This is required to maintain the REQ-REP pattern
+                    # Try to recreate the socket
                     try
-                        # Close and recreate socket
-                        println("Recreating socket due to broken REQ-REP pattern...")
                         ZMQ.close(socket)
                         socket = Socket(context, REP)
-                        
-                        # Re-apply socket options
-                        ZMQ.setsockopt(socket, ZMQ.RCVTIMEO, RECV_TIMEOUT)
-                        ZMQ.setsockopt(socket, ZMQ.SNDTIMEO, SEND_TIMEOUT)
-                        ZMQ.setsockopt(socket, ZMQ.RCVHWM, HIGH_WATER_MARK)
-                        ZMQ.setsockopt(socket, ZMQ.SNDHWM, HIGH_WATER_MARK)
-                        ZMQ.setsockopt(socket, ZMQ.RCVBUF, SOCKET_BUFFER_SIZE)
-                        ZMQ.setsockopt(socket, ZMQ.SNDBUF, SOCKET_BUFFER_SIZE)
+                        ZMQ.setsockopt(socket, ZMQ.LINGER, 0)
+                        ZMQ.setsockopt(socket, ZMQ.RCVHWM, 10)
+                        ZMQ.setsockopt(socket, ZMQ.SNDHWM, 10)
                         ZMQ.setsockopt(socket, ZMQ.TCP_KEEPALIVE, 1)
-                        
-                        # Rebind
                         ZMQ.bind(socket, SOCKET_ADDRESS)
                         println("Socket recreated and rebound")
                     catch rebind_error
                         println("Failed to recreate socket: $rebind_error")
-                        rethrow()  # This will exit the server loop
+                        rethrow()
                     end
                 end
             end
@@ -322,6 +284,16 @@ function run_server()
         ZMQ.close(socket)
         println("Terminating ZMQ context...")
         ZMQ.term(context)
+        
+        # Remove status file
+        try
+            if isfile(status_file)
+                rm(status_file)
+                println("Removed status file")
+            end
+        catch e
+            println("Warning: Could not remove status file: $e")
+        end
     end
 end
 

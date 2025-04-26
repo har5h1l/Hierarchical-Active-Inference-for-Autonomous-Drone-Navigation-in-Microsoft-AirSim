@@ -35,12 +35,12 @@ except ImportError:
 class ZMQInterface:
     """ZeroMQ-based interface for communication with Julia inference and planning server."""
     
-    def __init__(self, server_address=ZMQ_SERVER_ADDRESS, timeout=30000, max_retries=3):
+    def __init__(self, server_address=ZMQ_SERVER_ADDRESS, timeout=8000, max_retries=3):
         """Initialize ZeroMQ client interface.
         
         Args:
             server_address: Address of the ZMQ server
-            timeout: Socket timeout in milliseconds
+            timeout: Socket timeout in milliseconds (reduced for faster retries)
             max_retries: Maximum number of connection retries
         """
         self.server_address = server_address
@@ -50,17 +50,58 @@ class ZMQInterface:
         self._context = None
         self._socket = None
         self._connected = False
-        self._high_water_mark = 10  # Same as server
-        self._buffer_size = 8 * 1024 * 1024  # 8MB buffer size
+        self._server_process = None
+        
+        # Check if server is running and start it if needed
+        if not self._is_server_running():
+            print("ZMQ server not running. Starting server...")
+            self._start_server()
         
         # Initialize connection
         self._setup_connection()
-        
-        # Test connection with a simple ping
-        if self._connected:
-            if not self._test_connection():
-                print("⚠️ Initial connection test failed")
-                self._reset_socket(force=True)  # Force a complete reset
+    
+    def _is_server_running(self):
+        """Check if the ZMQ server is running by looking for its status file."""
+        status_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "zmq_server_running.status")
+        return os.path.isfile(status_file)
+    
+    def _start_server(self):
+        """Start the ZeroMQ server as a background process."""
+        try:
+            # Get the path to the Julia server script
+            server_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), 
+                                       "actinf", "zmq_server.jl")
+            
+            # Start the server process
+            import subprocess
+            cmd = ["julia", "--project=.", server_script]
+            print(f"Starting server with command: {' '.join(cmd)}")
+            
+            # Use Popen for a non-blocking call, and redirect output to prevent blocking
+            self._server_process = subprocess.Popen(
+                cmd, 
+                stdout=subprocess.PIPE, 
+                stderr=subprocess.PIPE,
+                text=True
+            )
+            
+            # Wait for server to start up (check for status file)
+            start_time = time.time()
+            while not self._is_server_running() and time.time() - start_time < 10:
+                time.sleep(0.5)
+                
+            if self._is_server_running():
+                print("✅ ZMQ server started successfully")
+                # Wait a bit more to ensure the socket is bound
+                time.sleep(1.5)
+                return True
+            else:
+                print("❌ Failed to start ZMQ server")
+                return False
+                
+        except Exception as e:
+            print(f"❌ Error starting ZMQ server: {str(e)}")
+            return False
     
     def _cleanup_socket(self):
         """Clean up ZMQ socket and context properly."""
@@ -79,88 +120,47 @@ class ZMQInterface:
         except Exception as e:
             print(f"Warning during socket cleanup: {str(e)}")
     
-    def _test_connection(self):
-        """Test the connection with a simple ping to the server.
-        
-        Returns:
-            bool: True if connection is working, False otherwise
-        """
-        if not self._connected or self._socket is None:
-            return False
-            
-        try:
-            # Use shorter timeout for ping test
-            old_timeout = self._socket.getsockopt(zmq.RCVTIMEO)
-            self._socket.setsockopt(zmq.RCVTIMEO, 2000)  # 2 second timeout for ping
-            
-            print("Testing connection with ping...")
-            self._socket.send_string("ping")
-            response = self._socket.recv_string()
-            
-            # Restore original timeout
-            self._socket.setsockopt(zmq.RCVTIMEO, old_timeout)
-            
-            if response == "pong":
-                print("✅ Connection test successful")
-                return True
-            else:
-                print(f"❌ Unexpected ping response: {response}")
-                return False
-                
-        except zmq.ZMQError:
-            print("❌ Connection test failed")
-            # Restore original timeout if possible
-            try:
-                self._socket.setsockopt(zmq.RCVTIMEO, self.timeout)
-            except:
-                pass
-            return False
-    
-    def _reset_socket(self, force=False):
-        """Reset the ZMQ socket to recover from an inconsistent state.
-        
-        Args:
-            force: If True, always perform a complete reset regardless of socket state
-            
-        This is crucial for the REQ-REP pattern where the state machine must be
-        reset after errors to maintain the send-receive sequence.
-        """
+    def _reset_socket(self):
+        """Reset the ZMQ socket to recover from an inconsistent state."""
         print("🔄 Resetting ZMQ socket...")
         
         # Clean up existing socket and context
         self._cleanup_socket()
         
-        # Wait a moment before reconnecting - longer pause for better stability
-        time.sleep(1.0)
+        # Wait a moment before reconnecting
+        time.sleep(0.5)
         
-        # Create new context with IO threads for better performance
-        self._context = zmq.Context(io_threads=2)
+        # Make sure server is running
+        if not self._is_server_running():
+            print("⚠️ Server not running during reset, attempting to start...")
+            if not self._start_server():
+                print("❌ Could not start server during reset")
+                return False
+        
+        # Create new context and socket with simpler settings
+        self._context = zmq.Context()
         self._socket = self._context.socket(zmq.REQ)
         
-        # Set socket options
-        self._socket.setsockopt(zmq.LINGER, 0)  # Don't wait for unsent messages on close
+        # Set minimal socket options for better reliability
+        self._socket.setsockopt(zmq.LINGER, 0)  # Don't wait for unsent messages
         self._socket.setsockopt(zmq.RCVTIMEO, self.timeout)
         self._socket.setsockopt(zmq.SNDTIMEO, self.timeout)
-        
-        # Set high water mark to prevent memory issues with large messages
-        self._socket.setsockopt(zmq.RCVHWM, self._high_water_mark)
-        self._socket.setsockopt(zmq.SNDHWM, self._high_water_mark)
-        
-        # Set larger buffer sizes for large messages
-        self._socket.setsockopt(zmq.RCVBUF, self._buffer_size)
-        self._socket.setsockopt(zmq.SNDBUF, self._buffer_size)
-        
-        # Enable keep-alive for better detection of server disconnects
-        self._socket.setsockopt(zmq.TCP_KEEPALIVE, 1)
-        self._socket.setsockopt(zmq.TCP_KEEPALIVE_IDLE, 120)
-        self._socket.setsockopt(zmq.TCP_KEEPALIVE_INTVL, 60)
         
         # Reconnect
         try:
             self._socket.connect(self.server_address)
             self._connected = True
             print("✅ Socket reset and reconnected")
-            return True
+            
+            # Verify connection with a simple ping
+            if self._simple_ping():
+                print("✅ Connection verified with ping")
+                return True
+            else:
+                print("❌ Ping failed after reset")
+                self._connected = False
+                return False
+                
         except Exception as e:
             print(f"❌ Failed to reconnect after socket reset: {str(e)}")
             self._connected = False
@@ -168,21 +168,35 @@ class ZMQInterface:
     
     def _setup_connection(self):
         """Set up the ZMQ connection with proper context and socket."""
-        # This is just a wrapper around reset_socket for the initial connection
-        return self._reset_socket(force=True)
+        return self._reset_socket()
     
-    def _reduce_voxel_grid(self, observation, max_voxels=2000):
-        """Reduce the size of the voxel grid if it's too large.
-        
-        This improves performance by sending fewer obstacle points.
-        
-        Args:
-            observation: The observation dictionary
-            max_voxels: Maximum number of voxels to include
+    def _simple_ping(self):
+        """Test the connection with a simple ping to the server."""
+        if not self._connected or self._socket is None:
+            return False
             
-        Returns:
-            Modified observation with reduced voxel grid
-        """
+        # Use a very short timeout for ping
+        try:
+            # Save original timeout
+            old_timeout = self._socket.getsockopt(zmq.RCVTIMEO)
+            self._socket.setsockopt(zmq.RCVTIMEO, 2000)
+            
+            # Send ping
+            try:
+                self._socket.send_string("ping", zmq.NOBLOCK)
+                response = self._socket.recv_string()
+                success = response == "pong"
+            except Exception:
+                success = False
+            
+            # Restore original timeout
+            self._socket.setsockopt(zmq.RCVTIMEO, old_timeout)
+            return success
+        except:
+            return False
+    
+    def _reduce_voxel_grid(self, observation, max_voxels=1500):
+        """Reduce the size of the voxel grid if it's too large."""
         if "voxel_grid" in observation and len(observation["voxel_grid"]) > max_voxels:
             original_count = len(observation["voxel_grid"])
             # Take random sample to reduce size but maintain coverage
@@ -194,14 +208,7 @@ class ZMQInterface:
         return observation
     
     def send_observation_and_receive_action(self, observation):
-        """Send observation to Julia server and receive inferred state and planned action.
-        
-        Args:
-            observation: Dictionary containing drone observation data
-            
-        Returns:
-            Tuple of (expected_state, action) if successful, or (None, default_action) if failed
-        """
+        """Send observation to Julia server and receive inferred state and planned action."""
         if not self._connected:
             # Try to reconnect if not connected
             if not self._setup_connection():
@@ -224,7 +231,7 @@ class ZMQInterface:
         # Optimize message size by reducing voxel grid if necessary
         observation = self._reduce_voxel_grid(observation)
         
-        # Convert observation to JSON string once, outside the retry loop
+        # Convert observation to JSON string
         obs_json = json.dumps(observation)
         msg_size = len(obs_json) / 1024  # Size in KB
         
@@ -233,26 +240,18 @@ class ZMQInterface:
             try:
                 # Send observation
                 print(f"📤 Sending observation data ({round(msg_size, 1)} KB)...")
+                start_time = time.time()  # Start timing the request
                 self._socket.send_string(obs_json)
                 
-                # Receive response with a longer timeout for first attempt
-                if attempt == 0:
-                    # First attempt gets a longer timeout for processing
-                    original_timeout = self._socket.getsockopt(zmq.RCVTIMEO)
-                    self._socket.setsockopt(zmq.RCVTIMEO, 60000)  # 60 seconds for first try
-                    print(f"⏳ Waiting for response (timeout: 60s)...")
-                else:
-                    print(f"⏳ Waiting for response (timeout: {self.timeout/1000}s)...")
-                
-                # Receive the response
+                # Receive response
+                print(f"⏳ Waiting for response (timeout: {self.timeout/1000}s)...")
                 response_json = self._socket.recv_string()
                 
-                # Reset timeout to original value if we changed it
-                if attempt == 0:
-                    self._socket.setsockopt(zmq.RCVTIMEO, original_timeout)
+                # Calculate response time
+                elapsed = time.time() - start_time
                 
                 resp_size = len(response_json) / 1024  # Size in KB
-                print(f"📥 Received response ({round(resp_size, 1)} KB)")
+                print(f"📥 Received response ({round(resp_size, 1)} KB) in {round(elapsed, 2)}s")
                 
                 # Parse response
                 response = json.loads(response_json)
@@ -272,37 +271,33 @@ class ZMQInterface:
             except zmq.ZMQError as e:
                 err_num = getattr(e, 'errno', None)
                 
-                # Handle specific errors
-                if err_num == zmq.EAGAIN:  # Resource temporarily unavailable
-                    print(f"❌ ZMQ timeout during attempt {attempt+1}/{self.max_retries}: {str(e)}")
-                    print("Socket is in an inconsistent state (EAGAIN error)")
-                elif err_num == zmq.ETERM:  # Context was terminated
-                    print(f"❌ ZMQ context terminated during attempt {attempt+1}/{self.max_retries}")
-                else:
-                    print(f"❌ ZMQ error during attempt {attempt+1}/{self.max_retries}: {str(e)}")
-                
-                # Always reset the socket on ZMQ errors
                 if attempt < self.max_retries - 1:
-                    # Complete socket reset is necessary for REQ-REP pattern after errors
-                    success = self._reset_socket(force=True)
+                    # Check if we lost the server
+                    server_running = self._is_server_running()
+                    
+                    if not server_running:
+                        print("⚠️ Server appears to have stopped. Attempting restart...")
+                        self._start_server()
+                        time.sleep(2)  # Give it time to start
+                    
+                    print(f"❌ ZMQ error during attempt {attempt+1}/{self.max_retries}: {str(e)}")
+                    success = self._reset_socket()
+                    
                     if not success:
-                        print("❌ Failed to reset socket, cannot continue")
-                        break
+                        print("❌ Failed to reset connection")
                     
-                    # Test the new connection
-                    if not self._test_connection():
-                        print("❌ Connection test failed after reset")
-                    
-                    # Wait longer between retries for better stability
-                    time.sleep(2)  # Longer wait between retries
+                    # Wait before retrying
+                    time.sleep(1)
+                else:
+                    print(f"❌ ZMQ error on final attempt: {str(e)}")
                 
             except Exception as e:
                 print(f"❌ Unexpected error during attempt {attempt+1}/{self.max_retries}: {str(e)}")
                 
                 if attempt < self.max_retries - 1:
                     print("🔄 Retrying with fresh connection...")
-                    self._setup_connection()
-                    time.sleep(2)  # Longer wait between retries
+                    self._reset_socket()
+                    time.sleep(1)
         
         # If all attempts failed
         print("❌ All attempts to communicate with the server failed")
@@ -313,6 +308,9 @@ class ZMQInterface:
         try:
             self._cleanup_socket()
             print("✅ ZMQ connection closed")
+            
+            # Don't terminate the server process when closing the client
+            # This allows multiple clients to use the same server instance
         except Exception as e:
             print(f"❌ Error closing ZMQ connection: {str(e)}")
 
