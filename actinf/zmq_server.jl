@@ -105,7 +105,7 @@ try
     println("Loading actinf package...")
     @eval using actinf
     println("✓ actinf package loaded")
-except e
+catch e
     println("❌ Failed to load actinf package: $e")
     packages_loaded = false
 end
