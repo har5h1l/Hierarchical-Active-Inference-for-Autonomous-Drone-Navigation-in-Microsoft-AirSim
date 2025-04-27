@@ -79,39 +79,168 @@ class ZMQInterface:
                 
             print(f"Found server script at: {server_script}")
             
-            # Start the server process
-            import subprocess
-            cmd = ["julia", "--project=.", server_script]
+            # First check if Julia is installed and available
+            try:
+                julia_version = subprocess.check_output(["julia", "--version"], 
+                                                     encoding='utf-8',
+                                                     errors='replace')
+                print(f"Julia found: {julia_version.strip()}")
+            except subprocess.CalledProcessError as e:
+                print(f"❌ Error checking Julia version: {str(e)}")
+                return False
+            except FileNotFoundError:
+                print("❌ Julia not found in PATH. Make sure Julia is installed and in your PATH.")
+                return False
+            
+            # First develop the actinf package to ensure it's properly linked
+            try:
+                print("Developing actinf package before starting server...")
+                workspace_root = os.path.dirname(os.path.abspath(__file__))
+                dev_result = subprocess.run(
+                    ["julia", "--project=.", "-e", 
+                     "using Pkg; Pkg.develop(path=joinpath(pwd(), \"actinf\")); Pkg.instantiate(); println(\"✅ Package development complete\")"],
+                    check=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    encoding='utf-8',
+                    errors='replace',
+                    text=True,
+                    cwd=workspace_root
+                )
+                print(dev_result.stdout)
+                if dev_result.stderr.strip():
+                    print(f"Stderr from package development: {dev_result.stderr}")
+            except Exception as e:
+                print(f"⚠️ Warning during package development: {e}")
+                print("Continuing anyway, but ZMQ server might have issues...")
+            
+            # Explicitly kill any remnant zmq_server.jl processes first
+            try:
+                if os.name == 'nt':  # Windows
+                    subprocess.call('taskkill /F /IM "julia.exe" /FI "WINDOWTITLE eq zmq_server.jl"', shell=True)
+                else:  # Unix/Linux/Mac
+                    subprocess.call("pkill -f 'julia.*zmq_server.jl'", shell=True)
+                print("✅ Killed any existing Julia ZMQ server processes")
+            except Exception as e:
+                print(f"Note: Could not kill existing processes: {e}")
+            
+            # Remove status file if it exists (to ensure a clean start)
+            status_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "zmq_server_running.status")
+            if os.path.exists(status_file):
+                try:
+                    os.remove(status_file)
+                    print(f"✅ Removed existing status file: {status_file}")
+                except Exception as e:
+                    print(f"⚠️ Could not remove existing status file: {e}")
+            
+            # Start the server process with UTF-8 encoding and detailed environment setup
+            # Prepare Julia command using direct script execution instead of -e
+            workspace_root = os.path.dirname(os.path.abspath(__file__))
+            
+            # Use a direct command execution instead of -e to avoid issues
+            cmd = [
+                "julia", 
+                "--project=.",
+                os.path.join(workspace_root, "actinf", "zmq_server.jl")
+            ]
+            
             print(f"Starting server with command: {' '.join(cmd)}")
             
-            # Use Popen for a non-blocking call, but capture output
+            # Use Popen with UTF-8 encoding and line buffering
             self._server_process = subprocess.Popen(
                 cmd, 
                 stdout=subprocess.PIPE, 
                 stderr=subprocess.PIPE,
-                text=True,
+                encoding='utf-8',  # Explicitly use UTF-8 encoding
+                errors='replace',  # Replace invalid characters instead of failing
                 bufsize=1,  # Line buffered
-                universal_newlines=True
+                universal_newlines=True,
+                cwd=workspace_root  # Ensure correct working directory
             )
+            
+            print("Server process started with PID:", self._server_process.pid)
             
             # Wait for server to start up (check for status file)
             start_time = time.time()
-            status_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "zmq_server_running.status")
             
             print(f"Waiting for status file: {status_file}")
             
-            while not os.path.isfile(status_file) and time.time() - start_time < 20:  # Longer timeout
+            # Start reading process output immediately for better diagnostics
+            from queue import Queue, Empty
+            from threading import Thread
+            
+            stdout_queue = Queue()
+            stderr_queue = Queue()
+            
+            # Store thread references to avoid premature garbage collection
+            self._stdout_thread = None
+            self._stderr_thread = None
+            
+            def read_output(pipe, queue, pipe_name):
+                """Read output from pipe and put into queue."""
+                try:
+                    print(f"Started {pipe_name} reader thread")
+                    for line in pipe:
+                        if line:
+                            queue.put(line)
+                            # Print output in real-time for immediate feedback
+                            print(f"Server {pipe_name}: {line.strip()}")
+                except Exception as e:
+                    error_msg = f"Error reading {pipe_name}: {e}"
+                    queue.put(error_msg)
+                    print(error_msg)
+                finally:
+                    print(f"Closing {pipe_name} pipe")
+                    try:
+                        pipe.close()
+                    except Exception as e:
+                        print(f"Error closing {pipe_name} pipe: {e}")
+            
+            # Create and start output reader threads
+            self._stdout_thread = Thread(target=read_output, 
+                                        args=(self._server_process.stdout, stdout_queue, "STDOUT"),
+                                        daemon=True)
+            self._stderr_thread = Thread(target=read_output, 
+                                        args=(self._server_process.stderr, stderr_queue, "STDERR"),
+                                        daemon=True)
+            
+            self._stdout_thread.start()
+            self._stderr_thread.start()
+            
+            # Wait longer for the status file (60 seconds instead of 30)
+            while not os.path.isfile(status_file) and time.time() - start_time < 60:
                 time.sleep(0.5)
                 
                 # Check if process has terminated prematurely
                 if self._server_process.poll() is not None:
                     # Process ended - get output
-                    stdout, stderr = self._server_process.communicate()
-                    print("❌ Server process terminated prematurely")
-                    print("STDOUT:")
-                    print(stdout)
-                    print("STDERR:")
-                    print(stderr)
+                    exit_code = self._server_process.returncode
+                    print(f"❌ Server process terminated prematurely with exit code: {exit_code}")
+                    
+                    # Collect any output from queues
+                    stdout_data = ""
+                    stderr_data = ""
+                    
+                    try:
+                        while not stdout_queue.empty():
+                            stdout_data += stdout_queue.get_nowait()
+                    except Exception:
+                        pass
+                    
+                    try:
+                        while not stderr_queue.empty():
+                            stderr_data += stderr_queue.get_nowait()
+                    except Exception:
+                        pass
+                    
+                    if stdout_data:
+                        print("STDOUT from terminated process:")
+                        print(stdout_data)
+                    
+                    if stderr_data:
+                        print("STDERR from terminated process:")
+                        print(stderr_data)
+                    
                     return False
             
             if os.path.isfile(status_file):
@@ -120,76 +249,82 @@ class ZMQInterface:
                 time.sleep(1.5)
                 return True
             else:
-                # Process is still running but no status file - check output
-                # Read from stdout and stderr (non-blocking)
+                # Process is still running but no status file - collect all available output
                 stdout_data = ""
                 stderr_data = ""
                 
                 try:
-                    from queue import Queue, Empty
-                    from threading import Thread
+                    # Collect any remaining output from the queues
+                    try:
+                        while not stdout_queue.empty():
+                            stdout_data += stdout_queue.get_nowait()
+                    except Exception as e:
+                        print(f"Error getting stdout data: {e}")
+                        
+                    try:
+                        while not stderr_queue.empty():
+                            stderr_data += stderr_queue.get_nowait()
+                    except Exception as e:
+                        print(f"Error getting stderr data: {e}")
                     
-                    def read_output(pipe, queue):
-                        while True:
-                            line = pipe.readline()
-                            if not line:
-                                break
-                            queue.put(line)
-                        pipe.close()
+                    print("❌ Failed to start ZMQ server (status file not found)")
                     
-                    # Create queues and threads
-                    stdout_queue = Queue()
-                    stderr_queue = Queue()
-                    stdout_thread = Thread(target=read_output, args=(self._server_process.stdout, stdout_queue))
-                    stderr_thread = Thread(target=read_output, args=(self._server_process.stderr, stderr_queue))
+                    if stdout_data:
+                        print("Server STDOUT:")
+                        print(stdout_data)
                     
-                    # Start threads
-                    stdout_thread.daemon = True
-                    stderr_thread.daemon = True
-                    stdout_thread.start()
-                    stderr_thread.start()
+                    if stderr_data:
+                        print("Server STDERR:")
+                        print(stderr_data)
                     
-                    # Read available output (non-blocking)
-                    start_read = time.time()
-                    while time.time() - start_read < 5:  # Read for up to 5 seconds
+                    # Try to check if the process is still running
+                    if self._server_process.poll() is None:
+                        print("⚠️ Server process is still running, but no status file was created.")
+                        print("Checking for port binding...")
+                        
+                        # Check if port 5555 is in use
                         try:
-                            while True:  # Read all available lines
-                                line = stdout_queue.get_nowait()
-                                stdout_data += line
-                        except Empty:
+                            test_context = zmq.Context()
+                            test_socket = test_context.socket(zmq.REQ)
+                            test_socket.setsockopt(zmq.LINGER, 0)
+                            test_socket.setsockopt(zmq.RCVTIMEO, 1000)
+                            test_socket.setsockopt(zmq.SNDTIMEO, 1000)
+                            test_socket.connect("tcp://localhost:5555")
+                            test_socket.send_string("ping")
+                            response = test_socket.recv_string()
+                            if response == "pong":
+                                print("✅ Port is bound and responding to pings, creating status file manually")
+                                # Create status file manually
+                                with open(status_file, "w") as f:
+                                    f.write("running")
+                                test_socket.close()
+                                test_context.term()
+                                return True
+                            test_socket.close()
+                            test_context.term()
+                        except Exception:
                             pass
-                            
-                        try:
-                            while True:  # Read all available lines
-                                line = stderr_queue.get_nowait()
-                                stderr_data += line
-                        except Empty:
-                            pass
-                            
-                        if stdout_data or stderr_data:
-                            break  # We have some output
-                            
-                        time.sleep(0.1)  # Short sleep to avoid CPU spin
+                        
+                        print("❌ Server process is not responding, terminating")
+                    
+                    # Try to terminate the process since it didn't start correctly
+                    try:
+                        print("Terminating server process...")
+                        self._server_process.terminate()
+                        time.sleep(1)
+                        if self._server_process.poll() is None:  # Still running
+                            print("Killing server process forcefully...")
+                            if os.name == 'nt':  # Windows
+                                subprocess.call(f'taskkill /F /PID {self._server_process.pid}', shell=True)
+                            else:  # Unix/Linux/Mac
+                                self._server_process.kill()
+                        self._server_process = None
+                    except Exception as e:
+                        print(f"Error terminating process: {e}")
+                
                 except Exception as e:
-                    print(f"Error reading process output: {e}")
+                    print(f"Error collecting process output: {e}")
                 
-                print("❌ Failed to start ZMQ server (status file not found)")
-                
-                if stdout_data:
-                    print("Server STDOUT:")
-                    print(stdout_data)
-                
-                if stderr_data:
-                    print("Server STDERR:")
-                    print(stderr_data)
-                
-                # Try to terminate the process since it didn't start correctly
-                try:
-                    self._server_process.terminate()
-                    self._server_process = None
-                except:
-                    pass
-                    
                 return False
                 
         except Exception as e:
@@ -200,15 +335,34 @@ class ZMQInterface:
         """Clean up ZMQ socket and context properly."""
         try:
             if self._socket is not None:
-                self._socket.close()
-                self._socket = None
-                print("Socket closed")
+                try:
+                    # Check if socket is still valid (not already closed)
+                    if hasattr(self._socket, 'closed') and not self._socket.closed:
+                        self._socket.close()
+                        print("Socket closed")
+                    else:
+                        print("Socket was already closed")
+                except Exception as e:
+                    print(f"Warning during socket close: {str(e)}")
+                finally:
+                    self._socket = None
                 
             # Only terminate context if we're creating a new one
             if self._context is not None:
-                self._context.term()
-                self._context = None
-                print("ZMQ context terminated")
+                try:
+                    # Give a small delay for pending messages to complete
+                    time.sleep(0.2)
+                    
+                    # Check if context is not already terminated
+                    if hasattr(self._context, 'closed') and not self._context.closed:
+                        self._context.term()
+                        print("ZMQ context terminated")
+                    else:
+                        print("ZMQ context was already terminated")
+                except Exception as e:
+                    print(f"Warning during context termination: {str(e)}")
+                finally:
+                    self._context = None
                 
         except Exception as e:
             print(f"Warning during socket cleanup: {str(e)}")
@@ -229,29 +383,107 @@ class ZMQInterface:
             if not self._start_server():
                 print("❌ Could not start server during reset")
                 return False
+        else:
+            print("✅ ZMQ server is already running (status file exists)")
+            # Verify the server process is actually running if we started it
+            if self._server_process is not None:
+                if self._server_process.poll() is not None:
+                    print("⚠️ Server process has terminated but status file exists!")
+                    # Remove stale status file
+                    try:
+                        status_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "zmq_server_running.status")
+                        if os.path.exists(status_file):
+                            os.remove(status_file)
+                            print("✅ Removed stale status file")
+                    except Exception as e:
+                        print(f"⚠️ Failed to remove stale status file: {e}")
+                    
+                    # Restart server
+                    print("🔄 Restarting ZMQ server...")
+                    if not self._start_server():
+                        print("❌ Failed to restart server")
+                        return False
         
         # Create new context and socket with simpler settings
-        self._context = zmq.Context()
-        self._socket = self._context.socket(zmq.REQ)
-        
-        # Set minimal socket options for better reliability
-        self._socket.setsockopt(zmq.LINGER, 0)  # Don't wait for unsent messages
-        self._socket.setsockopt(zmq.RCVTIMEO, self.timeout)
-        self._socket.setsockopt(zmq.SNDTIMEO, self.timeout)
-        
-        # Reconnect
         try:
+            print("Creating new ZMQ context and socket...")
+            # Clean up any existing socket first
+            if self._context is not None:
+                try:
+                    self._context.term()
+                except Exception as e:
+                    print(f"Error terminating context: {e}")
+            
+            # Create completely fresh context and socket
+            self._context = zmq.Context.instance()
+            self._socket = self._context.socket(zmq.REQ)
+            
+            # Set minimal socket options for better reliability
+            self._socket.setsockopt(zmq.LINGER, 0)  # Don't wait for unsent messages
+            self._socket.setsockopt(zmq.RCVTIMEO, self.timeout)
+            self._socket.setsockopt(zmq.SNDTIMEO, self.timeout)
+            
+            # Set additional socket options for reliability
+            self._socket.setsockopt(zmq.TCP_KEEPALIVE, 1)  # Enable keep-alive
+            self._socket.setsockopt(zmq.TCP_KEEPALIVE_IDLE, 60)  # Seconds before sending keepalives
+            self._socket.setsockopt(zmq.TCP_KEEPALIVE_INTVL, 10)  # Interval between keepalives
+            
+            # Set appropriate high water marks
+            self._socket.setsockopt(zmq.RCVHWM, 10)
+            self._socket.setsockopt(zmq.SNDHWM, 10)
+            
+            # Reconnect
+            print(f"Connecting to {self.server_address}...")
             self._socket.connect(self.server_address)
             self._connected = True
             print("✅ Socket reset and reconnected")
             
-            # Verify connection with a simple ping
-            if self._simple_ping():
+            # Use the improved ping method
+            print("Verifying connection...")
+            ping_success = self._simple_ping()
+            
+            if ping_success:
                 print("✅ Connection verified with ping")
                 return True
             else:
                 print("❌ Ping failed after reset")
                 self._connected = False
+                
+                # Try to restart the server if ping fails
+                print("🔄 Attempting to restart server after failed ping...")
+                # Remove stale status file if exists
+                try:
+                    status_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "zmq_server_running.status")
+                    if os.path.exists(status_file):
+                        os.remove(status_file)
+                except Exception:
+                    pass
+                
+                # Restart server
+                if self._start_server():
+                    # Try connecting again
+                    time.sleep(2)  # Wait a bit longer
+                    try:
+                        # Close old socket first
+                        if self._socket:
+                            self._socket.close()
+                        
+                        # Create new socket
+                        self._socket = self._context.socket(zmq.REQ)
+                        self._socket.setsockopt(zmq.LINGER, 0)
+                        self._socket.setsockopt(zmq.RCVTIMEO, self.timeout)
+                        self._socket.setsockopt(zmq.SNDTIMEO, self.timeout)
+                        self._socket.setsockopt(zmq.TCP_KEEPALIVE, 1)
+                        self._socket.connect(self.server_address)
+                        self._connected = True
+                        
+                        # Try ping again
+                        if self._simple_ping():
+                            print("✅ Connection verified with ping after server restart")
+                            return True
+                    except Exception as e:
+                        print(f"❌ Error reconnecting after server restart: {e}")
+                
                 return False
                 
         except Exception as e:
@@ -266,26 +498,78 @@ class ZMQInterface:
     def _simple_ping(self):
         """Test the connection with a simple ping to the server."""
         if not self._connected or self._socket is None:
+            print("Cannot ping: socket not connected or None")
             return False
-            
-        # Use a very short timeout for ping
+        
+        # Create a new socket specifically for the ping test
+        # This avoids potential issues with the existing socket state
         try:
-            # Save original timeout
-            old_timeout = self._socket.getsockopt(zmq.RCVTIMEO)
-            self._socket.setsockopt(zmq.RCVTIMEO, 2000)
+            ping_context = zmq.Context()
+            ping_socket = ping_context.socket(zmq.REQ)
+            ping_socket.setsockopt(zmq.LINGER, 0)
+            ping_socket.setsockopt(zmq.RCVTIMEO, 3000)  # 3 seconds timeout (increased)
+            ping_socket.setsockopt(zmq.SNDTIMEO, 3000)  # 3 seconds timeout (increased)
+            ping_socket.connect(self.server_address)
             
-            # Send ping
+            print("Sending ping to test connection with fresh socket...")
+            ping_socket.send_string("ping")
+            print("Ping sent, waiting for response...")
+            
+            # Add a short delay to let the server process the ping
+            time.sleep(0.5)
+            
             try:
-                self._socket.send_string("ping", zmq.NOBLOCK)
-                response = self._socket.recv_string()
-                success = response == "pong"
-            except Exception:
-                success = False
-            
-            # Restore original timeout
-            self._socket.setsockopt(zmq.RCVTIMEO, old_timeout)
-            return success
-        except:
+                response = ping_socket.recv_string()
+                print(f"Received response: {response}")
+                
+                # Clean up ping socket
+                ping_socket.close()
+                ping_context.term()
+                
+                return response == "pong"
+            except zmq.ZMQError as e:
+                print(f"Error receiving ping response: {e}")
+                # Try once more after a longer delay
+                time.sleep(1)
+                try:
+                    response = ping_socket.recv_string()
+                    print(f"Received response on second attempt: {response}")
+                    
+                    # Clean up ping socket
+                    ping_socket.close()
+                    ping_context.term()
+                    
+                    return response == "pong"
+                except zmq.ZMQError as e:
+                    print(f"Error receiving ping response on second attempt: {e}")
+                    
+                    # Clean up ping socket
+                    ping_socket.close()
+                    ping_context.term()
+                    
+                    return False
+                
+        except zmq.ZMQError as e:
+            print(f"Ping failed with ZMQ error: {e}")
+            # Try to clean up ping socket if created
+            try:
+                if 'ping_socket' in locals():
+                    ping_socket.close()
+                if 'ping_context' in locals():
+                    ping_context.term()
+            except:
+                pass
+            return False
+        except Exception as e:
+            print(f"Ping failed with unexpected error: {e}")
+            # Try to clean up ping socket if created
+            try:
+                if 'ping_socket' in locals():
+                    ping_socket.close()
+                if 'ping_context' in locals():
+                    ping_context.term()
+            except:
+                pass
             return False
     
     def _reduce_voxel_grid(self, observation, max_voxels=1500):
@@ -304,8 +588,20 @@ class ZMQInterface:
         """Send observation to Julia server and receive inferred state and planned action."""
         if not self._connected:
             # Try to reconnect if not connected
+            print("ZMQ connection not established, attempting to connect...")
             if not self._setup_connection():
                 print("❌ Not connected to ZMQ server and reconnection failed")
+                return None, [0.0, 0.0, 0.0]
+        
+        # Verify server process is still running if we started it
+        if self._server_process is not None and self._server_process.poll() is not None:
+            print("❌ Server process has terminated unexpectedly!")
+            print(f"Exit code: {self._server_process.returncode}")
+            
+            # Try to restart
+            print("Attempting to restart server...")
+            if not self._reset_socket():
+                print("❌ Failed to restart server")
                 return None, [0.0, 0.0, 0.0]
         
         # Default values in case of failure
@@ -325,8 +621,12 @@ class ZMQInterface:
         observation = self._reduce_voxel_grid(observation)
         
         # Convert observation to JSON string
-        obs_json = json.dumps(observation)
-        msg_size = len(obs_json) / 1024  # Size in KB
+        try:
+            obs_json = json.dumps(observation)
+            msg_size = len(obs_json) / 1024  # Size in KB
+        except Exception as e:
+            print(f"❌ Error serializing observation to JSON: {str(e)}")
+            return default_state, default_action
         
         # Try to send observation and receive response
         for attempt in range(self.max_retries):
@@ -334,11 +634,37 @@ class ZMQInterface:
                 # Send observation
                 print(f"📤 Sending observation data ({round(msg_size, 1)} KB)...")
                 start_time = time.time()  # Start timing the request
-                self._socket.send_string(obs_json)
+                
+                # Set a timeout for the send operation
+                self._socket.setsockopt(zmq.SNDTIMEO, self.timeout)
+                try:
+                    self._socket.send_string(obs_json)
+                except zmq.ZMQError as e:
+                    print(f"❌ Error sending data: {str(e)}")
+                    if attempt < self.max_retries - 1:
+                        print("Attempting to reset socket before retrying...")
+                        self._reset_socket()
+                        time.sleep(1)
+                        continue
+                    else:
+                        return default_state, default_action
                 
                 # Receive response
                 print(f"⏳ Waiting for response (timeout: {self.timeout/1000}s)...")
-                response_json = self._socket.recv_string()
+                
+                # Set a timeout for the receive operation
+                self._socket.setsockopt(zmq.RCVTIMEO, self.timeout)
+                try:
+                    response_json = self._socket.recv_string()
+                except zmq.ZMQError as e:
+                    print(f"❌ Error receiving data: {str(e)}")
+                    if attempt < self.max_retries - 1:
+                        print("Attempting to reset socket before retrying...")
+                        self._reset_socket()
+                        time.sleep(1)
+                        continue
+                    else:
+                        return default_state, default_action
                 
                 # Calculate response time
                 elapsed = time.time() - start_time
@@ -347,7 +673,18 @@ class ZMQInterface:
                 print(f"📥 Received response ({round(resp_size, 1)} KB) in {round(elapsed, 2)}s")
                 
                 # Parse response
-                response = json.loads(response_json)
+                try:
+                    response = json.loads(response_json)
+                except json.JSONDecodeError as e:
+                    print(f"❌ Error parsing response JSON: {str(e)}")
+                    print(f"Response content: {response_json[:100]}...")  # Show start of response
+                    if attempt < self.max_retries - 1:
+                        print("Retrying with fresh connection...")
+                        self._reset_socket()
+                        time.sleep(1)
+                        continue
+                    else:
+                        return default_state, default_action
                 
                 # Check for errors in the response
                 if "error" in response:
@@ -386,6 +723,7 @@ class ZMQInterface:
                 
             except Exception as e:
                 print(f"❌ Unexpected error during attempt {attempt+1}/{self.max_retries}: {str(e)}")
+                print(f"Error type: {type(e).__name__}")
                 
                 if attempt < self.max_retries - 1:
                     print("🔄 Retrying with fresh connection...")
@@ -397,13 +735,27 @@ class ZMQInterface:
         return default_state, default_action
     
     def close(self):
-        """Close the ZMQ connection."""
+        """Close the ZMQ connection and clean up resources."""
         try:
+            # First clean up the socket
             self._cleanup_socket()
-            print("✅ ZMQ connection closed")
             
-            # Don't terminate the server process when closing the client
-            # This allows multiple clients to use the same server instance
+            # Check if the server process is still running
+            if self._server_process is not None:
+                # We don't terminate the server process by default
+                # This allows multiple clients to use the same server instance
+                
+                # But we should set the reference to None
+                self._server_process = None
+            
+            # Clean up thread references
+            self._stdout_thread = None
+            self._stderr_thread = None
+            
+            # Reset connection state
+            self._connected = False
+            
+            print("✅ ZMQ connection closed and resources cleaned up")
         except Exception as e:
             print(f"❌ Error closing ZMQ connection: {str(e)}")
 
@@ -426,6 +778,15 @@ class DroneController:
         """Run the Julia precompilation script to prepare all components"""
         print("⏳ Precompiling Julia components...")
         try:
+            # First, ensure the actinf package is developed properly
+            print("Developing actinf package...")
+            develop_cmd = ["julia", "--project=.", "-e", 
+                        "using Pkg; Pkg.develop(path=joinpath(pwd(), \"actinf\")); Pkg.instantiate()"]
+            subprocess.run(develop_cmd, check=True, 
+                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, 
+                         encoding='utf-8', errors='replace', text=True)
+            
+            # Run the actual precompilation script
             precompile_script = os.path.normpath("./precompile.jl")
             print(f"Running Julia precompilation: {precompile_script}")
             result = subprocess.run(
@@ -433,9 +794,18 @@ class DroneController:
                 check=True,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
+                encoding='utf-8', 
+                errors='replace',
                 text=True
             )
             print("✅ Julia precompilation completed successfully")
+            
+            if "error" in result.stdout.lower() or "error" in result.stderr.lower():
+                print("⚠️ Warnings or errors during precompilation:")
+                print(f"STDOUT: {result.stdout}")
+                print(f"STDERR: {result.stderr}")
+                return False
+                
             return True
         except subprocess.CalledProcessError as e:
             print(f"❌ Error during Julia precompilation: {str(e)}")
@@ -588,7 +958,7 @@ class DroneController:
     
     def move_to_waypoint(self, waypoint):
         """Command the drone to move to the specified waypoint with obstacle avoidance"""
-        print(f"Moving drone from {self.current_position} to {waypoint}")
+        print(f"Moving to: {[round(w, 1) for w in waypoint]}")
         
         # Ensure waypoint is within simulation boundaries and round coordinates
         waypoint = [
@@ -598,8 +968,6 @@ class DroneController:
         ]
         
         try:
-            print("Starting movement...")
-            
             # Start movement asynchronously
             movement_task = self.client.moveToPositionAsync(
                 x=waypoint[0],
@@ -651,7 +1019,7 @@ class DroneController:
                 
                 # Check for obstacles
                 if self.check_for_obstacles(safety_threshold=2.5):
-                    print("🛑 Stopping movement due to obstacle detection!")
+                    print("🛑 Obstacle detected! Stopping.")
                     self.client.cancelLastTask()  # Cancel the movement task
                     self.client.hoverAsync().join()  # Hover in place
                     obstacle_detected = True
@@ -666,24 +1034,38 @@ class DroneController:
             
             # If an obstacle was detected, trigger a new planning cycle
             if obstacle_detected:
-                print("Re-planning path due to obstacle...")
                 return "obstacle_detected"
             
-            # Verify movement accuracy
+            # Check if this is the final approach to target
+            distance_to_target = self.distance_to_target()
+            is_final_approach = distance_to_target < 2.0
+            
+            # Verify movement accuracy - more strict for final approach
             final_distance = sqrt(sum((a - b) ** 2 for a, b in zip(self.current_position, waypoint)))
             
-            if final_distance > 0.5:  # More than 0.5m away
+            if final_distance > 0.3 or (is_final_approach and distance_to_target > ARRIVAL_THRESHOLD * 0.8):
                 # Attempt final precision adjustment if close enough
                 if final_distance < 2.0:
-                    print("Making final precision adjustment...")
+                    if is_final_approach:
+                        print("Final approach in progress...")
+                    
+                    # Adjust velocity based on distance (slower when close to target)
+                    approach_velocity = 0.5 if is_final_approach else 1.0
+                    
+                    # If this is final approach, aim directly at target instead of the waypoint
+                    # This helps overcome any accumulated error from multiple movements
+                    if is_final_approach and distance_to_target < 1.5:
+                        final_waypoint = self.target_location
+                    else:
+                        final_waypoint = waypoint
                     
                     # Start precision movement
                     precision_task = self.client.moveToPositionAsync(
-                        x=waypoint[0],
-                        y=waypoint[1],
-                        z=waypoint[2],
-                        velocity=1,  # Slower for precision
-                        timeout_sec=10,
+                        x=final_waypoint[0],
+                        y=final_waypoint[1],
+                        z=final_waypoint[2],
+                        velocity=approach_velocity,  # Slower for precision
+                        timeout_sec=15,
                         drivetrain=airsim.DrivetrainType.MaxDegreeOfFreedom,
                         yaw_mode=airsim.YawMode(is_rate=False),
                         lookahead=-1,
@@ -703,22 +1085,28 @@ class DroneController:
                         self.update_drone_state()
                         
                         # Calculate distance to target and movement rate
-                        current_distance_to_waypoint = sqrt(sum((a - b) ** 2 for a, b in zip(self.current_position, waypoint)))
+                        current_distance = sqrt(sum((a - b) ** 2 for a, b in zip(self.current_position, final_waypoint)))
+                        target_distance = self.distance_to_target()
                         distance_moved = sqrt(sum((a - b) ** 2 for a, b in zip(self.current_position, previous_position)))
                         previous_position = self.current_position.copy()
                         
                         # Check if movement is complete
-                        if current_distance_to_waypoint < 0.3:  # Closer threshold for precision
+                        precision_threshold = 0.2 if is_final_approach else 0.3
+                        
+                        if current_distance < precision_threshold:
                             movement_complete = True
-                        elif time.time() - start_time > 10:  # Timeout after 10 seconds
+                        elif is_final_approach and target_distance < ARRIVAL_THRESHOLD:
+                            print(f"Target reached: {target_distance:.2f}m")
+                            movement_complete = True
+                        elif time.time() - start_time > 15:  # Timeout after 15 seconds
                             print("Precision movement timed out")
                             movement_complete = True
-                        elif distance_moved < 0.005 and time.time() - start_time > 2:  # Stopped moving (smaller threshold)
+                        elif distance_moved < 0.005 and time.time() - start_time > 3:  # Stopped moving (smaller threshold)
                             movement_complete = True
                         
                         # Check for obstacles
                         if self.check_for_obstacles(safety_threshold=2.0):
-                            print("🛑 Stopping precision movement due to obstacle detection!")
+                            print("🛑 Obstacle detected during precision movement!")
                             self.client.cancelLastTask()
                             self.client.hoverAsync().join()
                             return "obstacle_detected"
@@ -727,13 +1115,16 @@ class DroneController:
                     self.client.hoverAsync().join()
                     self.update_drone_state()
             
-            print(f"Successfully reached waypoint. Final position: {self.current_position}")
+            # Final check to see if we've reached target
+            target_distance = self.distance_to_target()
+            if target_distance < ARRIVAL_THRESHOLD:
+                print(f"✅ Target reached: {target_distance:.2f}m")
+            
             return "success"
                 
         except Exception as e:
             print(f"Error during movement: {str(e)}")
             # Try to stabilize the drone
-            print("Attempting to stabilize drone...")
             self.client.hoverAsync().join()
             self.update_drone_state()
             return "error"
@@ -801,8 +1192,22 @@ class DroneController:
         The egocentric waypoint is relative to the drone's current position and orientation.
         We need to transform it to global coordinates.
         """
-        # For simplicity, we just add the egocentric vector to current position
-        # This works because egocentric waypoints are in drone's NED frame
+        # Calculate distance to target to adjust step size
+        distance_to_target = self.distance_to_target()
+        
+        # For final approach, limit step size to avoid overshooting
+        if distance_to_target < 2.0:
+            # Scale down the step size as we get closer to target
+            scale_factor = min(distance_to_target / 2.0, 0.8)
+            if scale_factor < 0.5:  # Only log significant scaling
+                print(f"Scaling movement by {scale_factor:.2f}")
+            egocentric_waypoint = [
+                egocentric_waypoint[0] * scale_factor,
+                egocentric_waypoint[1] * scale_factor,
+                egocentric_waypoint[2] * scale_factor
+            ]
+        
+        # Add the egocentric vector to current position
         global_waypoint = [
             self.current_position[0] + egocentric_waypoint[0],
             self.current_position[1] + egocentric_waypoint[1],
@@ -820,7 +1225,7 @@ class DroneController:
 
 
 def main():
-    print("Starting autonomous drone navigation test...")
+    print("Starting autonomous drone navigation")
     print(f"Target location: {TARGET_LOCATION}")
     
     # Initialize drone controller
@@ -830,6 +1235,12 @@ def main():
     zmq_interface = None
     
     try:
+        # First, precompile the Julia components to ensure actinf package is ready
+        print("Precompiling Julia components...")
+        if not controller.precompile_julia_components():
+            print("Failed to precompile Julia components. Cannot continue.")
+            return
+        
         # Reset AirSim and take off
         controller.reset_and_takeoff()
         
@@ -843,22 +1254,21 @@ def main():
             
             # Check if we've reached the target
             distance_to_target = controller.distance_to_target()
-            print(f"Distance to target: {distance_to_target:.2f} meters")
+            print(f"Distance to target: {distance_to_target:.2f}m")
             if distance_to_target < ARRIVAL_THRESHOLD:
-                print("🎯 Target reached! Test complete.")
+                print("🎯 Target reached! Mission complete.")
                 break
             
             # 1. Collect sensor data
-            print("📡 Collecting sensor data...")
             observation = controller.collect_sensor_data()
             
             # 2. Send observation to Julia server via ZMQ and receive expected state and action
-            print("🧠 Sending observation to ZMQ server for processing...")
+            print("Processing observation...")
             expected_state, egocentric_waypoint = zmq_interface.send_observation_and_receive_action(observation)
             
             # If ZMQ communication failed, use local fallback (create a minimal action toward target)
             if expected_state is None:
-                print("⚠️ ZMQ communication failed, using local fallback action")
+                print("⚠️ Communication failed, using fallback")
                 # Generate a simple direct vector to target as fallback
                 direction = [
                     controller.target_location[0] - controller.current_position[0],
@@ -874,19 +1284,17 @@ def main():
                     egocentric_waypoint = [0.0, 0.0, 0.0]  # Hover in place
             
             # 3. Convert to global coordinates and move the drone
-            print("🌐 Converting to global coordinates...")
             global_waypoint = controller.convert_to_global_waypoint(egocentric_waypoint)
             
-            print(f"🚁 Moving to waypoint: {global_waypoint}")
             movement_result = controller.move_to_waypoint(global_waypoint)
             
             # Check if an obstacle was detected during movement
             if movement_result == "obstacle_detected":
-                print("⚠️ Obstacle encountered! Replanning route...")
+                print("Replanning due to obstacle...")
                 # No need to increment iteration - we'll retry with a fresh plan
                 continue
             elif movement_result == "error":
-                print("⚠️ Error during movement. Replanning...")
+                print("Error during movement. Replanning...")
                 # Brief pause to stabilize before replanning
                 time.sleep(1)
                 continue
@@ -894,12 +1302,11 @@ def main():
             iteration += 1
         
         if iteration >= MAX_ITERATIONS:
-            print("⚠️ Maximum iterations reached without finding target.")
+            print("Maximum iterations reached without finding target.")
         
     finally:
         # Cleanup ZMQ connection if it was initialized
         if zmq_interface is not None:
-            print("Closing ZMQ connection...")
             zmq_interface.close()
         
         # Land the drone

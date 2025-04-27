@@ -344,13 +344,13 @@ function select_action(state::StateSpace.DroneState, beliefs::Inference.DroneBel
                      current_position::SVector{3, Float64}, target_position::SVector{3, Float64};
                      obstacle_distance::Float64 = 10.0, obstacle_density::Float64 = 0.0, 
                      num_policies::Int = 5)
-    # Constants for adaptive parameters
-    const MIN_RADIUS = 0.5
-    const MAX_RADIUS = 3.0
-    const MIN_POLICY_LEN = 2
-    const MAX_POLICY_LEN = 5
-    const MIN_WAYPOINTS = 15
-    const MAX_WAYPOINTS = 75
+    # Constants for adaptive parameters (remove const declarations)
+    MIN_RADIUS = 0.5
+    MAX_RADIUS = 3.0
+    MIN_POLICY_LEN = 2
+    MAX_POLICY_LEN = 5
+    MIN_WAYPOINTS = 15
+    MAX_WAYPOINTS = 75
     
     # Dynamically adjust parameters based on state suitability
     # For suitability, higher values (closer to 1) mean safer navigation conditions

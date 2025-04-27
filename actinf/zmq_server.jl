@@ -5,6 +5,119 @@
 
 println("Starting Active Inference ZMQ Server...")
 
+# ZMQ.jl API compatibility layer
+# This ensures the script works with both newer and older versions of ZMQ.jl
+module ZMQCompat
+    # Export all the functions we'll use as compatibility wrappers
+    export setup_zmq_api, bind, send, recv, close, set_linger, set_rcvhwm, set_sndhwm, set_tcp_keepalive
+    
+    # Global variables to store which API version we're using
+    using_new_api = false
+    zmq_module = nothing
+    
+    # Setup function to determine API version and configure wrappers
+    function setup_zmq_api(zmq_mod)
+        global zmq_module = zmq_mod
+        global using_new_api = false
+        
+        # Test if we're using the newer API by trying to call set_linger directly
+        try
+            # Create temporary socket to test API
+            ctx = zmq_mod.Context()
+            sock = zmq_mod.Socket(ctx, zmq_mod.REP)
+            
+            # Try to use newer direct method
+            zmq_mod.set_linger(sock, 0)
+            global using_new_api = true
+            println("✓ Using newer ZMQ.jl API with direct socket methods")
+            
+            # Clean up test socket
+            zmq_mod.close(sock)
+            zmq_mod.close(ctx)
+        catch
+            # Fall back to older API
+            println("✓ Using older ZMQ.jl API with ZMQ.setsockopt")
+        end
+        
+        return using_new_api
+    end
+    
+    # Compatibility wrappers for ZMQ functions
+    function bind(socket, address)
+        if using_new_api
+            return zmq_module.bind(socket, address)
+        else
+            return zmq_module.bind(socket, address)  # Same in both APIs
+        end
+    end
+    
+    function send(socket, message)
+        if using_new_api
+            return zmq_module.send(socket, message)
+        else
+            return zmq_module.send(socket, message)  # Same in both APIs
+        end
+    end
+    
+    function recv(socket)
+        if using_new_api
+            return zmq_module.recv(socket)
+        else
+            return zmq_module.recv(socket)  # Same in both APIs
+        end
+    end
+    
+    function close(obj)
+        if using_new_api
+            return zmq_module.close(obj)
+        else
+            # Determine if obj is a socket or context
+            if typeof(obj) <: zmq_module.Socket
+                return zmq_module.close(obj)  # Same in both APIs
+            else
+                # For context, use term in older API
+                return zmq_module.term(obj)
+            end
+        end
+    end
+    
+    function set_linger(socket, value)
+        if using_new_api
+            return zmq_module.set_linger(socket, value)
+        else
+            return zmq_module.setsockopt(socket, zmq_module.LINGER, value)
+        end
+    end
+    
+    function set_rcvhwm(socket, value)
+        if using_new_api
+            return zmq_module.set_rcvhwm(socket, value)
+        else
+            return zmq_module.setsockopt(socket, zmq_module.RCVHWM, value)
+        end
+    end
+    
+    function set_sndhwm(socket, value)
+        if using_new_api
+            return zmq_module.set_sndhwm(socket, value)
+        else
+            return zmq_module.setsockopt(socket, zmq_module.SNDHWM, value)
+        end
+    end
+    
+    function set_tcp_keepalive(socket, value)
+        try
+            if using_new_api
+                return zmq_module.set_tcp_keepalive(socket, value)
+            else
+                return zmq_module.setsockopt(socket, zmq_module.TCP_KEEPALIVE, value)
+            end
+        catch
+            println("TCP_KEEPALIVE not supported in this ZMQ version")
+        end
+    end
+end
+
 # Explicit package loading with error handling
 function load_package(pkg_name)
     try
@@ -35,15 +148,15 @@ function load_package(pkg_name)
 end
 
 # Ensure we can write to the status file before proceeding
-status_file_path = nothing
+global status_file_path = nothing
 try
     # Create status file path - handle both Windows and UNIX paths
     if Sys.iswindows()
         # Use absolute path with proper Windows separators
         parent_dir = dirname(dirname(abspath(@__FILE__)))
-        status_file_path = joinpath(parent_dir, "zmq_server_running.status")
+        global status_file_path = joinpath(parent_dir, "zmq_server_running.status")
     else
-        status_file_path = joinpath(dirname(dirname(@__FILE__)), "zmq_server_running.status")
+        global status_file_path = joinpath(dirname(dirname(@__FILE__)), "zmq_server_running.status")
     end
     
     # Test that we can write to this location
@@ -57,9 +170,9 @@ catch e
     try
         if Sys.iswindows()
             # Try temp directory on Windows
-            status_file_path = joinpath(tempdir(), "zmq_server_running.status")
+            global status_file_path = joinpath(tempdir(), "zmq_server_running.status")
         else
-            status_file_path = joinpath("/tmp", "zmq_server_running.status")
+            global status_file_path = joinpath("/tmp", "zmq_server_running.status")
         end
         println("Trying alternative status file location: $status_file_path")
         touch(status_file_path)
@@ -68,7 +181,7 @@ catch e
     catch e2
         println("❌ Could not write to alternative status file location: $e2")
         println("Will continue without status file. Client may not detect server properly.")
-        status_file_path = nothing
+        global status_file_path = nothing
     end
 end
 
@@ -94,11 +207,15 @@ end
 println("Running on Julia version: $(VERSION)")
 
 # Import all necessary packages with error handling
-packages_loaded = true
+global packages_loaded = true
 packages_loaded &= load_package(:ZMQ)
 packages_loaded &= load_package(:JSON)
 packages_loaded &= load_package(:LinearAlgebra)
 packages_loaded &= load_package(:StaticArrays)
+
+# Set up ZMQ compatibility layer
+using .ZMQCompat
+ZMQCompat.setup_zmq_api(ZMQ)
 
 # Load actinf package (with special handling)
 try
@@ -107,7 +224,7 @@ try
     println("✓ actinf package loaded")
 catch e
     println("❌ Failed to load actinf package: $e")
-    packages_loaded = false
+    global packages_loaded = false
 end
 
 if !packages_loaded
@@ -280,29 +397,55 @@ function run_server()
     socket = Socket(context, REP)
     
     # Set socket options - keeping them minimal for better performance
-    ZMQ.setsockopt(socket, ZMQ.LINGER, 0)  # Don't wait when closing
-    ZMQ.setsockopt(socket, ZMQ.RCVHWM, 10)  # High water mark
-    ZMQ.setsockopt(socket, ZMQ.SNDHWM, 10)
+    # Using compatibility layer methods
+    ZMQCompat.set_linger(socket, 0)  # Don't wait when closing
+    ZMQCompat.set_rcvhwm(socket, 10)  # High water mark
+    ZMQCompat.set_sndhwm(socket, 10)
     
     # Enable keep-alive to detect disconnected clients
-    ZMQ.setsockopt(socket, ZMQ.TCP_KEEPALIVE, 1)
+    # Note: TCP_KEEPALIVE might not be available in all ZMQ.jl versions
+    try
+        ZMQCompat.set_tcp_keepalive(socket, 1)
+        println("TCP keepalive enabled")
+    catch e
+        println("Warning: Could not set TCP keepalive: $e")
+    end
     
     # Create a status file to signal that the server is running
+    local status_created = false
     if status_file_path !== nothing
         try
             open(status_file_path, "w") do f
                 write(f, "running")
             end
             println("Created status file: $status_file_path")
+            status_created = true
         catch e
             println("Warning: Could not create status file: $e")
+            # Try again with permissions details
+            try
+                println("Attempting to write to status file with explicit permissions...")
+                touch(status_file_path)
+                chmod(status_file_path, 0o666)  # Make readable/writable by everyone
+                open(status_file_path, "w") do f
+                    write(f, "running")
+                end
+                println("Successfully created status file on second attempt!")
+                status_created = true
+            catch e2
+                println("Error on second attempt: $e2")
+                println("Will continue without status file. Client may not detect server properly.")
+            end
         end
     end
+    
+    # Print binding information
+    println("Status file created: $status_created")
     
     try
         # Bind to socket address
         println("Binding to $SOCKET_ADDRESS")
-        ZMQ.bind(socket, SOCKET_ADDRESS)
+        ZMQCompat.bind(socket, SOCKET_ADDRESS)  # Use compatibility layer
         println("ZMQ server is ready and listening for connections!")
         
         # Server loop
@@ -310,7 +453,7 @@ function run_server()
             try
                 # Wait for a message
                 println("\nWaiting for request...")
-                msg = ZMQ.recv(socket)
+                msg = ZMQCompat.recv(socket)  # Use compatibility layer
                 msg_size = length(msg) / 1024  # Size in KB
                 println("Received request: $(round(msg_size, digits=1)) KB")
                 
@@ -319,7 +462,7 @@ function run_server()
                     ping_msg = String(msg)
                     if occursin("ping", ping_msg)
                         println("Ping received, sending pong")
-                        ZMQ.send(socket, "pong")
+                        ZMQCompat.send(socket, "pong")  # Use compatibility layer
                         continue
                     end
                 end
@@ -345,7 +488,7 @@ function run_server()
                 response_size = length(response_json) / 1024  # Size in KB
                 println("Response size: $(round(response_size, digits=1)) KB")
                 
-                ZMQ.send(socket, response_json)
+                ZMQCompat.send(socket, response_json)  # Use compatibility layer
                 println("Response sent!")
                 
             catch e
@@ -357,20 +500,25 @@ function run_server()
                         "error" => "Server error: $(typeof(e))",
                         "action" => [0.0, 0.0, 0.0]
                     )
-                    ZMQ.send(socket, JSON.json(err_response))
+                    ZMQCompat.send(socket, JSON.json(err_response))  # Use compatibility layer
                     println("Error response sent")
                 catch send_error
                     println("Failed to send error response: $send_error")
                     
                     # Try to recreate the socket
                     try
-                        ZMQ.close(socket)
+                        ZMQCompat.close(socket)  # Use compatibility layer
                         socket = Socket(context, REP)
-                        ZMQ.setsockopt(socket, ZMQ.LINGER, 0)
-                        ZMQ.setsockopt(socket, ZMQ.RCVHWM, 10)
-                        ZMQ.setsockopt(socket, ZMQ.SNDHWM, 10)
-                        ZMQ.setsockopt(socket, ZMQ.TCP_KEEPALIVE, 1)
-                        ZMQ.bind(socket, SOCKET_ADDRESS)
+                        # Set options using compatibility layer
+                        ZMQCompat.set_linger(socket, 0)
+                        ZMQCompat.set_rcvhwm(socket, 10)
+                        ZMQCompat.set_sndhwm(socket, 10)
+                        try
+                            ZMQCompat.set_tcp_keepalive(socket, 1)
+                        catch
+                            # Ignore if not available
+                        end
+                        ZMQCompat.bind(socket, SOCKET_ADDRESS)  # Use compatibility layer
                         println("Socket recreated and rebound")
                     catch rebind_error
                         println("Failed to recreate socket: $rebind_error")
@@ -381,15 +529,15 @@ function run_server()
         end
     catch e
         println("Fatal server error: $e")
-    finally
+    
         # Clean up
         println("Closing ZMQ socket...")
-        ZMQ.close(socket)
+        ZMQCompat.close(socket)  # Use compatibility layer
         println("Terminating ZMQ context...")
-        ZMQ.term(context)
+        ZMQCompat.close(context)  # Use compatibility layer
         
         # Remove status file
-        if status_file_path !== nothing
+        if status_file_path !== nothing && status_created
             try
                 if isfile(status_file_path)
                     rm(status_file_path)

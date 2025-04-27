@@ -63,8 +63,38 @@ println("Precompiling specific functionality...")
     println("Precompiling ZMQ functionality...")
     dummy_context = ZMQ.Context()
     dummy_socket = ZMQ.Socket(dummy_context, ZMQ.REP)
+    
+    # Try to use the newer API style
+    try
+        # Try using newer direct socket methods
+        ZMQ.set_linger(dummy_socket, 0)
+        println("✓ Using newer ZMQ API (direct socket methods)")
+    catch
+        try
+            # Fall back to older API if needed
+            println("⚠️ Newer API not available, trying older ZMQ API")
+            ZMQ.setsockopt(dummy_socket, ZMQ.LINGER, 0)
+            println("✓ Using older ZMQ API (ZMQ.setsockopt)")
+        catch e
+            println("⚠️ Warning: Could not precompile ZMQ socket options: $e")
+        end
+    end
+    
+    # Always close resources
     ZMQ.close(dummy_socket)
-    ZMQ.term(dummy_context)
+    
+    # Try terminating context with both APIs
+    try
+        ZMQ.close(dummy_context)
+        println("✓ Context closed with newer API")
+    catch
+        try
+            ZMQ.term(dummy_context)
+            println("✓ Context terminated with older API")
+        catch e
+            println("⚠️ Warning: Could not precompile ZMQ context termination: $e")
+        end
+    end
 end
 
 println("Precompilation complete! All Julia components are ready for execution.")
