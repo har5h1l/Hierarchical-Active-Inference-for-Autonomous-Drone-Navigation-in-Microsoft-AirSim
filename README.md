@@ -1,6 +1,6 @@
 # Hierarchical Active Inference for Autonomous Drone Navigation in Microsoft AirSim with Environmentally Aware Adaptive Planning
 
-This project implements autonomous drone navigation in the AirSim simulator using Active Inference, a computational framework based on the Free Energy Principle. The system interfaces AirSim with Julia for probabilistic inference using RxInfer.jl.
+This project implements autonomous drone navigation in the AirSim simulator using Active Inference, a computational framework based on the Free Energy Principle. The system interfaces AirSim with Julia for probabilistic inference using RxInfer.jl, with ZeroMQ handling inter-process communication.
 
 ## Project Structure
 
@@ -9,13 +9,29 @@ This project implements autonomous drone navigation in the AirSim simulator usin
   - `src/StateSpace.jl` - State space representation for drone navigation
   - `src/Inference.jl` - Belief updating and probabilistic inference
   - `src/Planning.jl` - Action selection and planning using Expected Free Energy
+  - `zmq_server.jl` - ZeroMQ server for Julia-Python communication
 - `airsim/` - Python interface to AirSim simulator
   - `Sensory_Input_Processing.py` - Processing sensor data from AirSim
   - `settings.json` - AirSim configuration
-- `interface/` - JSON files for inter-process communication
 - `run_inference.jl` - Entry point for belief state inference
 - `run_planning.jl` - Entry point for action planning
+- `precompile.jl` - Script to precompile dependencies for faster startup
+- `rebuild.jl` - Script to rebuild the Julia package
 - `test.py` - Python controller for simulation execution
+
+## Communication Architecture
+
+The system uses ZeroMQ (0MQ) for efficient inter-process communication:
+
+1. **ZeroMQ Server** (`zmq_server.jl`):
+   - Runs as a persistent Julia process
+   - Maintains loaded Julia modules and compiled state between calls
+   - Significantly reduces latency compared to the previous approach
+
+2. **Communication Protocol**:
+   - Request/Reply pattern for synchronous operations
+   - Serialized data transfer using JSON
+   - Status tracking with `zmq_server_running.status`
 
 ## Active Inference Framework
 
@@ -35,10 +51,18 @@ States are computed from `DroneObservation` objects that contain raw sensory dat
 The suitability metric is a crucial safety measure that indicates how navigable a location is:
 
 - Higher values (closer to 1.0) indicate safer navigation conditions
-- Calculated using two main components:
-  - **Obstacle Distance**: Exponential decay function `exp(-1/d)` gives higher values for greater distances
-  - **Obstacle Density**: Exponential function `exp(-5*density)` penalizes crowded areas
-- Obstacle distance is weighted more heavily (70%) than density (30%)
+- Calculated using two main components with sigmoid-like scaling for predictable behavior:
+  - **Obstacle Distance**: Using sigmoid function `1.0 / (1.0 + exp(-steepness_distance * (obstacle_distance - cutoff_distance)))`
+  - **Obstacle Density**: Using inverted sigmoid function `1.0 / (1.0 + exp(steepness_density * (obstacle_density - cutoff_density)))`
+- Configurable parameters control transition sharpness and cutoff points:
+  ```
+  OBSTACLE_WEIGHT = 0.7
+  DENSITY_WEIGHT = 0.3
+  CUTOFF_DISTANCE = 2.5  # Meters
+  STEEPNESS_DISTANCE = 3.0
+  CUTOFF_DENSITY = 0.2
+  STEEPNESS_DENSITY = 10.0
+  ```
 
 ### Belief Updating
 
@@ -50,22 +74,28 @@ The `Inference` module maintains probabilistic beliefs about each state dimensio
 - `DroneBeliefs` structure maintains both the distributions and their discretization ranges
 - Temporal smoothing is applied to ensure stable belief evolution
 
-### Action Selection
+### Two-Stage Action Selection
 
-Action selection is based on minimizing Expected Free Energy (EFE), which balances:
+Action selection now uses a two-stage process that separates safety from optimization:
 
-1. **Pragmatic Value**: Preference for states that satisfy the agent's goals
-   - Distance reduction (targeting)
-   - Alignment with target (azimuth/elevation) with a baseline preference (0.2) toward facing target
-   - Environmental safety (obstacle avoidance)
+1. **Coarse Elimination (Safety)**:
+   - Generate candidate waypoints around current position
+   - Predict next state for each candidate waypoint
+   - Calculate suitability score for each waypoint
+   - **Immediately discard** waypoints with suitability below `SUITABILITY_THRESHOLD` (default: 0.5)
+   - Only waypoints with acceptable suitability proceed to EFE evaluation
 
-2. **Epistemic Value**: Information-seeking behavior to reduce uncertainty
-   - Entropy reduction in beliefs about state variables
-   - Weighted lower than pragmatic value for goal-directed behavior
+2. **Fine-Grained Selection (Optimization)**:
+   - For remaining safe waypoints, calculate Expected Free Energy (EFE)
+   - EFE now only balances two components (no risk penalty):
+     - **Pragmatic Value**: Progress toward goal (distance reduction)
+     - **Epistemic Value**: Uncertainty reduction (information gain)
+   - Select waypoints with lowest EFE scores
 
-3. **Risk Value**: Explicit penalty for unsafe states
-   - Based on proximity to obstacles and obstacle density
-   - Higher weight for stronger risk aversion
+This approach ensures:
+- Dangerous paths are never considered during final planning
+- EFE correctly focuses on optimal goal-seeking and exploration among safe options
+- Risk avoidance is handled structurally in the planning process
 
 ### Adaptive Planning Parameters
 
@@ -99,23 +129,37 @@ During movement execution, the system continuously monitors for obstacles:
    - Hover safely in place
    - Trigger new inference and planning cycle
 
-### Planning Process
+### Planning Process Flow
 
-1. Generate potential waypoints around current position with adaptive radius
-2. Add direct-to-target waypoints with various step sizes
-3. Calculate suitability for each waypoint based on obstacle proximity and density
-4. Select top waypoints by suitability
-5. For each candidate, simulate the resulting state transition
-6. Calculate Expected Free Energy for each action
-7. Select action with minimum EFE
-8. Return policy (sequence of best actions)
+The complete planning process now follows this flow:
+
+1. **Waypoint Generation** (no change)
+   - Generate spherical distribution of waypoints based on adaptive radius
+   - Include target-directed waypoints at various step sizes
+   - Include "stay-in-place" option
+
+2. **Predict Next State** for each candidate
+   - Calculate updated distance, azimuth and elevation to target
+   - Compute suitability score using sigmoid-like scaling
+
+3. **Early Elimination Based on Suitability**
+   - Discard waypoints with suitability < SUITABILITY_THRESHOLD
+   - Report number of waypoints passing safety filter
+
+4. **EFE Evaluation on Filtered Waypoints**
+   - Calculate EFE based on pragmatic and epistemic values only
+   - No risk penalty (handled by filtering)
+
+5. **Policy Selection**
+   - Select top-k actions with lowest EFE (k = adaptive_policy_length)
+   - Return policy as sequence of actions
 
 ## Requirements
 
 - Julia 1.7+
 - Python 3.7+
 - AirSim simulator
-- RxInfer.jl, PyCall.jl, and other dependencies
+- RxInfer.jl, PyCall.jl, ZMQ.jl, and other dependencies
 
 ## Setup
 
@@ -123,22 +167,27 @@ During movement execution, the system continuously monitors for obstacles:
 2. Install Julia dependencies:
 ```julia
 using Pkg
-Pkg.add(["PyCall", "RxInfer", "Images", "StaticArrays", "LinearAlgebra", "JSON"])
+Pkg.add(["ZMQ", "PyCall", "RxInfer", "Images", "StaticArrays", "LinearAlgebra", "JSON"])
 ```
 3. Configure AirSim settings.json for your simulation environment
 
 ## Running the System
 
 1. Start AirSim simulator
-2. Run the Python controller:
+2. Start the ZeroMQ server:
+```
+julia actinf/zmq_server.jl
+```
+3. Run the Python controller:
 ```
 python test.py
 ```
 
 This will:
 - Initialize the drone in AirSim
+- Start the ZeroMQ communication channel
 - Process sensory observations
-- Call Julia for inference and planning
+- Call Julia for inference and planning through ZeroMQ
 - Execute actions with real-time obstacle avoidance
 
 ## Preference Model
