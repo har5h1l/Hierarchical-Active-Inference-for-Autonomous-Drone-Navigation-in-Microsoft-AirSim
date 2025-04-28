@@ -64,7 +64,7 @@ class EnvironmentScanner:
             return 0, []
 
     def collect_sensor_data(self):
-        """Collect both LiDAR and camera data from current position"""
+        """Collect both LiDAR and camera data from current position with enhanced vertical detection"""
         try:
             # Get drone's pose
             drone_pose = self.client.simGetVehiclePose(vehicle_name="Drone1")
@@ -86,31 +86,40 @@ class EnvironmentScanner:
             # Process LiDAR points - transform to correct frame
             lidar_points = np.array(lidar_data.point_cloud).reshape((-1, 3))
             
-            # Filter LiDAR points by FOV
+            # Filter LiDAR points by FOV - but with expanded vertical range to better capture trees
+            # Expand vertical FOV from [-10,10] to [-15,20] to better capture tall trees
             lidar_angles = np.arctan2(lidar_points[:, 1], lidar_points[:, 0]) * 180 / np.pi
             vertical_angles = np.arctan2(lidar_points[:, 2], np.sqrt(lidar_points[:, 0]**2 + lidar_points[:, 1]**2)) * 180 / np.pi
             
             valid_lidar = np.logical_and(
                 np.abs(lidar_angles) < 90,
-                np.logical_and(vertical_angles >= -10, vertical_angles <= 10)
+                np.logical_and(vertical_angles >= -15, vertical_angles <= 20)  # Expanded vertical FOV
             )
             lidar_points = lidar_points[valid_lidar]
             
-            # Process depth image
+            # Process depth image with improved point density
             depth_response = responses[0]
             depth_img = airsim.list_to_2d_float_array(depth_response.image_data_float,
                                                      depth_response.width,
                                                      depth_response.height)
             
-            # Convert depth to 3D points in camera frame
+            # Convert depth to 3D points in camera frame with denser sampling for vertical structures
             height, width = depth_img.shape
             fov = 90  # from settings.json
             aspect = float(width) / height
             f = width / (2 * np.tan(fov * pi / 360))
             
+            # Vertical scan lines to better detect trees
+            # Sample denser in vertical direction with every other row, but sparser horizontally
             camera_points = []
-            for i in range(0, height, 2):
-                for j in range(0, width, 2):
+            vertical_lines = []
+            
+            # First pass - create regular grid but denser than before
+            step_h = 2  # Sample every other row (higher vertical resolution)
+            step_w = 2  # Sample every other column
+            
+            for i in range(0, height, step_h):
+                for j in range(0, width, step_w):
                     depth = depth_img[i, j]
                     if depth > 0 and depth < 100:
                         x = depth
@@ -120,7 +129,30 @@ class EnvironmentScanner:
                         if x > 0:
                             camera_points.append([x, y, z])
             
-            camera_points = np.array(camera_points)
+            # Second pass - detect vertical structures
+            # Look for columns with multiple depth values - indicating vertical structures
+            # Sample a few vertical lines directly
+            n_vert_lines = 10
+            for j in range(width//4, 3*width//4, width//(n_vert_lines+1)):  # Sample across middle section of image
+                j = int(j)
+                col_points = []
+                for i in range(0, height, 1):  # Dense vertical sampling (every row)
+                    depth = depth_img[i, j]
+                    if depth > 0 and depth < 100:
+                        x = depth
+                        y = -(j - width/2) * depth / f
+                        z = -(i - height/2) * depth / (f/aspect)
+                        
+                        if x > 0:
+                            col_points.append([x, y, z])
+                
+                # Add points from this column to our vertical scan data
+                if col_points:
+                    vertical_lines.extend(col_points)
+            
+            # Convert to numpy arrays
+            camera_points = np.array(camera_points) if camera_points else np.empty((0, 3))
+            vertical_lines = np.array(vertical_lines) if vertical_lines else np.empty((0, 3))
             
             # Filter out points that are too far or too close
             max_distance = 40.0
@@ -131,6 +163,13 @@ class EnvironmentScanner:
                     np.linalg.norm(camera_points, axis=1) > min_distance,
                     np.linalg.norm(camera_points, axis=1) < max_distance
                 )]
+            
+            if len(vertical_lines) > 0:
+                vertical_lines = vertical_lines[np.logical_and(
+                    np.linalg.norm(vertical_lines, axis=1) > min_distance,
+                    np.linalg.norm(vertical_lines, axis=1) < max_distance
+                )]
+                print(f"Added {len(vertical_lines)} points from vertical scan lines")
             
             if len(lidar_points) > 0:
                 lidar_points = lidar_points[np.logical_and(
@@ -144,31 +183,37 @@ class EnvironmentScanner:
                 all_points.append(lidar_points)
             if len(camera_points) > 0:
                 all_points.append(camera_points)
+            if len(vertical_lines) > 0:
+                all_points.append(vertical_lines)  # Add our vertical scan data
                 
             if not all_points:
                 raise Exception("No valid points collected")
                 
             combined_points = np.vstack(all_points)
+            print(f"Collected {len(combined_points)} points: {len(lidar_points)} LiDAR, {len(camera_points)} camera, {len(vertical_lines)} vertical")
             return combined_points
             
         except Exception as e:
             print(f"Error collecting sensor data: {str(e)}")
             return None
 
-    def create_obstacle_voxel_grid(self, points, voxel_size=0.6):
-        """Create voxel grid and identify obstacle voxels"""
+    def create_obstacle_voxel_grid(self, points, voxel_size=0.4):
+        """Create voxel grid and identify obstacle voxels with enhanced vertical structure detection"""
         try:
-            # Define grid parameters
+            # Define grid parameters with expanded vertical range to better capture trees
             grid_bounds = {
-                'x_min': -20, 'x_max': 20,
-                'y_min': -20, 'y_max': 20,
-                'z_min': -5, 'z_max': 15
+                'x_min': -25, 'x_max': 25,  # Expanded horizontal range
+                'y_min': -25, 'y_max': 25,  # Expanded horizontal range
+                'z_min': -7, 'z_max': 20    # Expanded vertical range to better capture tall trees
             }
             
             # Initialize voxel storage using dictionary to merge points in same voxel
             voxel_dict = {}
             
-            # Convert points to voxel coordinates silently
+            # Add tracking for vertical structures to better detect trees
+            vertical_structure_dict = defaultdict(int)
+            
+            # Convert points to voxel coordinates
             for point in points:
                 x_idx = int((point[0] - grid_bounds['x_min']) / voxel_size)
                 y_idx = int((point[1] - grid_bounds['y_min']) / voxel_size)
@@ -184,24 +229,69 @@ class EnvironmentScanner:
                     )
                     # Only store one coordinate per voxel space
                     voxel_dict[voxel_key] = voxel_coord
+                    
+                    # Track vertical structures by counting points in the same xy column
+                    # This helps identify trees and other vertical obstacles
+                    column_key = (x_idx, y_idx)
+                    vertical_structure_dict[column_key] += 1
             
-            # Convert dictionary values to array
-            voxel_coordinates = np.array(list(voxel_dict.values()))
-            return voxel_coordinates
+            # Count vertical structures identified
+            vertical_columns = 0
+            for column_key, count in vertical_structure_dict.items():
+                if count >= 3:  # Consider columns with 3+ points as potential vertical structures
+                    vertical_columns += 1
+            
+            if vertical_columns > 0:
+                print(f"Detected {vertical_columns} potential vertical structures (trees/poles)")
+                
+            # Create a list of regular voxel coordinates first
+            voxel_coordinates = list(voxel_dict.values())
+            
+            # Add additional points to emphasize vertical structures like trees
+            # This makes them more likely to be detected as obstacles
+            enhanced_voxels = []
+            
+            for voxel_key, voxel_coord in voxel_dict.items():
+                x_idx, y_idx, _ = voxel_key
+                column_key = (x_idx, y_idx)
+                
+                # If this column has multiple voxels stacked vertically (likely a tree or pole)
+                if vertical_structure_dict[column_key] >= 3:
+                    # Double the weight of this voxel by adding it again
+                    enhanced_voxels.append(voxel_coord)
+                    
+                    # For very tall structures, add even more emphasis
+                    if vertical_structure_dict[column_key] >= 5:
+                        enhanced_voxels.append(voxel_coord)
+            
+            # Add the enhanced voxels to our coordinate list
+            if enhanced_voxels:
+                voxel_coordinates.extend(enhanced_voxels)
+                print(f"Enhanced {len(enhanced_voxels)} voxels for better vertical structure detection")
+                
+            return np.array(voxel_coordinates)
             
         except Exception as e:
             print(f"Error creating voxel grid: {str(e)}")
             return None
 
-    def find_nearest_obstacles(self, voxel_coordinates, n_obstacles=2):
-        """Find the nearest n obstacles using clustering and direct distance calculation"""
+    def find_nearest_obstacles(self, voxel_coordinates, n_obstacles=3):
+        """Find the nearest n obstacles using clustering and direct distance calculation
+        with improved vertical structure detection"""
         try:
             if len(voxel_coordinates) == 0:
                 return []
                 
-            # Use DBSCAN with larger eps for coarser clustering
-            clustering = DBSCAN(eps=0.8, min_samples=3).fit(voxel_coordinates)
+            # Use DBSCAN with smaller eps for finer clustering to better separate individual trees
+            clustering = DBSCAN(eps=0.7, min_samples=3).fit(voxel_coordinates)
             labels = clustering.labels_
+            
+            # Count number of clusters found
+            unique_labels = set(labels)
+            n_clusters = len(unique_labels) - (1 if -1 in unique_labels else 0)
+            n_noise = list(labels).count(-1)
+            
+            print(f"Found {n_clusters} potential obstacle clusters and {n_noise} noise points")
             
             # Group voxels by cluster
             clusters = defaultdict(list)
@@ -211,7 +301,7 @@ class EnvironmentScanner:
             
             # Calculate cluster info with direct distance calculation
             obstacle_info = []
-            min_voxels = 10  # Minimum number of voxels to consider as valid obstacle
+            min_voxels = 8  # Reduced from 10 to catch thinner obstacles
             
             for label, points in clusters.items():
                 points_array = np.array(points)
@@ -219,23 +309,53 @@ class EnvironmentScanner:
                 if len(points_array) < min_voxels:
                     continue
                 
-                reduced_points = self.reduce_points(points_array, reduction_threshold=0.6)
+                # Check if this cluster represents a vertical structure (like a tree)
+                # by examining height distribution along z-axis
+                z_values = points_array[:, 2]
+                height_range = max(z_values) - min(z_values) if len(z_values) > 0 else 0
                 
-                if len(reduced_points) < 5:
+                # Consider an object a vertical structure if it spans at least 1.5m in height
+                is_vertical = height_range > 1.5
+                
+                # Use a smaller reduction threshold for vertical objects to preserve their structure
+                reduction_threshold = 0.5 if is_vertical else 0.6
+                reduced_points = self.reduce_points(points_array, reduction_threshold=reduction_threshold)
+                
+                if len(reduced_points) < 4:  # Lower threshold for vertical structures
                     continue
                 
+                # Get horizontal and vertical extent of the obstacle
+                x_range = max(points_array[:, 0]) - min(points_array[:, 0]) if len(points_array) > 0 else 0
+                y_range = max(points_array[:, 1]) - min(points_array[:, 1]) if len(points_array) > 0 else 0
+                
+                # Calculate distance to this obstacle
                 distances = np.linalg.norm(reduced_points, axis=1)
                 min_distance = round(float(np.min(distances)), 2)
                 
+                # Calculate approximate volume (useful for classification)
+                volume = x_range * y_range * height_range if x_range > 0 and y_range > 0 and height_range > 0 else 0
+                
+                # If this is a vertical structure, log it for debugging
+                if is_vertical:
+                    print(f"Identified vertical structure: height={height_range:.1f}m, distance={min_distance:.2f}m")
+                
                 obstacle_info.append({
                     'distance': min_distance,
-                    'points': reduced_points
+                    'points': reduced_points,
+                    'is_vertical': is_vertical,
+                    'height': height_range,
+                    'width': max(x_range, y_range),
+                    'volume': volume,
+                    'point_count': len(points_array)
                 })
             
             if not obstacle_info:
                 return []
             
+            # Sort obstacles primarily by distance
             obstacle_info.sort(key=lambda x: x['distance'])
+            
+            # Increased n_obstacles from 2 to 3 to capture more obstacles
             return obstacle_info[:n_obstacles]
             
         except Exception as e:
