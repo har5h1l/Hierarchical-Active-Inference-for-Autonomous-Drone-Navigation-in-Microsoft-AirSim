@@ -9,6 +9,15 @@ using StaticArrays
 using ..StateSpace
 using ..Inference
 
+# Constants for suitability calculation and filtering
+const SUITABILITY_THRESHOLD = 0.5
+const OBSTACLE_WEIGHT = 0.7
+const DENSITY_WEIGHT = 0.3
+const CUTOFF_DISTANCE = 2.5  # Meters
+const STEEPNESS_DISTANCE = 3.0
+const CUTOFF_DENSITY = 0.2
+const STEEPNESS_DENSITY = 10.0
+
 """
     PreferenceModel
 
@@ -226,11 +235,20 @@ end
 
 Calculate suitability score for a waypoint based on distance to nearest obstacle and obstacle density.
 Higher suitability means the waypoint is safer to navigate to.
+Uses sigmoid-like scaling for more predictable behavior.
 """
 function calculate_suitability_for_waypoint(waypoint::SVector{3, Float64}, obstacle_distance::Float64, obstacle_density::Float64, density_weight::Float64 = 1.0)::Float64
-    # Use our shared calculation function for consistent suitability calculation
-    return StateSpace.calculate_suitability(obstacle_distance, obstacle_density, 
-                                          obstacle_weight=0.7, density_weight=0.3*density_weight)
+    # Use constants for more consistent suitability calculation
+    return StateSpace.calculate_suitability(
+        obstacle_distance, 
+        obstacle_density, 
+        obstacle_weight=OBSTACLE_WEIGHT, 
+        density_weight=DENSITY_WEIGHT*density_weight,
+        cutoff_distance=CUTOFF_DISTANCE,
+        steepness_distance=STEEPNESS_DISTANCE,
+        cutoff_density=CUTOFF_DENSITY,
+        steepness_density=STEEPNESS_DENSITY
+    )
 end
 
 """
@@ -289,17 +307,17 @@ end
 
 """
     calculate_efe(state, beliefs, action, preference_model;
-                 pragmatic_weight=1.0, epistemic_weight=0.2, risk_weight=2.0)
+                 pragmatic_weight=1.0, epistemic_weight=0.2)
 
-Calculate the Expected Free Energy with stronger emphasis on distance reduction.
+Calculate the Expected Free Energy focusing on pragmatic and epistemic values only.
+Risk is handled separately through early elimination of unsafe waypoints.
 """
 function calculate_efe(state::StateSpace.DroneState, 
                       beliefs::Inference.DroneBeliefs, 
                       action::SVector{3, Float64}, 
                       preference_model::PreferenceModel;
                       pragmatic_weight=1.0, 
-                      epistemic_weight=0.2, 
-                      risk_weight=2.0)
+                      epistemic_weight=0.2)
     # Use expected_state from beliefs
     expected = Inference.expected_state(beliefs)
     
@@ -314,7 +332,7 @@ function calculate_efe(state::StateSpace.DroneState,
     # Modified pragmatic value with distance bonus
     pragmatic_value = -pragmatic_weight * (preference_score + distance_bonus) * action_mag
     
-    # Calculate epistemic value from belief distributions (reduced weight)
+    # Calculate epistemic value from belief distributions
     dist_entropy = -sum(beliefs.distance_belief .* log.(beliefs.distance_belief .+ 1e-10))
     azim_entropy = -sum(beliefs.azimuth_belief .* log.(beliefs.azimuth_belief .+ 1e-10))
     elev_entropy = -sum(beliefs.elevation_belief .* log.(beliefs.elevation_belief .+ 1e-10))
@@ -322,13 +340,11 @@ function calculate_efe(state::StateSpace.DroneState,
     dens_entropy = -sum(beliefs.density_belief .* log.(beliefs.density_belief .+ 1e-10))
     
     total_entropy = dist_entropy + azim_entropy + elev_entropy + suit_entropy + dens_entropy
-    epistemic_value = -epistemic_weight * 0.5 * total_entropy * action_mag  # Reduced epistemic influence
-    
-    # Risk value from state suitability (maintained for safety)
-    risk_value = risk_weight * (1 - state.suitability) * action_mag
+    epistemic_value = -epistemic_weight * 0.5 * total_entropy * action_mag
     
     # Total Expected Free Energy (lower is better)
-    return pragmatic_value + risk_value + epistemic_value
+    # No risk value component anymore - handled by early filtering based on suitability
+    return pragmatic_value + epistemic_value
 end
 
 """
@@ -337,14 +353,15 @@ end
                  obstacle_distance::Float64 = 10.0, obstacle_density::Float64 = 0.0, 
                  num_policies::Int = 5)
 
-Select the best actions with emphasis on distance reduction.
+Select the best actions by first filtering out unsafe paths based on suitability,
+then evaluating Expected Free Energy on remaining safe candidates.
 Dynamically adjusts waypoint radius, policy length, and waypoint sampling based on environment suitability.
 """
 function select_action(state::StateSpace.DroneState, beliefs::Inference.DroneBeliefs, planner::ActionPlanner, 
                      current_position::SVector{3, Float64}, target_position::SVector{3, Float64};
                      obstacle_distance::Float64 = 10.0, obstacle_density::Float64 = 0.0, 
                      num_policies::Int = 5)
-    # Constants for adaptive parameters (remove const declarations)
+    # Constants for adaptive parameters
     MIN_RADIUS = 0.5
     MAX_RADIUS = 3.0
     MIN_POLICY_LEN = 2
@@ -394,48 +411,86 @@ function select_action(state::StateSpace.DroneState, beliefs::Inference.DroneBel
         push!(waypoints, direct_waypoint)
     end
     
-    # Compute suitability for each waypoint
-    waypoint_suitabilities = [(wp, calculate_suitability_for_waypoint(wp, obstacle_distance, obstacle_density, planner.density_weight)) for wp in waypoints]
+    # Step 1: Generate candidate waypoints and predict next states
+    all_waypoints = waypoints
+    all_states = Vector{StateSpace.DroneState}()
+    all_actions = Vector{SVector{3, Float64}}()
+    all_suitabilities = Vector{Float64}()
     
-    # Sort by suitability descending
-    sorted_waypoints = sort(waypoint_suitabilities, by = x -> x[2], rev=true)
+    println("Generated $(length(all_waypoints)) candidate waypoints")
     
-    # Select top waypoints by suitability (or fewer if less available)
-    top_n = min(adaptive_waypoint_count, length(sorted_waypoints))
-    top_waypoints = sorted_waypoints[1:top_n]
-    
-    # For each, simulate transition state and calculate EFE
-    candidate_actions = Vector{Tuple{SVector{3, Float64}, Float64}}()
-    
-    for (wp, suitability) in top_waypoints
-        # Simulate transition state
+    # Step 2: Predict next state for each candidate and calculate suitability
+    for wp in all_waypoints
         next_state = simulate_transition(state, wp, target_position, beliefs.voxel_grid, obstacle_distance, obstacle_density, planner.density_weight)
-        
-        # Calculate action vector from current position to waypoint
         action = wp - current_position
         
-        # Calculate EFE for this action using the preference model
+        push!(all_states, next_state)
+        push!(all_actions, action)
+        push!(all_suitabilities, next_state.suitability)
+    end
+    
+    # Step 3: Early elimination based on suitability threshold
+    safe_indices = findall(s -> s >= SUITABILITY_THRESHOLD, all_suitabilities)
+    
+    # If no waypoints pass the suitability threshold, relax it to take the best available
+    if isempty(safe_indices) && !isempty(all_suitabilities)
+        # Find the waypoint with highest suitability if none pass threshold
+        _, best_idx = findmax(all_suitabilities)
+        safe_indices = [best_idx]  # Just use the best one
+        println("Warning: No waypoints passed suitability threshold. Using best available.")
+    end
+    
+    filtered_states = all_states[safe_indices]
+    filtered_actions = all_actions[safe_indices]
+    
+    println("$(length(filtered_states)) waypoints passed suitability threshold ($(SUITABILITY_THRESHOLD))")
+    
+    # Step 4: Evaluate EFE on filtered (safe) waypoints
+    if isempty(filtered_states)
+        # Emergency fallback - just stay in place
+        println("Emergency: No safe paths found. Staying in place.")
+        return [(SVector{3, Float64}(0.0, 0.0, 0.0), 0.0)]
+    end
+    
+    # For each safe candidate, calculate EFE
+    efe_scores = Vector{Float64}()
+    
+    for (state_idx, next_state) in enumerate(filtered_states)
+        action = filtered_actions[state_idx]
+        
+        # Calculate EFE without risk penalty (safety already ensured by filtering)
         efe = calculate_efe(
             next_state,
             beliefs,
             action,
             planner.preference_model,
             pragmatic_weight=planner.pragmatic_weight,
-            epistemic_weight=planner.epistemic_weight,
-            risk_weight=planner.risk_weight
+            epistemic_weight=planner.epistemic_weight
         )
         
-        push!(candidate_actions, (action, efe))
+        push!(efe_scores, efe)
     end
     
-    # Sort candidate actions by EFE ascending (lower is better)
-    sorted_candidates = sort(candidate_actions, by = x -> x[2])
+    # Step 5: Policy selection - choose the best actions based on EFE
+    # Sort by EFE ascending (lower is better)
+    sorted_indices = sortperm(efe_scores)
     
     # Use the adaptive policy length instead of fixed num_policies
-    top_k = min(adaptive_policy_length, length(sorted_candidates))
-    selected = sorted_candidates[1:top_k]
+    top_k = min(adaptive_policy_length, length(sorted_indices))
     
-    # Return top actions and their EFE values
+    # Create selected tuples of (action, efe)
+    selected = [(filtered_actions[sorted_indices[i]], efe_scores[sorted_indices[i]]) for i in 1:top_k]
+    
+    # Step 7: Debug info
+    if !isempty(sorted_indices) && !isempty(efe_scores)
+        best_idx = sorted_indices[1]
+        best_efe = efe_scores[best_idx]
+        best_action = filtered_actions[best_idx]
+        best_suitability = filtered_states[best_idx].suitability
+        
+        println("Best EFE: $(best_efe), Action: $(best_action), Suitability: $(best_suitability)")
+    end
+    
     return selected
 end
 

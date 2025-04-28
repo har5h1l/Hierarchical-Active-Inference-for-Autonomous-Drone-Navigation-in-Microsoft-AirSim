@@ -119,7 +119,9 @@ end
 
 """
     calculate_suitability(obstacle_distance::Float64, obstacle_density::Float64; 
-                         obstacle_weight::Float64=0.7, density_weight::Float64=0.3)::Float64
+                         obstacle_weight::Float64=0.7, density_weight::Float64=0.3,
+                         cutoff_distance::Float64=2.5, steepness_distance::Float64=3.0,
+                         cutoff_density::Float64=0.2, steepness_density::Float64=10.0)::Float64
 
 Calculate environmental suitability based on obstacle distance and density.
 Higher values (closer to 1.0) indicate safer navigation conditions.
@@ -129,18 +131,31 @@ Parameters:
 - obstacle_density: Density of obstacles in local region (0-1)
 - obstacle_weight: Weight for obstacle distance factor (default: 0.7)
 - density_weight: Weight for density factor (default: 0.3)
+- cutoff_distance: Distance below which suitability rapidly decreases (default: 2.5)
+- steepness_distance: Controls how quickly suitability transitions (default: 3.0)
+- cutoff_density: Density above which suitability rapidly decreases (default: 0.2)
+- steepness_density: Controls how quickly density suitability transitions (default: 10.0)
 
 Returns:
 - Suitability score (0-1)
 """
 function calculate_suitability(obstacle_distance::Float64, obstacle_density::Float64; 
-                             obstacle_weight::Float64=0.7, density_weight::Float64=0.3)::Float64
-    # Safety factor increases with distance to obstacle using exponential decay
-    # exp(-1/d) approaches 1 as d increases, and approaches 0 as d approaches 0
-    safety_factor = exp(-1.0 / max(obstacle_distance, 0.1))
+                             obstacle_weight::Float64=0.7, density_weight::Float64=0.3,
+                             cutoff_distance::Float64=2.5, steepness_distance::Float64=3.0,
+                             cutoff_density::Float64=0.2, steepness_density::Float64=10.0)::Float64
+    # Safety factor using sigmoid-like function for more predictable transition
+    # 1 / (1 + e^(-steepness * (distance - cutoff)))
+    # When distance equals cutoff, value is 0.5
+    # As distance increases, approaches 1.0
+    # As distance decreases, approaches 0.0
+    safety_factor = 1.0 / (1.0 + exp(-steepness_distance * (obstacle_distance - cutoff_distance)))
     
-    # Density factor decreases with higher obstacle density using exponential
-    density_factor = exp(-5.0 * obstacle_density)
+    # Density factor similarly uses sigmoid-like function, but inverted
+    # 1 / (1 + e^(steepness * (density - cutoff)))
+    # When density equals cutoff, value is 0.5
+    # As density decreases, approaches 1.0
+    # As density increases, approaches 0.0
+    density_factor = 1.0 / (1.0 + exp(steepness_density * (obstacle_density - cutoff_density)))
     
     # Combine factors with relative weights - both should be high for good suitability
     # Ensure weights sum to 1.0 for proper scaling
