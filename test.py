@@ -10,7 +10,7 @@ from math import sqrt
 from os import path
 
 # Constants and hyperparameters
-TARGET_LOCATION = [10.0, 0.0, -3.0]  # [x, y, z] in NED coordinates
+TARGET_LOCATION = [10.0, 20.0, -20.0]  # [x, y, z] in NED coordinates (east, 15m high)
 MARGIN = 1.5  # Safety margin for waypoint generation (meters)
 WAYPOINT_SAMPLE_COUNT = 75  # Number of waypoints to consider
 POLICY_LENGTH = 3  # Number of steps in the policy
@@ -855,22 +855,41 @@ class DroneController:
         
         # Get obstacle information
         try:
+            print("\n==== COLLECTING SENSOR DATA ====")
+            print(f"Current position: {[round(p, 2) for p in self.current_position]}")
+            
             num_obstacles, distances = self.scanner.fetch_density_distances()
+            print(f"📊 Detected {num_obstacles} obstacles within {DENSITY_RADIUS}m radius")
+            
+            if distances:
+                print(f"📊 Nearest obstacles: {[round(d, 2) for d in sorted(distances)[:5]]}m")
             
             # Get voxel coordinates (obstacle map)
             points = self.scanner.collect_sensor_data()
             if points is None:
+                print("⚠️ No point cloud data received from sensors")
                 voxel_grid = []
             else:
+                print(f"📊 Collected {len(points)} raw point cloud points")
                 voxel_grid = self.scanner.create_obstacle_voxel_grid(points)
                 if voxel_grid is None:
+                    print("⚠️ Failed to create voxel grid")
                     voxel_grid = []
                 else:
                     # Convert numpy array to list for JSON serialization
                     voxel_grid = voxel_grid.tolist()
+                    print(f"📊 Generated voxel grid with {len(voxel_grid)} points")
+                    
+                    # Print some sample voxels for debugging
+                    if len(voxel_grid) > 0:
+                        sample_size = min(3, len(voxel_grid))
+                        print(f"📊 Sample voxels (first {sample_size}):")
+                        for i in range(sample_size):
+                            print(f"  → Voxel {i}: {[round(v, 2) for v in voxel_grid[i]]}")
             
             # Calculate obstacle density (number of obstacles within radius)
             density = num_obstacles / (4/3 * np.pi * DENSITY_RADIUS**3) if num_obstacles > 0 else 0
+            print(f"📊 Obstacle density: {density:.4f}")
             
             # Create the observation dictionary
             observation = {
@@ -882,6 +901,10 @@ class DroneController:
                 "obstacle_density": density,
                 "target_location": self.target_location
             }
+            
+            print(f"📊 Target location: {[round(t, 2) for t in self.target_location]}")
+            print(f"📊 Straight-line distance to target: {self.distance_to_target():.2f}m")
+            print("==========================\n")
             
             return observation
             
@@ -942,6 +965,11 @@ class DroneController:
         try:
             # Get updated obstacle information
             num_obstacles, distances = self.scanner.fetch_density_distances()
+            
+            # Debug: Print obstacle information
+            print(f"🔍 OBSTACLE CHECK: Found {num_obstacles} objects within sensing range")
+            if distances:
+                print(f"🔍 Nearest obstacles: {[round(d, 2) for d in sorted(distances)[:3]]}m")
             
             # Check if any obstacle is within safety threshold
             if distances and min(distances) < safety_threshold:
@@ -1186,42 +1214,174 @@ class DroneController:
                 
             return direction, [direction] * POLICY_LENGTH
     
+    def _quaternion_multiply(self, q1, q2):
+        """Multiply two quaternions"""
+        w1, x1, y1, z1 = q1
+        w2, x2, y2, z2 = q2
+        
+        w = w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2
+        x = w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2
+        y = w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2
+        z = w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2
+        
+        return [w, x, y, z]
+
+    def _quaternion_conjugate(self, q):
+        """Calculate quaternion conjugate"""
+        w, x, y, z = q
+        return [w, -x, -y, -z]
+
+    def _rotate_vector_by_quaternion(self, vector, quaternion):
+        """Rotate a vector using quaternion rotation
+        
+        Args:
+            vector: 3D vector [x, y, z]
+            quaternion: Quaternion [w, x, y, z]
+            
+        Returns:
+            Rotated vector [x', y', z']
+        """
+        # Convert vector to quaternion representation (0 + xi + yj + zk)
+        vq = [0.0] + vector
+        
+        # Get quaternion conjugate
+        q_conj = self._quaternion_conjugate(quaternion)
+        
+        # Apply rotation: q * v * q^-1
+        rotated = self._quaternion_multiply(
+            self._quaternion_multiply(quaternion, vq),
+            q_conj
+        )
+        
+        # Extract vector part
+        return rotated[1:4]
+
     def convert_to_global_waypoint(self, egocentric_waypoint):
         """Convert an egocentric waypoint to global coordinates
         
         The egocentric waypoint is relative to the drone's current position and orientation.
         We need to transform it to global coordinates.
         """
+        # Print initial information for debugging
+        print("\n==== COORDINATE TRANSFORMATION ====")
+        print(f"Current position: {[round(p, 2) for p in self.current_position]}")
+        print(f"Egocentric waypoint: {[round(w, 2) for w in egocentric_waypoint]}")
+        
         # Calculate distance to target to adjust step size
         distance_to_target = self.distance_to_target()
+        print(f"Distance to target: {distance_to_target:.2f}m")
+        
+        original_waypoint = egocentric_waypoint.copy()
         
         # For final approach, limit step size to avoid overshooting
         if distance_to_target < 2.0:
             # Scale down the step size as we get closer to target
             scale_factor = min(distance_to_target / 2.0, 0.8)
-            if scale_factor < 0.5:  # Only log significant scaling
-                print(f"Scaling movement by {scale_factor:.2f}")
+            print(f"Final approach: Scaling movement by {scale_factor:.2f}")
             egocentric_waypoint = [
                 egocentric_waypoint[0] * scale_factor,
                 egocentric_waypoint[1] * scale_factor,
                 egocentric_waypoint[2] * scale_factor
             ]
         
-        # Add the egocentric vector to current position
-        global_waypoint = [
-            self.current_position[0] + egocentric_waypoint[0],
-            self.current_position[1] + egocentric_waypoint[1],
-            self.current_position[2] + egocentric_waypoint[2]
-        ]
+        # Apply quaternion-based rotation to account for drone orientation
+        # Note: AirSim uses NED coordinate system with quaternions in [w,x,y,z] format
+        print(f"Drone orientation (quaternion): {[round(q, 3) for q in self.current_orientation]}")
+        
+        # Enable/disable orientation adjustment for testing
+        apply_orientation = True  # Set to False to test without orientation adjustment
+        
+        if apply_orientation:
+            # Rotate the egocentric vector using quaternion rotation
+            rotated_vector = self._rotate_vector_by_quaternion(egocentric_waypoint, self.current_orientation)
+            print(f"Orientation-adjusted vector: {[round(v, 2) for v in rotated_vector]}")
+            
+            # Add the rotated vector to current position
+            global_waypoint = [
+                self.current_position[0] + rotated_vector[0],
+                self.current_position[1] + rotated_vector[1],
+                self.current_position[2] + rotated_vector[2]
+            ]
+        else:
+            print(f"WARNING: Orientation adjustment disabled for testing")
+            
+            # Add the egocentric vector to current position without rotation
+            global_waypoint = [
+                self.current_position[0] + egocentric_waypoint[0],
+                self.current_position[1] + egocentric_waypoint[1],
+                self.current_position[2] + egocentric_waypoint[2]
+            ]
+        
+        # Print the result before boundary enforcement
+        print(f"Transformed waypoint (before limits): {[round(w, 2) for w in global_waypoint]}")
         
         # Ensure waypoint is within simulation boundaries
+        original_global = global_waypoint.copy()
         global_waypoint = [
             min(max(global_waypoint[0], -100), 100),  # X between -100 and 100
             min(max(global_waypoint[1], -100), 100),  # Y between -100 and 100
             min(max(global_waypoint[2], -20), 0)      # Z between -20 and 0 (remember NED)
         ]
         
+        # Check if boundaries were enforced
+        if original_global != global_waypoint:
+            print(f"⚠️ Waypoint was outside boundaries and has been constrained!")
+        
+        print(f"Final global waypoint: {[round(w, 2) for w in global_waypoint]}")
+        print("=================================\n")
+        
         return global_waypoint
+
+    def inspect_suitability_metric(self, expected_state):
+        """Analyze the suitability metric to understand path planning decisions
+        
+        Args:
+            expected_state: The state belief received from the Julia inference engine
+        """
+        if not expected_state:
+            print("No expected state available to analyze")
+            return
+        
+        # Extract suitability value
+        suitability = expected_state.get('suitability', None)
+        
+        if suitability is None:
+            print("No suitability metric found in expected state")
+            return
+        
+        print("\n==== SUITABILITY ANALYSIS ====")
+        print(f"Current suitability: {suitability:.4f}")
+        
+        # Interpret suitability value
+        if suitability > 0.8:
+            print("🟢 HIGH SUITABILITY: Path is considered very safe")
+        elif suitability > 0.5:
+            print("🟡 MEDIUM SUITABILITY: Path has some obstacles but is generally navigable")
+        else:
+            print("🔴 LOW SUITABILITY: Path is considered risky with significant obstacles")
+        
+        # Calculate factors that might affect suitability
+        distance_to_target = self.distance_to_target()
+        
+        # Get nearest obstacle distance
+        _, distances = self.scanner.fetch_density_distances()
+        nearest_obstacle = min(distances) if distances else 100.0
+        
+        print(f"Factors affecting suitability:")
+        print(f"→ Distance to target: {distance_to_target:.2f}m")
+        print(f"→ Nearest obstacle: {nearest_obstacle:.2f}m")
+        
+        # Suggest potential path adjustments
+        print("\nPotential path improvements:")
+        
+        if nearest_obstacle < 3.0:
+            print("→ Move away from nearby obstacles")
+        
+        if suitability < 0.5 and nearest_obstacle > 5.0:
+            print("→ Suitability is low despite no very close obstacles - may be influenced by voxel grid obstacles")
+            print("→ Consider adjusting suitability calculation weights in Julia code")
+        
+        print("=============================\n")
 
 
 def main():
@@ -1266,6 +1426,21 @@ def main():
             print("Processing observation...")
             expected_state, egocentric_waypoint = zmq_interface.send_observation_and_receive_action(observation)
             
+            # Debug: Print detailed belief state information
+            if expected_state:
+                print("\n==== DRONE BELIEF STATE ====")
+                print(f"🧠 Distance belief: {expected_state.get('distance', 'N/A'):.2f}m")
+                print(f"🧠 Azimuth: {expected_state.get('azimuth', 'N/A'):.2f} rad ({round(np.rad2deg(expected_state.get('azimuth', 0)), 1)}°)")
+                print(f"🧠 Elevation: {expected_state.get('elevation', 'N/A'):.2f} rad ({round(np.rad2deg(expected_state.get('elevation', 0)), 1)}°)")
+                print(f"🧠 Path suitability: {expected_state.get('suitability', 'N/A'):.2f}")
+                print("==========================\n")
+                
+                # Analyze suitability metric to understand path planning decisions
+                controller.inspect_suitability_metric(expected_state)
+            
+            # Debug: Print waypoint decision
+            print(f"🧭 Planned egocentric waypoint: {[round(coord, 2) for coord in egocentric_waypoint]}")
+            
             # If ZMQ communication failed, use local fallback (create a minimal action toward target)
             if expected_state is None:
                 print("⚠️ Communication failed, using fallback")
@@ -1286,7 +1461,28 @@ def main():
             # 3. Convert to global coordinates and move the drone
             global_waypoint = controller.convert_to_global_waypoint(egocentric_waypoint)
             
+            # Save the planned waypoint for post-movement analysis
+            planned_waypoint = global_waypoint.copy()
+            
             movement_result = controller.move_to_waypoint(global_waypoint)
+            
+            # Analyze movement accuracy
+            print("\n==== MOVEMENT ANALYSIS ====")
+            actual_position = controller.current_position
+            print(f"Planned waypoint: {[round(w, 2) for w in planned_waypoint]}")
+            print(f"Actual position: {[round(p, 2) for p in actual_position]}")
+            
+            # Calculate movement error
+            movement_error = sqrt(sum((a - b) ** 2 for a, b in zip(actual_position, planned_waypoint)))
+            print(f"Movement error: {movement_error:.2f}m")
+            
+            if movement_error > 1.0:
+                print("⚠️ High movement error - potential navigation issue")
+            
+            # Analyze target progress
+            distance_to_target = controller.distance_to_target()
+            print(f"Current distance to target: {distance_to_target:.2f}m")
+            print("===========================\n")
             
             # Check if an obstacle was detected during movement
             if movement_result == "obstacle_detected":
