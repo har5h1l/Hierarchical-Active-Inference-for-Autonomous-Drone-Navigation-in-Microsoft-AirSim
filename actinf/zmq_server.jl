@@ -254,6 +254,7 @@ function process_observation(observation_data::Dict)
     # Extract observation data
     local drone_position, drone_orientation, target_location
     local nearest_obstacle_distances, obstacle_density, voxel_grid
+    local obstacle_repulsion_weight, suitability_weights, target_preference_weight
     
     try
         # Extract data with safety checks
@@ -263,6 +264,13 @@ function process_observation(observation_data::Dict)
         target_location = SVector{3, Float64}(get(observation_data, target_position_key, [10.0, 0.0, -3.0])...)
         nearest_obstacle_distances = get(observation_data, "nearest_obstacle_distances", [100.0, 100.0])
         obstacle_density = get(observation_data, "obstacle_density", 0.0)
+        
+        # Extract new parameters for suitability and target preference 
+        obstacle_repulsion_weight = get(observation_data, "obstacle_repulsion_weight", 0.0)
+        target_preference_weight = get(observation_data, "target_preference_weight", 0.5)
+        
+        # Get suitability weights if provided
+        suitability_weights = get(observation_data, "suitability_weights", Dict())
         
         # Parse voxel grid more efficiently with size information for logging
         raw_voxel_grid = get(observation_data, "voxel_grid", Vector{Vector{Float64}}())
@@ -284,6 +292,8 @@ function process_observation(observation_data::Dict)
         println("- Target position: $(round.(target_location, digits=2))")
         println("- Obstacle count: $(length(voxel_grid)) voxels")
         println("- Obstacle density: $(round(obstacle_density, digits=3))")
+        println("- Obstacle repulsion weight: $(round(obstacle_repulsion_weight, digits=3))")
+        println("- Target preference weight: $(round(target_preference_weight, digits=3))")
     catch e
         println("Error parsing observation data: $e")
         return Dict(
@@ -324,32 +334,59 @@ function process_observation(observation_data::Dict)
     # Get expected state
     expected_drone_state = expected_state(current_beliefs)
     
-    # Initialize preference model and action planner
+    # Extract suitability weights if provided in the observation data
+    obstacle_weight = 0.7  # Default value
+    density_weight = 0.3   # Default value
+    suitability_threshold = 0.3 # Default value
+    
+    if !isempty(suitability_weights)
+        # Use provided weights from Python code
+        obstacle_weight = get(suitability_weights, "nearest_obstacle_weight", 0.4)
+        density_weight = get(suitability_weights, "obstacle_density_weight", 0.6)
+        suitability_threshold = get(suitability_weights, "min_suitability_threshold", 0.65)
+        println("Using custom suitability weights:")
+        println("- Obstacle weight: $(obstacle_weight)")
+        println("- Density weight: $(density_weight)")
+        println("- Min suitability threshold: $(suitability_threshold)")
+    end
+    
+    # Initialize preference model with updated weights
     preference_model = PreferenceModel(
         distance_weight = 1.0,
         distance_scaling = 0.1,
         angle_weight = 0.8,
         angle_sharpness = 5.0,
         suitability_weight = 1.5,
-        suitability_threshold = 0.3,
+        suitability_threshold = suitability_threshold,  # Use the updated threshold
         max_distance = 50.0
     )
     
+    # Initialize planner with updated density weight
     planner = ActionPlanner(
         max_step_size = 1.0,
         num_angles = 8,
         num_step_sizes = 3,
-        pragmatic_weight = 1.0,
+        pragmatic_weight = target_preference_weight > 0.5 ? 1.5 : 1.0,  # Increased when target preference is high
         epistemic_weight = 0.2,
-        risk_weight = 2.0,
+        risk_weight = 2.0 + obstacle_repulsion_weight * 3.0,  # Scale up risk weight based on obstacle repulsion
         safety_distance = 1.5,
-        density_weight = 1.0,
+        density_weight = density_weight / obstacle_weight * 2.0,  # Scale density weight relative to obstacle weight
         preference_model = preference_model
     )
+    
+    # Override the suitability threshold used in planning
+    # This ensures that the filtering step in select_action uses the updated threshold
+    global SUITABILITY_THRESHOLD = suitability_threshold
     
     # Plan actions
     println("Planning optimal action...")
     obstacle_distance = isempty(nearest_obstacle_distances) ? 100.0 : minimum(nearest_obstacle_distances)
+    
+    # Get nearest obstacle distance, maybe from an additional field if available
+    if haskey(observation_data, "nearest_obstacle_dist")
+        obstacle_distance = observation_data["nearest_obstacle_dist"]
+    end
+    
     actions_with_efe = select_action(
         current_state,
         current_beliefs,
@@ -358,7 +395,8 @@ function process_observation(observation_data::Dict)
         target_location,
         obstacle_distance=obstacle_distance,
         obstacle_density=obstacle_density,
-        num_policies=POLICY_LENGTH
+        num_policies=POLICY_LENGTH,
+        obstacle_weight=obstacle_weight
     )
     
     # Extract best action and policy

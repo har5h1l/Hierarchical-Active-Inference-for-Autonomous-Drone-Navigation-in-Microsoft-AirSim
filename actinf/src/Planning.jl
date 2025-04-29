@@ -10,13 +10,21 @@ using ..StateSpace
 using ..Inference
 
 # Constants for suitability calculation and filtering
-const SUITABILITY_THRESHOLD = 0.5
-const OBSTACLE_WEIGHT = 0.7
-const DENSITY_WEIGHT = 0.3
+# Make SUITABILITY_THRESHOLD global and mutable so it can be updated from zmq_server.jl
+global SUITABILITY_THRESHOLD = 0.5  # Can be overridden by server
+const DEFAULT_OBSTACLE_WEIGHT = 0.7  # Default weight for obstacle distance
+const DEFAULT_DENSITY_WEIGHT = 0.3   # Default weight for obstacle density
 const CUTOFF_DISTANCE = 2.5  # Meters
 const STEEPNESS_DISTANCE = 3.0
 const CUTOFF_DENSITY = 0.2
 const STEEPNESS_DENSITY = 10.0
+
+# Target approach thresholds
+const CLOSE_TO_TARGET_THRESHOLD = 10.0  # Distance in meters to prioritize direct paths to target
+const VERY_CLOSE_TO_TARGET_THRESHOLD = 5.0  # Distance in meters for even stronger target preference
+
+# Minimum acceptable suitability for waypoints
+const MIN_ACCEPTABLE_SUITABILITY = 0.2  # Waypoints below this are considered risky
 
 """
     PreferenceModel
@@ -242,8 +250,8 @@ function calculate_suitability_for_waypoint(waypoint::SVector{3, Float64}, obsta
     return StateSpace.calculate_suitability(
         obstacle_distance, 
         obstacle_density, 
-        obstacle_weight=OBSTACLE_WEIGHT, 
-        density_weight=DENSITY_WEIGHT*density_weight,
+        obstacle_weight=DEFAULT_OBSTACLE_WEIGHT, 
+        density_weight=DEFAULT_DENSITY_WEIGHT*density_weight,
         cutoff_distance=CUTOFF_DISTANCE,
         steepness_distance=STEEPNESS_DISTANCE,
         cutoff_density=CUTOFF_DENSITY,
@@ -253,17 +261,24 @@ end
 
 """
     simulate_transition(state::StateSpace.DroneState, waypoint::SVector{3, Float64}, target_position::SVector{3, Float64}, 
-                        voxel_grid::Vector{SVector{3, Float64}}, obstacle_distance::Float64, obstacle_density::Float64, density_weight::Float64 = 1.0)::StateSpace.DroneState
+                        voxel_grid::Vector{SVector{3, Float64}}, obstacle_distance::Float64, obstacle_density::Float64, 
+                        density_weight::Float64 = 1.0; obstacle_weight::Float64 = DEFAULT_OBSTACLE_WEIGHT)::StateSpace.DroneState
 
 Simulate the predicted next state given the current state and a waypoint.
 Computes distance to target, azimuth and elevation from waypoint to target,
 and calculates suitability based on obstacle sensory data (voxel grid, distance and density).
 """
 function simulate_transition(state::StateSpace.DroneState, waypoint::SVector{3, Float64}, target_position::SVector{3, Float64}, 
-                            voxel_grid::Vector{SVector{3, Float64}}, obstacle_distance::Float64, obstacle_density::Float64, density_weight::Float64 = 1.0)::StateSpace.DroneState
+                            voxel_grid::Vector{SVector{3, Float64}}, obstacle_distance::Float64, obstacle_density::Float64, 
+                            density_weight::Float64 = 1.0; obstacle_weight::Float64 = DEFAULT_OBSTACLE_WEIGHT)::StateSpace.DroneState
     # Vector from waypoint to target
     to_target = target_position - waypoint
     dist_to_target = norm(to_target)
+    
+    # Also calculate current distance from current position to target 
+    # (we need this to see if we're getting closer)
+    current_position = waypoint - (waypoint - state.distance * normalize(to_target))
+    current_to_target_dist = norm(target_position - current_position)
     
     # Compute azimuth and elevation angles
     azimuth = atan(to_target[2], to_target[1])  # atan(y, x)
@@ -292,9 +307,34 @@ function simulate_transition(state::StateSpace.DroneState, waypoint::SVector{3, 
         end
     end
     
-    # Calculate suitability using the shared function for consistency
-    suitability = StateSpace.calculate_suitability(local_obstacle_distance, local_density, 
-                                                 obstacle_weight=0.7, density_weight=0.3*density_weight)
+    # Calculate base suitability
+    suitability = StateSpace.calculate_suitability(
+        local_obstacle_distance, 
+        local_density, 
+        obstacle_weight=obstacle_weight, 
+        density_weight=DEFAULT_DENSITY_WEIGHT*density_weight
+    )
+    
+    # Special case: When close to target, evaluate direct path to target
+    if current_to_target_dist <= CLOSE_TO_TARGET_THRESHOLD
+        # If this waypoint would bring us closer to the target
+        if dist_to_target < current_to_target_dist
+            # Check if it's a clear path (no obstacles near)
+            has_clear_path = local_obstacle_distance >= CUTOFF_DISTANCE
+            
+            # If path is clear or very close to target, boost suitability
+            if has_clear_path || current_to_target_dist < VERY_CLOSE_TO_TARGET_THRESHOLD
+                # Boost target weight and preference when path is clear and we're close
+                suitability_boost = 0.2 
+                suitability = min(1.0, suitability + suitability_boost)
+                
+                # If very close to target, boost even more
+                if current_to_target_dist < VERY_CLOSE_TO_TARGET_THRESHOLD
+                    suitability = min(1.0, suitability + 0.1)
+                end
+            end
+        end
+    end
     
     # Construct new DroneState with updated fields
     return StateSpace.DroneState(
@@ -351,7 +391,7 @@ end
     select_action(state::StateSpace.DroneState, beliefs::Inference.DroneBeliefs, planner::ActionPlanner, 
                  current_position::SVector{3, Float64}, target_position::SVector{3, Float64};
                  obstacle_distance::Float64 = 10.0, obstacle_density::Float64 = 0.0, 
-                 num_policies::Int = 5)
+                 num_policies::Int = 5, obstacle_weight::Float64 = DEFAULT_OBSTACLE_WEIGHT)
 
 Select the best actions by first filtering out unsafe paths based on suitability,
 then evaluating Expected Free Energy on remaining safe candidates.
@@ -360,7 +400,7 @@ Dynamically adjusts waypoint radius, policy length, and waypoint sampling based 
 function select_action(state::StateSpace.DroneState, beliefs::Inference.DroneBeliefs, planner::ActionPlanner, 
                      current_position::SVector{3, Float64}, target_position::SVector{3, Float64};
                      obstacle_distance::Float64 = 10.0, obstacle_density::Float64 = 0.0, 
-                     num_policies::Int = 5)
+                     num_policies::Int = 5, obstacle_weight::Float64 = DEFAULT_OBSTACLE_WEIGHT)
     # Constants for adaptive parameters
     MIN_RADIUS = 0.5
     MAX_RADIUS = 3.0
@@ -368,6 +408,14 @@ function select_action(state::StateSpace.DroneState, beliefs::Inference.DroneBel
     MAX_POLICY_LEN = 5
     MIN_WAYPOINTS = 15
     MAX_WAYPOINTS = 75
+    
+    # Calculate distance to target
+    current_to_target = target_position - current_position
+    current_to_target_dist = norm(current_to_target)
+    target_direction = normalize(current_to_target)
+    
+    # Increase waypoint radius when close to target to allow reaching it in one step
+    close_to_target = current_to_target_dist <= CLOSE_TO_TARGET_THRESHOLD
     
     # Dynamically adjust parameters based on state suitability
     # For suitability, higher values (closer to 1) mean safer navigation conditions
@@ -377,6 +425,11 @@ function select_action(state::StateSpace.DroneState, beliefs::Inference.DroneBel
     # Low suitability -> smaller radius (safer, shorter steps)
     # High suitability -> larger radius (faster exploitation)
     adaptive_radius = MIN_RADIUS + suitability_factor * (MAX_RADIUS - MIN_RADIUS)
+    
+    # If close to target, ensure radius is at least enough to reach the target
+    if close_to_target
+        adaptive_radius = max(adaptive_radius, current_to_target_dist * 1.1)
+    end
     
     # 2. Adjust policy length - inverse relationship with suitability
     # Low suitability -> longer policy (more careful planning)
@@ -401,14 +454,28 @@ function select_action(state::StateSpace.DroneState, beliefs::Inference.DroneBel
     # Generate waypoints with adaptive radius for adaptive exploration
     waypoints = generate_waypoints(current_position, adaptive_radius, num_angles, num_elevations)
     
-    # Calculate vector to target
-    to_target = target_position - current_position
-    target_direction = normalize(to_target)
-    
     # Add direct-to-target waypoints with various step sizes
-    for step in [0.3, 0.6, 0.9] .* adaptive_radius
-        direct_waypoint = current_position + step * target_direction
-        push!(waypoints, direct_waypoint)
+    # When close to target, add more direct waypoints with finer gradations
+    if close_to_target
+        # More steps when close to target for finer control
+        step_ratios = if current_to_target_dist < VERY_CLOSE_TO_TARGET_THRESHOLD
+            [0.2, 0.4, 0.6, 0.8, 1.0]  # Very fine steps when very close
+        else
+            [0.3, 0.6, 0.9, 1.0]  # Regular steps when somewhat close
+        end
+        
+        for ratio in step_ratios
+            # Create direct waypoint toward target
+            step_size = ratio * min(adaptive_radius, current_to_target_dist * 1.1)
+            direct_waypoint = current_position + step_size * target_direction
+            push!(waypoints, direct_waypoint)
+        end
+    else
+        # Standard approach when not close
+        for step in [0.3, 0.6, 0.9] .* adaptive_radius
+            direct_waypoint = current_position + step * target_direction
+            push!(waypoints, direct_waypoint)
+        end
     end
     
     # Step 1: Generate candidate waypoints and predict next states
@@ -416,34 +483,75 @@ function select_action(state::StateSpace.DroneState, beliefs::Inference.DroneBel
     all_states = Vector{StateSpace.DroneState}()
     all_actions = Vector{SVector{3, Float64}}()
     all_suitabilities = Vector{Float64}()
+    all_distances = Vector{Float64}()
     
     println("Generated $(length(all_waypoints)) candidate waypoints")
     
     # Step 2: Predict next state for each candidate and calculate suitability
     for wp in all_waypoints
-        next_state = simulate_transition(state, wp, target_position, beliefs.voxel_grid, obstacle_distance, obstacle_density, planner.density_weight)
+        next_state = simulate_transition(
+            state, 
+            wp, 
+            target_position, 
+            beliefs.voxel_grid, 
+            obstacle_distance, 
+            obstacle_density, 
+            planner.density_weight,
+            obstacle_weight=obstacle_weight
+        )
         action = wp - current_position
         
         push!(all_states, next_state)
         push!(all_actions, action)
         push!(all_suitabilities, next_state.suitability)
+        push!(all_distances, next_state.distance)
     end
     
     # Step 3: Early elimination based on suitability threshold
-    safe_indices = findall(s -> s >= SUITABILITY_THRESHOLD, all_suitabilities)
+    # Use a lower suitability threshold when close to target
+    effective_threshold = close_to_target ? 
+                          MIN_ACCEPTABLE_SUITABILITY : 
+                          SUITABILITY_THRESHOLD
+    
+    safe_indices = findall(s -> s >= effective_threshold, all_suitabilities)
     
     # If no waypoints pass the suitability threshold, relax it to take the best available
     if isempty(safe_indices) && !isempty(all_suitabilities)
-        # Find the waypoint with highest suitability if none pass threshold
-        _, best_idx = findmax(all_suitabilities)
-        safe_indices = [best_idx]  # Just use the best one
-        println("Warning: No waypoints passed suitability threshold. Using best available.")
+        println("Warning: No waypoints passed suitability threshold. Finding best alternative.")
+        
+        # When close to target, prioritize waypoints that move closer to target with acceptable safety
+        if close_to_target
+            # Calculate combined scores that balance safety with progress toward target
+            combined_scores = Float64[]
+            
+            for i in 1:length(all_waypoints)
+                # Distance improvement factor (positive if getting closer to target)
+                distance_improvement = current_to_target_dist - all_distances[i]
+                progress_score = distance_improvement > 0 ? distance_improvement / current_to_target_dist : 0.0
+                
+                # Calculate combined score (60% suitability, 40% progress toward target)
+                combined_score = 0.6 * all_suitabilities[i] + 0.4 * progress_score
+                push!(combined_scores, combined_score)
+            end
+            
+            # Select best combined score
+            _, best_idx = findmax(combined_scores)
+            safe_indices = [best_idx]
+            
+            println("Selected best combined score option when close to target.")
+        else
+            # When far from target, just take the highest suitability option
+            _, best_idx = findmax(all_suitabilities)
+            safe_indices = [best_idx]
+            println("Selected highest suitability option when far from target.")
+        end
     end
     
     filtered_states = all_states[safe_indices]
     filtered_actions = all_actions[safe_indices]
+    filtered_distances = all_distances[safe_indices]
     
-    println("$(length(filtered_states)) waypoints passed suitability threshold ($(SUITABILITY_THRESHOLD))")
+    println("$(length(filtered_states)) waypoints passed suitability threshold ($(effective_threshold))")
     
     # Step 4: Evaluate EFE on filtered (safe) waypoints
     if isempty(filtered_states)
@@ -457,8 +565,9 @@ function select_action(state::StateSpace.DroneState, beliefs::Inference.DroneBel
     
     for (state_idx, next_state) in enumerate(filtered_states)
         action = filtered_actions[state_idx]
+        next_distance = filtered_distances[state_idx]
         
-        # Calculate EFE without risk penalty (safety already ensured by filtering)
+        # Calculate baseline EFE without risk penalty (safety already ensured by filtering)
         efe = calculate_efe(
             next_state,
             beliefs,
@@ -467,6 +576,19 @@ function select_action(state::StateSpace.DroneState, beliefs::Inference.DroneBel
             pragmatic_weight=planner.pragmatic_weight,
             epistemic_weight=planner.epistemic_weight
         )
+        
+        # Apply bonus for actions that make progress toward target
+        if close_to_target && next_distance < current_to_target_dist
+            # Stronger bonus when very close to target
+            distance_bonus = if current_to_target_dist < VERY_CLOSE_TO_TARGET_THRESHOLD
+                (current_to_target_dist - next_distance) * 3.0  # Very strong bonus when very close
+            else
+                (current_to_target_dist - next_distance) * 1.5  # Moderate bonus when somewhat close
+            end
+            
+            # Apply bonus (remember lower EFE is better)
+            efe -= distance_bonus
+        end
         
         push!(efe_scores, efe)
     end
@@ -487,8 +609,10 @@ function select_action(state::StateSpace.DroneState, beliefs::Inference.DroneBel
         best_efe = efe_scores[best_idx]
         best_action = filtered_actions[best_idx]
         best_suitability = filtered_states[best_idx].suitability
+        best_distance = filtered_distances[best_idx]
         
         println("Best EFE: $(best_efe), Action: $(best_action), Suitability: $(best_suitability)")
+        println("Current distance to target: $(current_to_target_dist), Next distance: $(best_distance)")
     end
     
     return selected

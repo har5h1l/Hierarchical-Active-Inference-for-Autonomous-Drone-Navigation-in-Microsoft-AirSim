@@ -1613,7 +1613,7 @@ version = "1.5.7+1"
 
 [[deps.actinf]]
 deps = ["JSON", "LinearAlgebra", "RxInfer", "StaticArrays"]
-path = "c:\\Users\\Satya\\Autonomous-Drone-Navigation-in-AirSim-With-Active-Inference\\actinf"
+path = "C:\\Users\\Satya\\Autonomous-Drone-Navigation-in-AirSim-With-Active-Inference\\actinf"
 uuid = "d0498c39-f064-4652-9d32-417a3552f8c1"
 version = "0.1.0"
 

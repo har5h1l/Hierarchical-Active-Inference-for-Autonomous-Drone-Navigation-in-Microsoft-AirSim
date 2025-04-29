@@ -17,6 +17,7 @@ using actinf
 const INTERFACE_DIR = joinpath(@__DIR__, "interface")
 const INFERRED_STATE_PATH = joinpath(INTERFACE_DIR, "inferred_state.json")
 const ACTION_OUTPUT_PATH = joinpath(INTERFACE_DIR, "action_output.json")
+const OBS_INPUT_PATH = joinpath(INTERFACE_DIR, "obs_input.json")
 
 # Hyperparameters
 const MARGIN = 1.5  # Safety margin for waypoint generation (meters)
@@ -70,6 +71,25 @@ function main()
         println("Using emergency fallback state")
     end
     
+    # Get obstacle repulsion weight from the original observation file if available
+    local obstacle_repulsion_weight = 0.0
+    local direct_path_clear = true
+    local direct_path_suitability = 1.0
+    
+    if isfile(OBS_INPUT_PATH)
+        try
+            obs_data = JSON.parsefile(OBS_INPUT_PATH)
+            obstacle_repulsion_weight = get(obs_data, "obstacle_repulsion_weight", 0.0)
+            direct_path_clear = get(obs_data, "direct_path_clear", true)
+            direct_path_suitability = get(obs_data, "direct_path_suitability", 1.0)
+            
+            println("Retrieved obstacle repulsion weight: $obstacle_repulsion_weight")
+            println("Direct path clear: $direct_path_clear, suitability: $direct_path_suitability")
+        catch e
+            println("Warning: Could not read observation file: $e")
+        end
+    end
+    
     # Extract state, beliefs, and positions with more robust error handling
     local current_state
     try
@@ -119,31 +139,94 @@ function main()
     nearest_obstacle_distances = get(data, "nearest_obstacle_distances", [100.0, 100.0])
     obstacle_density = get(data, "obstacle_density", 0.0)
     
+    # Calc distance to target
+    current_to_target = target_position - drone_position
+    current_to_target_dist = norm(current_to_target)
+    
+    # Calculate target preference vs obstacle avoidance weights
+    # More target preference when:
+    # 1. Clear direct path to target
+    # 2. Very close to target
+    # 3. Low obstacle repulsion
+    
+    target_preference_weight = 0.6  # Base weight
+    
+    # Adjust based on distance to target
+    if current_to_target_dist < 5.0
+        target_preference_weight += 0.2  # Strong target preference when very close
+    elseif current_to_target_dist < 10.0
+        target_preference_weight += 0.1  # Moderate increase when somewhat close
+    end
+    
+    # Adjust based on direct path clarity
+    if direct_path_clear && direct_path_suitability > 0.7
+        target_preference_weight += 0.1  # Increase when direct path is very clear
+    end
+    
+    # Reduce for high obstacle repulsion
+    if obstacle_repulsion_weight > 0.5
+        target_preference_weight = max(0.4, target_preference_weight - 0.2)  # Reduce but maintain minimum
+    elseif obstacle_repulsion_weight > 0.2
+        target_preference_weight = max(0.4, target_preference_weight - 0.1)  # Smaller reduction
+    end
+    
+    # Cap the weight
+    target_preference_weight = clamp(target_preference_weight, 0.4, 0.8)
+    obstacle_weight = 1.0 - target_preference_weight
+    
+    # Update suitability threshold based on target distance
+    suitability_threshold = if current_to_target_dist < 5.0
+        0.3  # Lower threshold when very close to target
+    elseif current_to_target_dist < 10.0
+        0.4  # Moderate threshold when somewhat close
+    else
+        0.5  # Standard threshold when far from target
+    end
+    
+    # Calculate density weight based on distance and obstacle repulsion
+    density_weight = 1.0
+    if obstacle_repulsion_weight > 0.5
+        density_weight = 1.5  # Higher density weight with high repulsion
+    end
+    
     # Initialize preference model and action planner
     preference_model = PreferenceModel(
-        distance_weight = 1.0,
+        distance_weight = target_preference_weight,
         distance_scaling = 0.1,
         angle_weight = 0.8,
         angle_sharpness = 5.0,
-        suitability_weight = 1.5,
-        suitability_threshold = 0.3,
+        suitability_weight = obstacle_weight,
+        suitability_threshold = suitability_threshold,
         max_distance = 50.0
     )
+    
+    # Risk weight is scaled up based on obstacle repulsion
+    risk_weight_scale = 2.0 + (obstacle_repulsion_weight * 3.0)
     
     planner = ActionPlanner(
         max_step_size = 1.0,
         num_angles = 8,
         num_step_sizes = 3,
-        pragmatic_weight = 1.0,
+        pragmatic_weight = target_preference_weight > 0.5 ? 1.5 : 1.0,  # Increased when target preference is high
         epistemic_weight = 0.2,
-        risk_weight = 2.0,
+        risk_weight = risk_weight_scale,  # Scale up risk weight based on obstacle repulsion
         safety_distance = MARGIN,
-        density_weight = 1.0,
+        density_weight = density_weight,
         preference_model = preference_model
     )
     
+    # Override the suitability threshold used in planning
+    # This ensures that the filtering step in select_action uses the updated threshold
+    global SUITABILITY_THRESHOLD = suitability_threshold
+    
     # Select best actions using the planner
     obstacle_distance = isempty(nearest_obstacle_distances) ? 100.0 : minimum(nearest_obstacle_distances)
+    
+    # Get nearest obstacle distance, maybe from an additional field if available
+    if haskey(data, "nearest_obstacle_dist")
+        obstacle_distance = data["nearest_obstacle_dist"]
+    end
+    
     actions_with_efe = select_action(
         current_state,
         beliefs,
@@ -152,7 +235,8 @@ function main()
         target_position,
         obstacle_distance=obstacle_distance,
         obstacle_density=obstacle_density,
-        num_policies=POLICY_LENGTH
+        num_policies=POLICY_LENGTH,
+        obstacle_weight=obstacle_weight
     )
     
     # Extract the top action and policy
