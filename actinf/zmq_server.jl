@@ -409,6 +409,14 @@ function process_observation(observation_data::Dict)
     
     println("Selected waypoint: $(round.(best_action_array, digits=2))")
     
+    # Ensure best_action_array is valid (not NaN or Inf)
+    for i in 1:length(best_action_array)
+        if isnan(best_action_array[i]) || isinf(best_action_array[i])
+            println("⚠️ Invalid waypoint component detected: $(best_action_array)")
+            best_action_array[i] = 0.0
+        end
+    end
+    
     # Create response
     response = Dict(
         "expected_state" => Dict(
@@ -418,9 +426,30 @@ function process_observation(observation_data::Dict)
             "suitability" => expected_drone_state.suitability
         ),
         "action" => best_action_array,
+        "waypoint" => best_action_array,
         "policy" => policy_array,
         "efe" => best_efe
     )
+    
+    # Extra validation of the response to ensure JSON serialization will work
+    try
+        # Test serialization before returning
+        response_json = JSON.json(response)
+        # Verify deserialization works too
+        test_parse = JSON.parse(response_json)
+        # Verify action array is present and valid
+        if !haskey(test_parse, "action") || !(test_parse["action"] isa Vector) || length(test_parse["action"]) != 3
+            println("⚠️ JSON serialization issue detected. Fixing response...")
+            # Provide fallback values
+            response["action"] = [0.0, 0.0, 0.0]
+            response["waypoint"] = [0.0, 0.0, 0.0]
+        end
+    catch e
+        println("⚠️ Error in JSON response validation: $e")
+        # Provide fallback values for action and waypoint
+        response["action"] = [0.0, 0.0, 0.0]
+        response["waypoint"] = [0.0, 0.0, 0.0]
+    end
     
     return response
 end
@@ -516,7 +545,9 @@ function run_server()
                     println("Error processing request: $e")
                     response = Dict(
                         "error" => "Processing error: $e",
-                        "action" => [0.0, 0.0, 0.0]
+                        "action" => [0.0, 0.0, 0.0],
+                        "waypoint" => [0.0, 0.0, 0.0],
+                        "policy" => [[0.0, 0.0, 0.0]]
                     )
                 end
                 
@@ -536,7 +567,9 @@ function run_server()
                 try
                     err_response = Dict(
                         "error" => "Server error: $(typeof(e))",
-                        "action" => [0.0, 0.0, 0.0]
+                        "action" => [0.0, 0.0, 0.0],
+                        "waypoint" => [0.0, 0.0, 0.0],
+                        "policy" => [[0.0, 0.0, 0.0]]
                     )
                     ZMQCompat.send(socket, JSON.json(err_response))  # Use compatibility layer
                     println("Error response sent")
