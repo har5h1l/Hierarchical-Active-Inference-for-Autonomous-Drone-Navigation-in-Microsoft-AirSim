@@ -1,0 +1,18 @@
+  Activating project at `c:\Users\Satya\Autonomous-Drone-Navigation-in-AirSim-With-Active-Inference`
+   Resolving package versions...
+  No Changes to `C:\Users\Satya\Autonomous-Drone-Navigation-in-AirSim-With-Active-Inference\Project.toml`
+  No Changes to `C:\Users\Satya\Autonomous-Drone-Navigation-in-AirSim-With-Active-Inference\Manifest.toml`
+Starting comprehensive precompilation for Julia components...
+Importing and precompiling packages...
+ 55.543611 seconds (5.66 M allocations: 323.589 MiB, 0.94% gc time, 6.22% compilation time: 77% of which was recompilation)
+Precompiling specific functionality...
+Generated 22 candidate waypoints
+22 waypoints passed suitability threshold (0.5)
+Best EFE: -24.43717567877885, Action: [3.0, 0.0, 0.0], Suitability: 0.9642391232749319
+Current distance to target: 10.44030650891055, Next distance: 7.615773105863909
+Precompiling ZMQ functionality...
+✓ Using newer ZMQ API (direct socket methods)
+✓ Context closed with newer API
+  1.216502 seconds (788.05 k allocations: 39.926 MiB, 96.21% compilation time: 3% of which was recompilation)
+Precompilation complete! All Julia components are ready for execution.
+This will significantly reduce runtime overhead during navigation.
