@@ -100,9 +100,13 @@ class ZMQInterface:
             # Create new context and socket
             self.context = zmq.Context()
             self.socket = self.context.socket(zmq.REQ)
-            self.socket.setsockopt(zmq.LINGER, 1000)  # Increased linger time
+            
+            # Configure socket options
+            self.socket.setsockopt(zmq.LINGER, 1000)  # Wait up to 1 second when closing
             self.socket.setsockopt(zmq.RCVTIMEO, ZMQ_TIMEOUT)  # Use global timeout
             self.socket.setsockopt(zmq.SNDTIMEO, ZMQ_TIMEOUT)  # Use global timeout
+            self.socket.setsockopt(zmq.REQ_RELAXED, 1)  # More relaxed REQ socket behavior
+            self.socket.setsockopt(zmq.REQ_CORRELATE, 1)  # Correlate replies with requests
             
             # Connect with proper error handling
             try:
@@ -110,12 +114,22 @@ class ZMQInterface:
                 self.socket.connect(self.server_address)
                 print(f"Connected to ZMQ server at {self.server_address}")
                 
-                # Test connection (simplified)
-                connection_result = self._test_connection()
-                if connection_result:
-                    print("✅ ZMQ socket connected successfully")
-                else:
-                    print("⚠️ ZMQ connection test failed, but continuing anyway")
+                # Test connection with a simple ping
+                try:
+                    self.socket.send_string("ping")
+                    poller = zmq.Poller()
+                    poller.register(self.socket, zmq.POLLIN)
+                    if poller.poll(ZMQ_TIMEOUT):
+                        response = self.socket.recv_string()
+                        if response == "pong":
+                            print("✅ ZMQ socket connected and responding to pings")
+                            return True
+                        else:
+                            print(f"⚠️ Unexpected ping response: {response}")
+                    else:
+                        print("⚠️ No response to ping within timeout")
+                except Exception as e:
+                    print(f"⚠️ Error during ping test: {str(e)}")
                 
                 return True
             except zmq.ZMQError as e:
@@ -131,17 +145,6 @@ class ZMQInterface:
             self.socket = None
             self.context = None
             return False
-    
-    def _test_connection(self):
-        """Test the ZMQ connection - skip ping test and just verify socket
-        
-        Returns:
-            bool: Always returns True since we've already verified the socket connected
-        """
-        # Skip the actual ping test since it frequently times out
-        # We've already verified the socket is connected at this point
-        print("ZMQ socket connected - skipping ping test")
-        return True
     
     def _reset_socket(self):
         """Reset and reconnect the ZMQ socket"""
@@ -261,37 +264,31 @@ class ZMQInterface:
                 return None, []
         
         # Transform observations to match server expectations
-        # The Julia server expects slightly different format
         transformed_observation = self._sanitize_for_json(observation)
         
         # Convert obstacle points to voxel grid format
         if 'obstacle_positions' in transformed_observation and len(transformed_observation['obstacle_positions']) > 0:
-            # Move obstacle positions to voxel_grid which is what the Julia server expects
             transformed_observation['voxel_grid'] = transformed_observation.pop('obstacle_positions')
             
-            # Calculate nearest obstacle distance from the list of obstacle distances
             if 'obstacle_distances' in transformed_observation and len(transformed_observation['obstacle_distances']) > 0:
                 transformed_observation['nearest_obstacle_dist'] = min(transformed_observation['obstacle_distances'])
                 transformed_observation['nearest_obstacle_distances'] = transformed_observation.pop('obstacle_distances')
             
-            # Calculate obstacle density from the count of obstacles
             obstacle_count = len(transformed_observation['voxel_grid'])
             if obstacle_count > 0 and 'density_radius' in transformed_observation:
-                # Simple density calculation based on count and radius
                 density = min(1.0, obstacle_count / (100.0 * transformed_observation['density_radius']))
                 transformed_observation['obstacle_density'] = density
                 print(f"Calculated obstacle density: {density:.3f} based on {obstacle_count} obstacles")
             else:
                 transformed_observation['obstacle_density'] = 0.0
         else:
-            # Ensure these fields exist even if empty
             transformed_observation['voxel_grid'] = []
-            transformed_observation['nearest_obstacle_distances'] = [100.0, 100.0]  # Default to large distance
+            transformed_observation['nearest_obstacle_distances'] = [100.0, 100.0]
             transformed_observation['obstacle_density'] = 0.0
         
         # Add suitability preferences
-        transformed_observation['target_preference_weight'] = 0.7  # Prefer moving toward target
-        transformed_observation['obstacle_repulsion_weight'] = 0.6  # Avoid obstacles moderately
+        transformed_observation['target_preference_weight'] = 0.7
+        transformed_observation['obstacle_repulsion_weight'] = 0.6
         
         # Add suitability weights dictionary for planning
         transformed_observation['suitability_weights'] = {
@@ -774,7 +771,7 @@ def initialize_zmq_with_precompilation():
         
         # Create ZMQ interface first to initialize properties
         print("Creating ZMQ interface...")
-        zmq_interface = ZMQInterface()
+        zmq_interface = ZMQInterface(defer_connection=True)
         
         # Attempt to check if server is already running
         if zmq_interface._is_server_running():
