@@ -5,6 +5,21 @@ from math import pi
 import msgpackrpc
 from sklearn.cluster import DBSCAN
 from collections import defaultdict
+import json
+import platform
+import os
+import subprocess
+import traceback
+import zmq
+import threading
+import signal
+import sys
+from datetime import datetime
+
+# Add these new imports to support enhanced ZMQ functionality
+import errno
+import tempfile
+import random
 
 class EnvironmentScanner:
     def __init__(self, client=None):
@@ -14,377 +29,587 @@ class EnvironmentScanner:
         except Exception as e:
             raise Exception(f"Failed to connect to AirSim: {str(e)}")
 
-    def get_obstacle_coordinates(self):
-        """Main function to perform sensor sweep and return obstacle coordinates"""
-        try:
-            points = self.collect_sensor_data()
-            
-            if points is None or len(points) == 0:
-                raise Exception("No valid point cloud data collected")
-                
-            voxel_coordinates = self.create_obstacle_voxel_grid(points)
-            
-            if voxel_coordinates is None or len(voxel_coordinates) == 0:
-                raise Exception("No valid voxels created")
-            
-            nearest_obstacles = self.find_nearest_obstacles(voxel_coordinates)
-            
-            # Create lists of coordinates for each obstacle without printing
-            obstacle_lists = []
-            for obstacle in nearest_obstacles:
-                coords = [(round(float(p[0]), 2), round(float(p[1]), 2), round(float(p[2]), 2)) 
-                         for p in obstacle['points']]
-                obstacle_lists.append(coords)
-                
-            return obstacle_lists
-            
-        except Exception as e:
-            print(f"Error getting obstacle coordinates: {str(e)}")
-            return []
+    # ... existing EnvironmentScanner methods ...
 
-    def fetch_density_distances(self):
-        """
-        Returns the number of obstacles detected and their distances from the drone.
+class ZMQInterface:
+    """Interface for communicating with the Julia Active Inference server via ZMQ."""
+    
+    def __init__(self, server_address="tcp://localhost:5555", timeout=10000, auto_start=True):
+        self.server_address = server_address
+        self.timeout = timeout  # in milliseconds
+        self.auto_start = auto_start
+        self.context = None
+        self.socket = None
+        self.julia_process = None
+        self.status_file_path = None
+        self.heartbeat_thread = None
+        self.running = False
+        self.last_heartbeat_time = None
+        self.heartbeat_interval = 5  # seconds between heartbeats
+        self.connection_healthy = True
+        self.setup_zmq()
         
-        Returns:
-            tuple: (number of obstacles, list of distances)
-        """
+        # Set up clean shutdown handling
+        signal.signal(signal.SIGINT, self.handle_shutdown)
+        signal.signal(signal.SIGTERM, self.handle_shutdown)
+        
+        if auto_start:
+            self.ensure_server_running()
+            # Start heartbeat thread after connection is established
+            self.start_heartbeat_thread()
+    
+    def handle_shutdown(self, sig, frame):
+        """Handle process termination signals to clean up resources"""
+        print("Shutdown signal received. Cleaning up ZMQ resources...")
+        self.cleanup()
+        sys.exit(0)
+    
+    def setup_zmq(self):
+        """Initialize ZMQ context and socket with appropriate settings"""
         try:
-            obstacle_lists = self.get_obstacle_coordinates()
-            num_obstacles = len(obstacle_lists)
+            if self.context is None:
+                self.context = zmq.Context()
             
-            # Use find_nearest_obstacles to get distances since it's already calculated there
-            obstacle_info = self.find_nearest_obstacles(np.array([coord for obstacle in obstacle_lists for coord in obstacle]))
-            distances = [obs['distance'] for obs in obstacle_info]
-            
-            return num_obstacles, distances
-            
-        except Exception as e:
-            print(f"Error getting obstacle summary: {str(e)}")
-            return 0, []
-
-    def collect_sensor_data(self):
-        """Collect both LiDAR and camera data from current position with enhanced vertical detection"""
-        try:
-            # Get drone's pose
-            drone_pose = self.client.simGetVehiclePose(vehicle_name="Drone1")
-            
-            # Get LiDAR data
-            lidar_data = self.client.getLidarData(lidar_name="Lidar1", vehicle_name="Drone1")
-            
-            # Get camera depth data
-            responses = self.client.simGetImages([
-                airsim.ImageRequest("front_center", airsim.ImageType.DepthPerspective, True)
-            ], vehicle_name="Drone1")
-            
-            if len(lidar_data.point_cloud) < 3:
-                return None
+            if self.socket is not None:
+                self.socket.close()
                 
-            if not responses:
-                return None
+            self.socket = self.context.socket(zmq.REQ)
+            self.socket.setsockopt(zmq.LINGER, 1000)  # Wait up to 1 second when closing
+            self.socket.setsockopt(zmq.RCVTIMEO, self.timeout)  # Receive timeout
+            self.socket.setsockopt(zmq.SNDTIMEO, self.timeout)  # Send timeout
             
-            # Process LiDAR points - transform to correct frame
-            lidar_points = np.array(lidar_data.point_cloud).reshape((-1, 3))
+            # Set TCP keepalive to detect disconnections
+            self.socket.setsockopt(zmq.TCP_KEEPALIVE, 1)
+            self.socket.setsockopt(zmq.TCP_KEEPALIVE_IDLE, 60)  # Seconds before sending keepalive
+            self.socket.setsockopt(zmq.TCP_KEEPALIVE_INTVL, 15)  # Interval between keepalives
             
-            # Filter LiDAR points by FOV - but with expanded vertical range to better capture trees
-            # Expand vertical FOV from [-10,10] to [-15,20] to better capture tall trees
-            lidar_angles = np.arctan2(lidar_points[:, 1], lidar_points[:, 0]) * 180 / np.pi
-            vertical_angles = np.arctan2(lidar_points[:, 2], np.sqrt(lidar_points[:, 0]**2 + lidar_points[:, 1]**2)) * 180 / np.pi
+            # Connect to the server
+            self.socket.connect(self.server_address)
+            print(f"Connected to ZMQ server at {self.server_address}")
+            return True
+        except Exception as e:
+            print(f"Error setting up ZMQ connection: {str(e)}")
+            return False
+    
+    def reset_socket(self):
+        """Reset and reconnect the ZMQ socket"""
+        try:
+            print("Resetting ZMQ socket...")
+            if self.socket:
+                self.socket.close()
             
-            valid_lidar = np.logical_and(
-                np.abs(lidar_angles) < 90,
-                np.logical_and(vertical_angles >= -15, vertical_angles <= 20)  # Expanded vertical FOV
+            self.socket = self.context.socket(zmq.REQ)
+            self.socket.setsockopt(zmq.LINGER, 1000)
+            self.socket.setsockopt(zmq.RCVTIMEO, self.timeout)
+            self.socket.setsockopt(zmq.SNDTIMEO, self.timeout)
+            self.socket.setsockopt(zmq.TCP_KEEPALIVE, 1)
+            self.socket.connect(self.server_address)
+            print("Socket reset successful")
+            return True
+        except Exception as e:
+            print(f"Error resetting socket: {str(e)}")
+            return False
+
+    def start_heartbeat_thread(self):
+        """Start a background thread to periodically check server health"""
+        if self.heartbeat_thread is not None and self.heartbeat_thread.is_alive():
+            print("Heartbeat thread already running")
+            return
+        
+        self.running = True
+        self.heartbeat_thread = threading.Thread(target=self._heartbeat_worker, daemon=True)
+        self.heartbeat_thread.start()
+        print("Heartbeat monitoring started")
+    
+    def _heartbeat_worker(self):
+        """Background worker to periodically send heartbeats to server"""
+        while self.running:
+            try:
+                time.sleep(self.heartbeat_interval)
+                
+                # Only send heartbeat if we haven't communicated recently
+                current_time = time.time()
+                if (self.last_heartbeat_time is None or 
+                    current_time - self.last_heartbeat_time > self.heartbeat_interval):
+                    # Use a ping with randomized ID to avoid message conflicts
+                    ping_id = random.randint(10000, 99999)
+                    ping_result = self.ping_server(f"ping-{ping_id}")
+                    
+                    if ping_result:
+                        self.last_heartbeat_time = current_time
+                        if not self.connection_healthy:
+                            print("Connection restored!")
+                            self.connection_healthy = True
+                    else:
+                        self.connection_healthy = False
+                        print("Server heartbeat failed, will retry...")
+                        
+                        # If heartbeats fail consistently, try to restart server
+                        if (self.last_heartbeat_time is None or 
+                            current_time - self.last_heartbeat_time > 3 * self.heartbeat_interval):
+                            print("Multiple heartbeats failed, attempting to restore connection")
+                            self.restore_connection()
+            except Exception as e:
+                print(f"Error in heartbeat worker: {str(e)}")
+                # Brief pause before continuing
+                time.sleep(1)
+    
+    def stop_heartbeat_thread(self):
+        """Stop the heartbeat monitoring thread"""
+        self.running = False
+        if self.heartbeat_thread and self.heartbeat_thread.is_alive():
+            self.heartbeat_thread.join(timeout=2)
+            print("Heartbeat monitoring stopped")
+    
+    def restore_connection(self):
+        """Attempt to restore ZMQ connection, potentially restarting the server"""
+        print("Attempting to restore ZMQ connection...")
+        
+        # First try resetting the socket without restarting server
+        if self.reset_socket():
+            # Try a ping after reset
+            if self.ping_server("ping-reset"):
+                print("Connection restored after socket reset")
+                self.last_heartbeat_time = time.time()
+                self.connection_healthy = True
+                return True
+        
+        # If socket reset didn't work, try to restart the server
+        print("Socket reset failed, attempting to restart server...")
+        self.stop_server()
+        time.sleep(2)  # Give time for server shutdown
+        
+        if self.start_server():
+            # Wait for server to initialize
+            time.sleep(5)
+            
+            # Reset socket and try to connect
+            if self.reset_socket() and self.ping_server("ping-restart"):
+                print("Connection restored after server restart")
+                self.last_heartbeat_time = time.time()
+                self.connection_healthy = True
+                return True
+        
+        print("Failed to restore connection")
+        return False
+    
+    def ping_server(self, ping_message="ping"):
+        """Send a ping to the server to check connection health"""
+        try:
+            # Use a temporary socket for ping to avoid interfering with request-reply pattern
+            ping_context = zmq.Context()
+            ping_socket = ping_context.socket(zmq.REQ)
+            ping_socket.setsockopt(zmq.LINGER, 500)  # Short linger time for ping
+            ping_socket.setsockopt(zmq.RCVTIMEO, 2000)  # Short timeout (2 seconds)
+            ping_socket.setsockopt(zmq.SNDTIMEO, 2000)  # Short timeout (2 seconds)
+            
+            # Connect to server
+            ping_socket.connect(self.server_address)
+            
+            # Send ping
+            ping_socket.send_string(ping_message)
+            
+            # Wait for response with timeout
+            response = ping_socket.recv_string()
+            
+            # Clean up
+            ping_socket.close()
+            ping_context.term()
+            
+            return response == "pong"
+        except Exception as e:
+            print(f"Ping error: {str(e)}")
+            try:
+                ping_socket.close()
+                ping_context.term()
+            except:
+                pass
+            return False
+    
+    def find_julia_executable(self):
+        """Find the Julia executable path"""
+        # Check common locations
+        if platform.system() == "Windows":
+            common_paths = [
+                r"C:\Program Files\Julia\bin\julia.exe",
+                r"C:\Program Files (x86)\Julia\bin\julia.exe",
+                # Add user directory locations
+                os.path.expanduser(r"~\AppData\Local\Programs\Julia\bin\julia.exe"),
+                os.path.expanduser(r"~\AppData\Local\Julia\bin\julia.exe")
+            ]
+        else:  # Unix-like systems
+            common_paths = [
+                "/usr/bin/julia",
+                "/usr/local/bin/julia",
+                "/opt/julia/bin/julia",
+                os.path.expanduser("~/julia/bin/julia")
+            ]
+        
+        # Check PATH environment
+        try:
+            # Use where on Windows, which on POSIX
+            finder_cmd = "where" if platform.system() == "Windows" else "which"
+            result = subprocess.run([finder_cmd, "julia"], 
+                                   stdout=subprocess.PIPE, 
+                                   stderr=subprocess.PIPE,
+                                   text=True,
+                                   shell=True)
+            if result.returncode == 0 and result.stdout.strip():
+                julia_path = result.stdout.strip().split('\n')[0]
+                if os.path.exists(julia_path):
+                    print(f"Found Julia in PATH: {julia_path}")
+                    return julia_path
+        except Exception as e:
+            print(f"Error finding Julia in PATH: {str(e)}")
+        
+        # Check common locations
+        for path in common_paths:
+            if os.path.exists(path):
+                print(f"Found Julia at: {path}")
+                return path
+        
+        # Last resort: try just "julia" and hope it's in PATH
+        return "julia"
+    
+    def find_server_script(self):
+        """Find the path to the ZMQ server script"""
+        # Start from the current file's directory and search upwards
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        
+        # Check in parent directory and sibling directories
+        potential_locations = [
+            os.path.join(current_dir, "..", "actinf", "zmq_server.jl"),
+            os.path.join(current_dir, "..", "zmq_server.jl"),
+            os.path.join(current_dir, "zmq_server.jl")
+        ]
+        
+        for script_path in potential_locations:
+            script_path = os.path.normpath(script_path)
+            if os.path.exists(script_path):
+                print(f"Found server script at: {script_path}")
+                return script_path
+        
+        # If not found, try a more exhaustive search starting from parent directory
+        parent_dir = os.path.dirname(current_dir)
+        print(f"Searching for zmq_server.jl in {parent_dir}...")
+        
+        for root, dirs, files in os.walk(parent_dir):
+            if "zmq_server.jl" in files:
+                script_path = os.path.join(root, "zmq_server.jl")
+                print(f"Found server script at: {script_path}")
+                return script_path
+        
+        # Last resort - look in workspace parent
+        workspace_parent = os.path.dirname(os.path.dirname(current_dir))
+        for root, dirs, files in os.walk(workspace_parent):
+            if "zmq_server.jl" in files:
+                script_path = os.path.join(root, "zmq_server.jl")
+                print(f"Found server script at: {script_path}")
+                return script_path
+        
+        print("zmq_server.jl not found in any expected location")
+        return None
+    
+    def find_status_file(self):
+        """Find the potential location of the ZMQ server status file"""
+        # Check in common locations
+        candidates = []
+        
+        # Check in project root
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        parent_dir = os.path.dirname(current_dir)
+        candidates.append(os.path.join(parent_dir, "zmq_server_running.status"))
+        
+        # Check in system temp directory
+        candidates.append(os.path.join(tempfile.gettempdir(), "zmq_server_running.status"))
+        
+        # On Windows, check additional locations
+        if platform.system() == "Windows":
+            candidates.append(os.path.expanduser(r"~\AppData\Local\Temp\zmq_server_running.status"))
+        else:
+            candidates.append("/tmp/zmq_server_running.status")
+        
+        # Return the first status file found or None
+        for status_path in candidates:
+            if os.path.exists(status_path):
+                print(f"Found status file at: {status_path}")
+                return status_path
+        
+        # If no existing file is found, return the most likely location for creation
+        default_status_path = os.path.join(parent_dir, "zmq_server_running.status")
+        print(f"Using default status file location: {default_status_path}")
+        return default_status_path
+    
+    def is_server_running(self):
+        """Check if the Julia ZMQ server is running by checking status file and ping"""
+        # First check for the status file
+        self.status_file_path = self.find_status_file()
+        
+        if self.status_file_path and os.path.exists(self.status_file_path):
+            print(f"Found server status file: {self.status_file_path}")
+            
+            # Check file freshness (should be less than 5 minutes old)
+            file_age = time.time() - os.path.getmtime(self.status_file_path)
+            if file_age > 300:  # 5 minutes in seconds
+                print(f"Status file is {file_age:.0f} seconds old, may be stale")
+            
+            # Even if status file exists, try to ping the server to confirm it's responsive
+            if self.ping_server():
+                print("Server is running and responsive")
+                return True
+            else:
+                print("Status file exists but server is not responding")
+                # Clean up stale status file
+                try:
+                    os.remove(self.status_file_path)
+                    print("Removed stale status file")
+                except Exception as e:
+                    print(f"Error removing stale status file: {str(e)}")
+                return False
+        
+        # If no status file, try direct ping as a final check
+        print("No status file found, trying direct ping")
+        if self.ping_server():
+            print("Server is running despite no status file")
+            return True
+            
+        return False
+    
+    def start_server(self):
+        """Start the Julia ZMQ server"""
+        try:
+            # Find Julia executable and server script
+            julia_path = self.find_julia_executable()
+            script_path = self.find_server_script()
+            
+            if not script_path:
+                print("Cannot start server: zmq_server.jl not found")
+                return False
+            
+            # Determine correct working directory (directory containing the script)
+            working_dir = os.path.dirname(script_path)
+            
+            # Build command
+            command = [julia_path, script_path]
+            
+            print(f"Starting Julia server with command: {' '.join(command)}")
+            print(f"Working directory: {working_dir}")
+            
+            # Start Julia process with appropriate stdio redirection
+            # Using subprocess.PIPE for stdout/stderr to prevent blocking
+            self.julia_process = subprocess.Popen(
+                command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                cwd=working_dir,
+                text=True,
+                bufsize=1  # Line buffered
             )
-            lidar_points = lidar_points[valid_lidar]
             
-            # Process depth image with improved point density
-            depth_response = responses[0]
-            depth_img = airsim.list_to_2d_float_array(depth_response.image_data_float,
-                                                     depth_response.width,
-                                                     depth_response.height)
+            # Start threads to read output asynchronously
+            threading.Thread(target=self._read_output, 
+                             args=(self.julia_process.stdout, "JULIA"), 
+                             daemon=True).start()
+            threading.Thread(target=self._read_output, 
+                             args=(self.julia_process.stderr, "JULIA ERR"), 
+                             daemon=True).start()
             
-            # Convert depth to 3D points in camera frame with denser sampling for vertical structures
-            height, width = depth_img.shape
-            fov = 90  # from settings.json
-            aspect = float(width) / height
-            f = width / (2 * np.tan(fov * pi / 360))
+            # Wait a moment for process to start
+            time.sleep(1)
             
-            # Vertical scan lines to better detect trees
-            # Sample denser in vertical direction with every other row, but sparser horizontally
-            camera_points = []
-            vertical_lines = []
+            # Check if process is still running
+            if self.julia_process.poll() is not None:
+                print(f"Julia process exited with code {self.julia_process.returncode}")
+                return False
             
-            # First pass - create regular grid but denser than before
-            step_h = 2  # Sample every other row (higher vertical resolution)
-            step_w = 2  # Sample every other column
+            print("Julia server started successfully")
             
-            for i in range(0, height, step_h):
-                for j in range(0, width, step_w):
-                    depth = depth_img[i, j]
-                    if depth > 0 and depth < 100:
-                        x = depth
-                        y = -(j - width/2) * depth / f
-                        z = -(i - height/2) * depth / (f/aspect)
-                        
-                        if x > 0:
-                            camera_points.append([x, y, z])
+            # Wait for the server to initialize (up to 15 seconds)
+            max_wait = 15
+            for i in range(max_wait):
+                if self.is_server_running() or self.ping_server():
+                    print(f"Server is ready after {i+1} seconds")
+                    time.sleep(1)  # Give one more second for full initialization
+                    return True
+                time.sleep(1)
+                print(f"Waiting for server to initialize... {i+1}/{max_wait}")
             
-            # Second pass - detect vertical structures
-            # Look for columns with multiple depth values - indicating vertical structures
-            # Sample a few vertical lines directly
-            n_vert_lines = 10
-            for j in range(width//4, 3*width//4, width//(n_vert_lines+1)):  # Sample across middle section of image
-                j = int(j)
-                col_points = []
-                for i in range(0, height, 1):  # Dense vertical sampling (every row)
-                    depth = depth_img[i, j]
-                    if depth > 0 and depth < 100:
-                        x = depth
-                        y = -(j - width/2) * depth / f
-                        z = -(i - height/2) * depth / (f/aspect)
-                        
-                        if x > 0:
-                            col_points.append([x, y, z])
-                
-                # Add points from this column to our vertical scan data
-                if col_points:
-                    vertical_lines.extend(col_points)
-            
-            # Convert to numpy arrays
-            camera_points = np.array(camera_points) if camera_points else np.empty((0, 3))
-            vertical_lines = np.array(vertical_lines) if vertical_lines else np.empty((0, 3))
-            
-            # Filter out points that are too far or too close
-            max_distance = 40.0
-            min_distance = 0.5
-            
-            if len(camera_points) > 0:
-                camera_points = camera_points[np.logical_and(
-                    np.linalg.norm(camera_points, axis=1) > min_distance,
-                    np.linalg.norm(camera_points, axis=1) < max_distance
-                )]
-            
-            if len(vertical_lines) > 0:
-                vertical_lines = vertical_lines[np.logical_and(
-                    np.linalg.norm(vertical_lines, axis=1) > min_distance,
-                    np.linalg.norm(vertical_lines, axis=1) < max_distance
-                )]
-                print(f"Added {len(vertical_lines)} points from vertical scan lines")
-            
-            if len(lidar_points) > 0:
-                lidar_points = lidar_points[np.logical_and(
-                    np.linalg.norm(lidar_points, axis=1) > min_distance,
-                    np.linalg.norm(lidar_points, axis=1) < max_distance
-                )]
-            
-            # Combine points
-            all_points = []
-            if len(lidar_points) > 0:
-                all_points.append(lidar_points)
-            if len(camera_points) > 0:
-                all_points.append(camera_points)
-            if len(vertical_lines) > 0:
-                all_points.append(vertical_lines)  # Add our vertical scan data
-                
-            if not all_points:
-                raise Exception("No valid points collected")
-                
-            combined_points = np.vstack(all_points)
-            print(f"Collected {len(combined_points)} points: {len(lidar_points)} LiDAR, {len(camera_points)} camera, {len(vertical_lines)} vertical")
-            return combined_points
+            print("Timed out waiting for server to initialize")
+            return False
             
         except Exception as e:
-            print(f"Error collecting sensor data: {str(e)}")
-            return None
-
-    def create_obstacle_voxel_grid(self, points, voxel_size=0.4):
-        """Create voxel grid and identify obstacle voxels with enhanced vertical structure detection"""
+            print(f"Error starting Julia server: {str(e)}")
+            traceback.print_exc()
+            return False
+    
+    def _read_output(self, pipe, prefix):
+        """Read output from subprocess pipe and print with prefix"""
         try:
-            # Define grid parameters with expanded vertical range to better capture trees
-            grid_bounds = {
-                'x_min': -25, 'x_max': 25,  # Expanded horizontal range
-                'y_min': -25, 'y_max': 25,  # Expanded horizontal range
-                'z_min': -7, 'z_max': 20    # Expanded vertical range to better capture tall trees
-            }
-            
-            # Initialize voxel storage using dictionary to merge points in same voxel
-            voxel_dict = {}
-            
-            # Add tracking for vertical structures to better detect trees
-            vertical_structure_dict = defaultdict(int)
-            
-            # Convert points to voxel coordinates
-            for point in points:
-                x_idx = int((point[0] - grid_bounds['x_min']) / voxel_size)
-                y_idx = int((point[1] - grid_bounds['y_min']) / voxel_size)
-                z_idx = int((point[2] - grid_bounds['z_min']) / voxel_size)
-                
-                # Store both voxel indices and real-world coordinates with rounding
-                if (0 <= x_idx and 0 <= y_idx and 0 <= z_idx):
-                    voxel_key = (x_idx, y_idx, z_idx)
-                    voxel_coord = (
-                        round(x_idx * voxel_size + grid_bounds['x_min'] + voxel_size/2, 2),
-                        round(y_idx * voxel_size + grid_bounds['y_min'] + voxel_size/2, 2),
-                        round(z_idx * voxel_size + grid_bounds['z_min'] + voxel_size/2, 2)
-                    )
-                    # Only store one coordinate per voxel space
-                    voxel_dict[voxel_key] = voxel_coord
-                    
-                    # Track vertical structures by counting points in the same xy column
-                    # This helps identify trees and other vertical obstacles
-                    column_key = (x_idx, y_idx)
-                    vertical_structure_dict[column_key] += 1
-            
-            # Count vertical structures identified
-            vertical_columns = 0
-            for column_key, count in vertical_structure_dict.items():
-                if count >= 3:  # Consider columns with 3+ points as potential vertical structures
-                    vertical_columns += 1
-            
-            if vertical_columns > 0:
-                print(f"Detected {vertical_columns} potential vertical structures (trees/poles)")
-                
-            # Create a list of regular voxel coordinates first
-            voxel_coordinates = list(voxel_dict.values())
-            
-            # Add additional points to emphasize vertical structures like trees
-            # This makes them more likely to be detected as obstacles
-            enhanced_voxels = []
-            
-            for voxel_key, voxel_coord in voxel_dict.items():
-                x_idx, y_idx, _ = voxel_key
-                column_key = (x_idx, y_idx)
-                
-                # If this column has multiple voxels stacked vertically (likely a tree or pole)
-                if vertical_structure_dict[column_key] >= 3:
-                    # Double the weight of this voxel by adding it again
-                    enhanced_voxels.append(voxel_coord)
-                    
-                    # For very tall structures, add even more emphasis
-                    if vertical_structure_dict[column_key] >= 5:
-                        enhanced_voxels.append(voxel_coord)
-            
-            # Add the enhanced voxels to our coordinate list
-            if enhanced_voxels:
-                voxel_coordinates.extend(enhanced_voxels)
-                print(f"Enhanced {len(enhanced_voxels)} voxels for better vertical structure detection")
-                
-            return np.array(voxel_coordinates)
-            
+            for line in iter(pipe.readline, ''):
+                if line:
+                    timestamp = datetime.now().strftime('%H:%M:%S')
+                    print(f"[{timestamp}] {prefix}: {line.rstrip()}")
         except Exception as e:
-            print(f"Error creating voxel grid: {str(e)}")
-            return None
-
-    def find_nearest_obstacles(self, voxel_coordinates, n_obstacles=3):
-        """Find the nearest n obstacles using clustering and direct distance calculation
-        with improved vertical structure detection"""
+            print(f"Error reading {prefix} output: {str(e)}")
+        finally:
+            pipe.close()
+    
+    def stop_server(self):
+        """Stop the Julia ZMQ server"""
         try:
-            if len(voxel_coordinates) == 0:
-                return []
+            if self.julia_process:
+                print("Stopping Julia server...")
                 
-            # Use DBSCAN with smaller eps for finer clustering to better separate individual trees
-            clustering = DBSCAN(eps=0.7, min_samples=3).fit(voxel_coordinates)
-            labels = clustering.labels_
-            
-            # Count number of clusters found
-            unique_labels = set(labels)
-            n_clusters = len(unique_labels) - (1 if -1 in unique_labels else 0)
-            n_noise = list(labels).count(-1)
-            
-            print(f"Found {n_clusters} potential obstacle clusters and {n_noise} noise points")
-            
-            # Group voxels by cluster
-            clusters = defaultdict(list)
-            for i, label in enumerate(labels):
-                if label != -1:  # Ignore noise points
-                    clusters[label].append(voxel_coordinates[i])
-            
-            # Calculate cluster info with direct distance calculation
-            obstacle_info = []
-            min_voxels = 8  # Reduced from 10 to catch thinner obstacles
-            
-            for label, points in clusters.items():
-                points_array = np.array(points)
+                # Try to terminate gracefully first
+                self.julia_process.terminate()
                 
-                if len(points_array) < min_voxels:
-                    continue
+                # Wait a bit for graceful shutdown
+                for _ in range(5):
+                    if self.julia_process.poll() is not None:
+                        print(f"Julia process terminated with code {self.julia_process.returncode}")
+                        break
+                    time.sleep(0.5)
                 
-                # Check if this cluster represents a vertical structure (like a tree)
-                # by examining height distribution along z-axis
-                z_values = points_array[:, 2]
-                height_range = max(z_values) - min(z_values) if len(z_values) > 0 else 0
+                # If still running, force kill
+                if self.julia_process.poll() is None:
+                    print("Process didn't terminate gracefully, forcing kill")
+                    self.julia_process.kill()
+                    self.julia_process.wait(timeout=2)
                 
-                # Consider an object a vertical structure if it spans at least 1.5m in height
-                is_vertical = height_range > 1.5
+                self.julia_process = None
                 
-                # Use a smaller reduction threshold for vertical objects to preserve their structure
-                reduction_threshold = 0.5 if is_vertical else 0.6
-                reduced_points = self.reduce_points(points_array, reduction_threshold=reduction_threshold)
+                # Clean up status file if it exists
+                if self.status_file_path and os.path.exists(self.status_file_path):
+                    try:
+                        os.remove(self.status_file_path)
+                        print("Removed status file")
+                    except Exception as e:
+                        print(f"Error removing status file: {str(e)}")
                 
-                if len(reduced_points) < 4:  # Lower threshold for vertical structures
-                    continue
-                
-                # Get horizontal and vertical extent of the obstacle
-                x_range = max(points_array[:, 0]) - min(points_array[:, 0]) if len(points_array) > 0 else 0
-                y_range = max(points_array[:, 1]) - min(points_array[:, 1]) if len(points_array) > 0 else 0
-                
-                # Calculate distance to this obstacle
-                distances = np.linalg.norm(reduced_points, axis=1)
-                min_distance = round(float(np.min(distances)), 2)
-                
-                # Calculate approximate volume (useful for classification)
-                volume = x_range * y_range * height_range if x_range > 0 and y_range > 0 and height_range > 0 else 0
-                
-                # If this is a vertical structure, log it for debugging
-                if is_vertical:
-                    print(f"Identified vertical structure: height={height_range:.1f}m, distance={min_distance:.2f}m")
-                
-                obstacle_info.append({
-                    'distance': min_distance,
-                    'points': reduced_points,
-                    'is_vertical': is_vertical,
-                    'height': height_range,
-                    'width': max(x_range, y_range),
-                    'volume': volume,
-                    'point_count': len(points_array)
-                })
-            
-            if not obstacle_info:
-                return []
-            
-            # Sort obstacles primarily by distance
-            obstacle_info.sort(key=lambda x: x['distance'])
-            
-            # Increased n_obstacles from 2 to 3 to capture more obstacles
-            return obstacle_info[:n_obstacles]
-            
+                return True
+            else:
+                print("No Julia process to stop")
+                return False
         except Exception as e:
-            print(f"Error finding nearest obstacles: {str(e)}")
-            return []
-
-    def reduce_points(self, points, reduction_threshold=0.6):
-        """Reduce number of points by combining those that are very close together"""
-        if len(points) == 0:
-            return points
-            
-        reduced = []
-        used = set()
+            print(f"Error stopping Julia server: {str(e)}")
+            return False
+    
+    def ensure_server_running(self):
+        """Ensure the Julia ZMQ server is running, starting it if necessary"""
+        if not self.is_server_running():
+            print("ZMQ server not running, attempting to start it")
+            return self.start_server()
+        return True
+    
+    def send_request(self, request_data):
+        """Send a request to the Julia server and get the response"""
+        # Update last heartbeat time as we're sending a real request
+        self.last_heartbeat_time = time.time()
         
-        for i in range(len(points)):
-            if i in used:
-                continue
+        # Retry mechanism with exponential backoff
+        max_retries = 3
+        retry_delay = 1.0
+        
+        for attempt in range(max_retries):
+            try:
+                # Ensure server is running before sending request
+                if not self.connection_healthy:
+                    self.restore_connection()
                 
-            current = points[i]
-            cluster = [current]
-            used.add(i)
-            
-            # Find points close to current point
-            for j in range(i + 1, len(points)):
-                if j not in used and np.linalg.norm(current - points[j]) < reduction_threshold:
-                    cluster.append(points[j])
-                    used.add(j)
-            
-            # Average the cluster points
-            reduced.append(np.mean(cluster, axis=0))
+                # Convert request data to JSON and send
+                request_json = json.dumps(request_data)
+                self.socket.send_string(request_json)
+                
+                # Receive response
+                response_json = self.socket.recv_string()
+                
+                # Parse JSON response
+                response = json.loads(response_json)
+                
+                # Update last heartbeat time on successful communication
+                self.last_heartbeat_time = time.time()
+                self.connection_healthy = True
+                
+                return response
+                
+            except zmq.error.Again as e:
+                # Timeout error
+                print(f"Request timed out (attempt {attempt+1}/{max_retries}): {str(e)}")
+                self.connection_healthy = False
+                
+                # Reset socket on timeout
+                self.reset_socket()
+                
+                # Retry with increasing delay
+                if attempt < max_retries - 1:
+                    sleep_time = retry_delay * (2 ** attempt)
+                    print(f"Retrying in {sleep_time:.1f} seconds...")
+                    time.sleep(sleep_time)
+                
+            except zmq.error.ZMQError as e:
+                if e.errno == errno.ENOTSOCK:
+                    print("Socket became invalid, resetting...")
+                    self.reset_socket()
+                    if attempt < max_retries - 1:
+                        time.sleep(retry_delay)
+                else:
+                    print(f"ZMQ error (attempt {attempt+1}/{max_retries}): {str(e)}")
+                    self.connection_healthy = False
+                    
+                    # Try to restore connection
+                    self.restore_connection()
+                    
+                    if attempt < max_retries - 1:
+                        sleep_time = retry_delay * (2 ** attempt)
+                        print(f"Retrying in {sleep_time:.1f} seconds...")
+                        time.sleep(sleep_time)
+                
+            except Exception as e:
+                print(f"Error sending request (attempt {attempt+1}/{max_retries}): {str(e)}")
+                traceback.print_exc()
+                self.connection_healthy = False
+                
+                # More severe error, try to restore connection
+                self.restore_connection()
+                
+                if attempt < max_retries - 1:
+                    sleep_time = retry_delay * (2 ** attempt)
+                    print(f"Retrying in {sleep_time:.1f} seconds...")
+                    time.sleep(sleep_time)
         
-        return np.array(reduced)
+        # If all retries failed, return default response
+        print("All retry attempts failed")
+        return {"error": "Communication with Julia server failed after multiple attempts", 
+                "action": [0.0, 0.0, 0.0],
+                "waypoint": [0.0, 0.0, 0.0]}
+    
+    def cleanup(self):
+        """Clean up resources"""
+        print("Cleaning up ZMQ resources...")
+        
+        # Stop heartbeat thread
+        self.stop_heartbeat_thread()
+        
+        # Close socket
+        if self.socket:
+            try:
+                self.socket.close()
+                print("Socket closed")
+            except Exception as e:
+                print(f"Error closing socket: {str(e)}")
+        
+        # Terminate context
+        if self.context:
+            try:
+                self.context.term()
+                print("Context terminated")
+            except Exception as e:
+                print(f"Error terminating context: {str(e)}")
+        
+        # Stop Julia server if we started it
+        if self.auto_start and self.julia_process:
+            self.stop_server()
+    
+    def __del__(self):
+        """Destructor to clean up resources"""
+        self.cleanup()

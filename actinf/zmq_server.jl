@@ -465,9 +465,24 @@ function run_server()
     
     # Set socket options - keeping them minimal for better performance
     # Using compatibility layer methods
-    ZMQCompat.set_linger(socket, 0)  # Don't wait when closing
-    ZMQCompat.set_rcvhwm(socket, 10)  # High water mark
-    ZMQCompat.set_sndhwm(socket, 10)
+    ZMQCompat.set_linger(socket, 1000)  # Wait up to 1 second when closing
+    ZMQCompat.set_rcvhwm(socket, 100)  # Increased high water mark for receiving
+    ZMQCompat.set_sndhwm(socket, 100)  # Increased high water mark for sending
+    
+    # Set receive timeout to prevent blocking forever (30 seconds)
+    try
+        if using_new_api
+            ZMQ.set_rcvtimeo(socket, 30000)  # 30 seconds in ms
+            ZMQ.set_sndtimeo(socket, 30000)  # 30 seconds in ms
+            println("Set socket timeouts to 30 seconds")
+        else
+            ZMQ.setsockopt(socket, ZMQ.RCVTIMEO, 30000)
+            ZMQ.setsockopt(socket, ZMQ.SNDTIMEO, 30000)
+            println("Set socket timeouts to 30 seconds")
+        end
+    catch e
+        println("Warning: Could not set socket timeouts: $e")
+    end
     
     # Enable keep-alive to detect disconnected clients
     # Note: TCP_KEEPALIVE might not be available in all ZMQ.jl versions

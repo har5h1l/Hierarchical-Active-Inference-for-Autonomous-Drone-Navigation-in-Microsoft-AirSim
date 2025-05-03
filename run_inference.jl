@@ -7,11 +7,160 @@ if Base.active_project() != abspath(joinpath(@__DIR__, "Project.toml"))
     # Note: No need to develop path here as it should be already set up during precompilation
 end
 
+# Start the ZMQ server if not already running
+function ensure_zmq_server_running()
+    # Check if the server is already running
+    using ZMQ
+    
+    # First, try to connect to the server
+    println("Checking if ZMQ server is already running...")
+    
+    # Platform-specific detection logic
+    if Sys.iswindows()
+        # Windows: Use wmic to check for Julia processes
+        try
+            cmd = `wmic process where "name='julia.exe'" get commandline`
+            output = read(cmd, String)
+            if occursin("zmq_server.jl", output)
+                println("⚠️ Julia process found running ZMQ server (wmic)")
+                return true
+            else
+                println("No ZMQ server process found running (wmic)")
+            end
+        catch e
+            println("Error checking for ZMQ server process: $e")
+        end
+    else
+        # Unix-like: Use ps
+        try
+            cmd = `ps -ef | grep "[z]mq_server.jl"`
+            output = read(cmd, String)
+            if length(output) > 0
+                println("⚠️ Julia process found running ZMQ server (ps)")
+                return true
+            else
+                println("No ZMQ server process found running (ps)")
+            end
+        catch e
+            println("Error checking for ZMQ server process: $e")
+        end
+    end
+    
+    # Direct socket test (try to connect and ping)
+    try
+        ctx = Context()
+        socket = Socket(ctx, REQ)
+        socket.linger = 0
+        try
+            socket.rcvtimeo = 1000  # 1 second timeout
+            socket.sndtimeo = 1000  # 1 second timeout
+        catch
+            # Older ZMQ version - use setsockopt
+            ZMQ.setsockopt(socket, ZMQ.RCVTIMEO, 1000)
+            ZMQ.setsockopt(socket, ZMQ.SNDTIMEO, 1000)
+        end
+        
+        socket.connect("tcp://localhost:5555")
+        
+        # Try to ping
+        try
+            socket.send("ping")
+            response = String(socket.recv())
+            if response == "pong"
+                println("✅ Connected to existing ZMQ server (ping successful)")
+                socket.close()
+                ctx.close()
+                return true
+            else
+                println("⚠️ Connected but unexpected response: $response")
+            end
+        catch e
+            println("Could not ping server: $e")
+        end
+        
+        socket.close()
+        ctx.close()
+    catch e
+        println("Socket connection test failed: $e")
+    end
+    
+    # If we got here, no server was found - start one
+    println("No running ZMQ server detected, starting a new one...")
+    
+    # Build the path to the server script
+    zmq_server_path = joinpath(@__DIR__, "actinf", "zmq_server.jl")
+    
+    # Check if the server script exists
+    if !isfile(zmq_server_path)
+        println("❌ ZMQ server script not found at: $zmq_server_path")
+        # Try an alternative path
+        zmq_server_path = joinpath(@__DIR__, "actinf", "src", "zmq_server.jl")
+        if !isfile(zmq_server_path)
+            error("ZMQ server script not found at any expected location")
+        end
+    end
+    
+    # Start the server as a background process
+    if Sys.iswindows()
+        # Windows: Use start command to launch in background
+        run(`cmd /c start /B julia $zmq_server_path`, wait=false)
+    else
+        # Unix-like: Use nohup
+        run(`nohup julia $zmq_server_path &`, wait=false)
+    end
+    
+    # Give the server time to start
+    println("ZMQ server starting, waiting 5 seconds for initialization...")
+    sleep(5)
+    
+    # Verify the server started successfully
+    try
+        ctx = Context()
+        socket = Socket(ctx, REQ)
+        socket.linger = 0
+        try
+            socket.rcvtimeo = 5000  # 5 second timeout
+            socket.sndtimeo = 5000  # 5 second timeout
+        catch
+            # Older ZMQ version - use setsockopt
+            ZMQ.setsockopt(socket, ZMQ.RCVTIMEO, 5000)
+            ZMQ.setsockopt(socket, ZMQ.SNDTIMEO, 5000)
+        end
+        
+        socket.connect("tcp://localhost:5555")
+        
+        # Try to ping
+        try
+            socket.send("ping")
+            response = String(socket.recv())
+            if response == "pong"
+                println("✅ ZMQ server started and responding to pings")
+                socket.close()
+                ctx.close()
+                return true
+            else
+                println("⚠️ ZMQ server responded but with unexpected response: $response")
+            end
+        catch e
+            println("⚠️ Could not ping new server: $e")
+        end
+        
+        socket.close()
+        ctx.close()
+    catch e
+        println("⚠️ Could not connect to new server: $e")
+    end
+    
+    println("⚠️ Could not verify ZMQ server is running, but will continue anyway")
+    return false
+end
+
 # Import packages - already precompiled by precompile.jl
 using JSON
 using LinearAlgebra
 using StaticArrays
 using actinf
+using ZMQ
 
 # Constants and parameters with more robust path handling for cross-platform compatibility
 const INTERFACE_DIR = joinpath(@__DIR__, "interface")
@@ -36,6 +185,12 @@ catch e
     println("Warning: Issue with interface directory: $e")
     # Don't error out, let's try to continue and create the directory in the write section
 end
+
+# Ensure ZMQ server is running before continuing
+println("=== Checking ZMQ Server ===")
+zmq_running = ensure_zmq_server_running()
+println("ZMQ server status: $(zmq_running ? "Running" : "Uncertain")")
+println()
 
 function main()
     # Print startup message
