@@ -1,6 +1,6 @@
 # This file is machine-generated - editing it directly is not advised
 
-julia_version = "1.11.5"
+julia_version = "1.11.4"
 manifest_format = "2.0"
 project_hash = "309d019300b7db25e0b169892e99c7e66a8966c0"
 
@@ -1077,7 +1077,7 @@ version = "2.5.4+0"
 [[deps.OpenLibm_jll]]
 deps = ["Artifacts", "Libdl"]
 uuid = "05823500-19ac-5b8b-9628-191a04bc5112"
-version = "0.8.5+0"
+version = "0.8.1+4"
 
 [[deps.OpenSpecFun_jll]]
 deps = ["Artifacts", "CompilerSupportLibraries_jll", "JLLWrappers", "Libdl"]
@@ -1613,7 +1613,7 @@ version = "1.5.7+1"
 
 [[deps.actinf]]
 deps = ["JSON", "LinearAlgebra", "RxInfer", "StaticArrays"]
-path = "c:\\Users\\Satya\\Autonomous-Drone-Navigation-in-AirSim-With-Active-Inference\\actinf"
+path = "/Users/harshilshah/Desktop/ISEF/Active_Inference/Phase 2/Autonomous Drone Navigation in AirSim With Active Inference/actinf"
 uuid = "d0498c39-f064-4652-9d32-417a3552f8c1"
 version = "0.1.0"
 
