@@ -9,9 +9,42 @@ start_time = time()
 # Set environment variable to indicate precompilation has been done
 ENV["JULIA_ACTINF_PRECOMPILED"] = "true"
 
-# Activate the project - essential for package environment
+# Create a status file to indicate precompilation status for Python to check
+const PRECOMPILE_SUCCESS_FLAG = joinpath(@__DIR__, ".precompilation_success")
+const PRECOMPILE_STATUS_FILE = joinpath(@__DIR__, ".precompilation_status.json")
+
+# Function to update status file
+function update_status(status, message)
+    try
+        open(PRECOMPILE_STATUS_FILE, "w") do f
+            JSON.print(f, Dict(
+                "status" => status,
+                "message" => message,
+                "timestamp" => string(Dates.now())
+            ))
+        end
+        println(message)
+    catch e
+        println("Warning: Could not write status file: $e")
+    end
+end
+
+# Cleanup any previous status files at start
+for file in [PRECOMPILE_SUCCESS_FLAG, PRECOMPILE_STATUS_FILE]
+    if isfile(file)
+        try
+            rm(file)
+        catch
+            println("Warning: Could not remove previous status file: $file")
+        end
+    end
+end
+
 try
+    # Activate the project - essential for package environment
     import Pkg
+    import Dates
+    import JSON
     
     # Only activate if not already active
     if Base.active_project() != abspath(joinpath(@__DIR__, "Project.toml"))
@@ -39,7 +72,7 @@ try
     println("\nVerifying package status:")
     Pkg.status()
 catch e
-    println("❌ Error activating or setting up project: $e")
+    update_status("error", "❌ Error activating or setting up project: $e")
     exit(1)
 end
 
@@ -66,7 +99,7 @@ end
 
 # Only continue if core packages loaded successfully
 if !all_packages_loaded
-    println("\n❌ Failed to load some core packages. Precompilation cannot complete.")
+    update_status("error", "❌ Failed to load some core packages. Precompilation cannot complete.")
     exit(1)
 end
 
@@ -126,10 +159,27 @@ try
     action = actinf.Planning.select_action(planner, beliefs)
     println("✅ Planning functions precompiled")
     
+    # Test ZMQ socket creation but don't actually start server
+    println("   Testing ZMQ functionality...")
+    zmq_context = ZMQ.Context()
+    zmq_socket = ZMQ.Socket(zmq_context, ZMQ.REP)
+    ZMQ.close(zmq_socket)
+    ZMQ.close(zmq_context)
+    println("✅ ZMQ functionality verified")
+    
+    # Create the success flag file for Python to detect
+    touch(PRECOMPILE_SUCCESS_FLAG)
+    
+    # Update status file with success
+    update_status("success", "✅ Core functions precompiled successfully")
+    
     # Don't precompile ZMQ server as that would start the server
     println("\n✅ Core functions precompiled successfully")
 catch e
     println("\n❌ Error precompiling actinf package: $e")
+    
+    # Update status file with error
+    update_status("error", "❌ Error precompiling actinf package: $e")
     
     # Try to include files directly if package loading fails
     println("\nAttempting to directly include actinf module files...")
@@ -138,9 +188,14 @@ catch e
         include(joinpath(@__DIR__, "actinf", "src", "Inference.jl"))
         include(joinpath(@__DIR__, "actinf", "src", "Planning.jl"))
         println("✅ Successfully included actinf module files")
+        
+        # Create partial success flag
+        update_status("partial", "⚠️ Partial precompilation completed via direct inclusion")
     catch e2
         println("❌ Failed to include actinf module files: $e2")
         println("Precompilation incomplete. Some functions may be slower on first use.")
+        update_status("failed", "❌ Failed to include actinf module files: $e2")
+        exit(1)
     end
 end
 
@@ -148,3 +203,7 @@ end
 elapsed = round(time() - start_time, digits=1)
 println("\n=== Active Inference Precompilation Completed in $elapsed seconds ===")
 println("The system should now run with minimal compilation delays.")
+
+# Final success status
+update_status("complete", "✅ Precompilation completed in $elapsed seconds")
+exit(0)

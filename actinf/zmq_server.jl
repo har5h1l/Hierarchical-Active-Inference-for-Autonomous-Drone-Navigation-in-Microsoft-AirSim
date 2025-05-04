@@ -5,11 +5,65 @@
 
 println("Starting Active Inference ZMQ Server...")
 
+# Create a status file to indicate server status for Python to check
+const SERVER_RUNNING_FLAG = joinpath(dirname(@__DIR__), ".zmq_server_running")
+const SERVER_STATUS_FILE = joinpath(dirname(@__DIR__), ".zmq_server_status.json")
+
+# Function to update status file
+function update_server_status(status, message, port=5555)
+    try
+        # Remove old flag file if it exists
+        if isfile(SERVER_RUNNING_FLAG)
+            rm(SERVER_RUNNING_FLAG)
+        end
+        
+        # Create new flag file if server is running
+        if status == "running"
+            touch(SERVER_RUNNING_FLAG)
+        end
+        
+        # Update JSON status file with more details
+        open(SERVER_STATUS_FILE, "w") do f
+            JSON.print(f, Dict(
+                "status" => status,
+                "message" => message,
+                "port" => port,
+                "timestamp" => string(Dates.now())
+            ))
+        end
+        println(message)
+    catch e
+        println("Warning: Could not write server status file: $e")
+    end
+end
+
+# Clean up any existing status files at startup
+try
+    if isfile(SERVER_RUNNING_FLAG)
+        rm(SERVER_RUNNING_FLAG)
+    end
+    if isfile(SERVER_STATUS_FILE)
+        rm(SERVER_STATUS_FILE)
+    end
+catch e
+    println("Warning: Could not clean up existing status files: $e")
+end
+
 # Activate the project environment first to ensure packages are available
 println("Activating project environment...")
-import Pkg
-Pkg.activate(dirname(@__FILE__))
-println("Project activated")
+try
+    import Pkg
+    Pkg.activate(dirname(@__DIR__))
+    println("Project activated")
+    
+    # Import JSON for status file creation
+    import JSON
+    import Dates
+catch e
+    println("❌ Error activating project: $e")
+    update_server_status("error", "Failed to activate project: $e")
+    exit(1)
+end
 
 # ZMQ.jl API compatibility layer
 # This ensures the script works with both newer and older versions of ZMQ.jl
@@ -153,44 +207,6 @@ function load_package(pkg_name)
     end
 end
 
-# Ensure we can write to the status file before proceeding
-global status_file_path = nothing
-try
-    # Create status file path - handle both Windows and UNIX paths
-    if Sys.iswindows()
-        # Use absolute path with proper Windows separators
-        parent_dir = dirname(dirname(abspath(@__FILE__)))
-        global status_file_path = joinpath(parent_dir, "zmq_server_running.status")
-    else
-        global status_file_path = joinpath(dirname(dirname(@__FILE__)), "zmq_server_running.status")
-    end
-    
-    # Test that we can write to this location
-    println("Testing if we can write status file to: $status_file_path")
-    touch(status_file_path)
-    rm(status_file_path)
-    println("✓ Status file location is writable")
-catch e
-    # Try another location if the first one fails
-    println("❌ Could not write to status file location: $e")
-    try
-        if Sys.iswindows()
-            # Try temp directory on Windows
-            global status_file_path = joinpath(tempdir(), "zmq_server_running.status")
-        else
-            global status_file_path = joinpath("/tmp", "zmq_server_running.status")
-        end
-        println("Trying alternative status file location: $status_file_path")
-        touch(status_file_path)
-        rm(status_file_path)
-        println("✓ Alternative status file location is writable")
-    catch e2
-        println("❌ Could not write to alternative status file location: $e2")
-        println("Will continue without status file. Client may not detect server properly.")
-        global status_file_path = nothing
-    end
-end
-
 # Check Julia version
 println("Running on Julia version: $(VERSION)")
 
@@ -200,6 +216,12 @@ packages_loaded &= load_package(:ZMQ)
 packages_loaded &= load_package(:JSON)
 packages_loaded &= load_package(:LinearAlgebra)
 packages_loaded &= load_package(:StaticArrays)
+
+if !packages_loaded
+    update_server_status("error", "Failed to load required packages")
+    println("❌ Some required packages failed to load. Cannot continue.")
+    exit(1)
+end
 
 # Set up ZMQ compatibility layer
 using .ZMQCompat
@@ -234,210 +256,276 @@ catch e
         println("✓ actinf modules loaded manually")
     catch e2
         println("❌ Failed to manually include actinf modules: $e2")
+        update_server_status("error", "Failed to load actinf modules: $e2")
         global packages_loaded = false
+        exit(1)
     end
-end
-
-if !packages_loaded
-    println("❌ Some required packages failed to load. Cannot continue.")
-    exit(1)
 end
 
 # Define constants with more robust defaults
-const SOCKET_ADDRESS = "tcp://*:5555"
+const DEFAULT_PORT = 5555
+const SOCKET_ADDRESS = "tcp://*:$DEFAULT_PORT"
 const POLICY_LENGTH = 3  # Number of steps in the policy
 const SOCKET_TIMEOUT = 10000  # 10 seconds timeout
 const MAX_RETRIES = 3
-const RETRY_DELAY = 2  # seconds
 
-# Global socket and context variables
-global zmq_ctx = nothing
-global zmq_socket = nothing
-global connection_initialized = false
-
-# Print server info
-println("Server initialized with:")
-println("- Address: $SOCKET_ADDRESS")
-println("- Policy length: $POLICY_LENGTH")
-println("- Socket timeout: $SOCKET_TIMEOUT ms")
-println("- Max retries: $MAX_RETRIES")
-if status_file_path !== nothing
-    println("- Status file: $status_file_path")
-else
-    println("- Status file: DISABLED")
+# Setup signal handling for clean shutdown
+import Base.exit
+exit_handlers = []
+function register_exit_handler(f)
+    global exit_handlers
+    push!(exit_handlers, f)
 end
 
-# Initialize beliefs as a global variable for persistence across requests
-global current_beliefs = nothing
-
-# Function to process an observation and produce the next action
-function process_observation(data::Dict)
-    # ...existing code...
+# Override exit to run handlers
+orig_exit = exit
+function exit(code::Int=0)
+    for handler in exit_handlers
+        try
+            handler()
+        catch e
+            println("Error in exit handler: $e")
+        end
+    end
+    orig_exit(code)
 end
 
-# Function to explicitly set up the ZMQ connection
-function _setup_zmq_connection()
-    global zmq_ctx, zmq_socket, connection_initialized
+# Handle interrupts gracefully
+function handle_interrupt(sig)
+    println("\nReceived interrupt signal. Shutting down server cleanly...")
+    update_server_status("stopped", "Server shutdown due to interrupt signal")
+    exit(0)
+end
+
+# Register signal handlers for SIGINT (Ctrl+C)
+try
+    Base.sigatomic_begin()
+    trap = Base.signal_hook
+    Base.signal_hook(@static Sys.iswindows() ? Base.SIGINT : Base.SIGINT, handle_interrupt)
+    Base.sigatomic_end()
+catch e
+    println("Warning: Could not set up signal handlers: $e")
+end
+
+# Setup ZMQ server infrastructure
+try
+    # Create ZMQ context
+    context = ZMQ.Context()
+    socket = ZMQ.Socket(context, ZMQ.REP)
     
-    # If already initialized, return early
-    if connection_initialized
-        println("ZMQ connection already initialized.")
-        return true
+    # Configure socket options
+    ZMQCompat.set_linger(socket, 500)     # Wait up to 500ms to send pending messages on close
+    ZMQCompat.set_rcvhwm(socket, 1000)    # High water mark for incoming messages
+    ZMQCompat.set_sndhwm(socket, 1000)    # High water mark for outgoing messages
+    ZMQCompat.set_tcp_keepalive(socket, 1) # Enable TCP keepalive
+    
+    # Register cleanup handler
+    register_exit_handler() do
+        println("Cleaning up ZMQ resources...")
+        try
+            ZMQCompat.close(socket)
+            ZMQCompat.close(context)
+            update_server_status("stopped", "Server shutdown cleanly")
+        catch e
+            println("Error during cleanup: $e")
+        end
     end
     
-    println("Setting up ZMQ connection...")
+    # Try to bind the socket - handle port conflicts
     try
-        zmq_ctx = ZMQ.Context()
-        zmq_socket = ZMQ.Socket(zmq_ctx, ZMQ.REP)
-        
-        # Set socket options with proper error handling
-        ZMQCompat.set_linger(zmq_socket, 0)
-        ZMQCompat.set_rcvhwm(zmq_socket, 100)
-        ZMQCompat.set_sndhwm(zmq_socket, 100)
-        ZMQCompat.set_tcp_keepalive(zmq_socket, 1)
-        
-        # Set timeouts
-        if ZMQCompat.using_new_api
-            zmq_socket.rcvtimeo = SOCKET_TIMEOUT
-            zmq_socket.sndtimeo = SOCKET_TIMEOUT
-        else
-            ZMQ.setsockopt(zmq_socket, ZMQ.RCVTIMEO, SOCKET_TIMEOUT)
-            ZMQ.setsockopt(zmq_socket, ZMQ.SNDTIMEO, SOCKET_TIMEOUT)
-        end
-        
-        # Bind socket
-        ZMQCompat.bind(zmq_socket, SOCKET_ADDRESS)
-        println("✓ ZMQ connection established successfully")
-        
-        # Mark as initialized
-        connection_initialized = true
-        return true
+        println("Binding ZMQ socket to $SOCKET_ADDRESS...")
+        ZMQCompat.bind(socket, SOCKET_ADDRESS)
+        println("✓ Socket bound successfully to $SOCKET_ADDRESS")
+        update_server_status("running", "Server started and listening", DEFAULT_PORT)
     catch e
-        println("❌ Error setting up ZMQ connection: $e")
+        println("❌ Failed to bind to $SOCKET_ADDRESS: $e")
         
-        # Cleanup on failure
-        if zmq_socket !== nothing
-            try ZMQCompat.close(zmq_socket); catch; end
-            zmq_socket = nothing
-        end
+        # Try alternative ports
+        alternative_ports = [5556, 5557, 5558, 5559, 5560]
+        bound = false
         
-        if zmq_ctx !== nothing
-            try ZMQCompat.close(zmq_ctx); catch; end
-            zmq_ctx = nothing
-        end
-        
-        return false
-    end
-end
-
-"""
-    run_zmq_server()
-
-Run a ZMQ server that processes incoming observation data using active inference.
-"""
-function run_zmq_server()
-    global zmq_ctx, zmq_socket
-    
-    # Make sure ZMQ connection is set up first
-    if !_setup_zmq_connection()
-        println("Failed to set up ZMQ connection. Exiting.")
-        return
-    end
-    
-    # Create status file if path is specified
-    if status_file_path !== nothing
-        touch(status_file_path)
-        println("✓ Created status file: $status_file_path")
-    end
-    
-    println("Starting ZMQ server loop")
-    
-    # For improved performance, avoid garbage collection pauses during request handling
-    ccall(:jl_gc_enable, Void, (Cint,), 0)
-    
-    try
-        while true
-            # Wait for a message with proper error handling
+        for port in alternative_ports
+            alt_address = "tcp://*:$port"
             try
-                # Receive a request
-                request_json = ZMQCompat.recv_string(zmq_socket)
-                
+                println("Trying alternative address: $alt_address")
+                ZMQCompat.bind(socket, alt_address)
+                println("✓ Socket bound successfully to $alt_address")
+                update_server_status("running", "Server started on alternative port", port)
+                bound = true
+                break
+            catch e2
+                println("❌ Failed to bind to $alt_address: $e2")
+            end
+        end
+        
+        if !bound
+            println("❌ Failed to bind to any port. Server cannot start.")
+            update_server_status("error", "Failed to bind to any port")
+            exit(1)
+        end
+    end
+    
+    # Server main loop
+    println("\n=== Active Inference ZMQ Server Ready ===")
+    println("Waiting for requests...")
+    
+    while true
+        # Wait for requests
+        try
+            # Receive request from client
+            request = String(ZMQCompat.recv(socket))
+            
+            # Handle special commands
+            if request == "ping"
+                println("Received ping request, sending pong")
+                ZMQCompat.send(socket, "pong")
+                continue
+            elseif request == "status"
+                println("Received status request")
+                ZMQCompat.send(socket, "running")
+                continue
+            elseif request == "shutdown"
+                println("Received shutdown request")
+                ZMQCompat.send(socket, "shutting_down")
+                update_server_status("stopped", "Server shutdown by client request")
+                exit(0)
+            end
+            
+            # Try to parse the request as JSON
+            try
                 # Parse JSON request
-                request = JSON.parse(request_json)
+                println("Received request of length $(length(request)) bytes")
+                observation_data = JSON.parse(request)
                 
-                # Handle ping specially for health checks
-                if haskey(request, "ping")
-                    # Reply to ping with pong
-                    response = Dict("pong" => true, "message" => "pong-response")
-                    response_json = JSON.json(response)
-                    ZMQCompat.send_string(zmq_socket, response_json)
-                    continue
+                # Process observation data with Active Inference
+                # Extract data from observation
+                drone_position = try
+                    SVector{3, Float64}(get(observation_data, "drone_position", [0.0, 0.0, 0.0])...)
+                catch e
+                    println("Error parsing drone_position, using default: $e")
+                    SVector{3, Float64}(0.0, 0.0, 0.0)
                 end
                 
-                # Process the observation data
-                response = process_observation(request)
+                target_position = try
+                    target_key = haskey(observation_data, "target_position") ? "target_position" : "target_location"
+                    SVector{3, Float64}(get(observation_data, target_key, [10.0, 0.0, -3.0])...)
+                catch e
+                    println("Error parsing target position, using default: $e")
+                    SVector{3, Float64}(10.0, 0.0, -3.0)
+                end
                 
-                # Send the response back
-                response_json = JSON.json(response)
-                ZMQCompat.send_string(zmq_socket, response_json)
+                # Get optional parameters with proper defaults
+                waypoint_count = get(observation_data, "waypoint_count", 75)
+                safety_margin = get(observation_data, "safety_margin", 1.5)
+                policy_length = get(observation_data, "policy_length", 3)
+                density_radius = get(observation_data, "density_radius", 5.0)
+                
+                # Get obstacle data with better error handling
+                obstacle_positions = Vector{SVector{3, Float64}}()
+                obstacle_distances = Float64[]
+                
+                try
+                    # Handle obstacle positions
+                    if haskey(observation_data, "obstacle_positions") && isa(observation_data["obstacle_positions"], Array)
+                        for pos in observation_data["obstacle_positions"]
+                            if length(pos) >= 3
+                                push!(obstacle_positions, SVector{3, Float64}(pos[1], pos[2], pos[3]))
+                            end
+                        end
+                    end
+                    
+                    # Handle obstacle distances
+                    if haskey(observation_data, "obstacle_distances") && isa(observation_data["obstacle_distances"], Array)
+                        obstacle_distances = Float64.(observation_data["obstacle_distances"])
+                    end
+                catch e
+                    println("Error processing obstacle data: $e")
+                end
+                
+                # Create observation object for state creation
+                observation = DroneObservation(
+                    drone_position = drone_position,
+                    drone_orientation = SVector{4, Float64}(1.0, 0.0, 0.0, 0.0),  # Default orientation
+                    target_position = target_position,
+                    nearest_obstacle_distances = obstacle_distances,
+                    voxel_grid = obstacle_positions,
+                    obstacle_density = 0.0  # Will be calculated
+                )
+                
+                # Print key data for debugging
+                println("Drone position: $(round.(drone_position, digits=2))")
+                println("Target position: $(round.(target_position, digits=2))")
+                println("$(length(obstacle_positions)) obstacle positions, $(length(obstacle_distances)) distances")
+                
+                # Create state and update beliefs
+                current_state = create_state_from_observation(observation)
+                
+                # Initialize beliefs
+                beliefs = initialize_beliefs(current_state, 
+                                           voxel_grid=obstacle_positions, 
+                                           obstacle_density=0.0)
+                
+                # Update beliefs with current state
+                update_beliefs!(beliefs, current_state, 
+                              voxel_grid=obstacle_positions, 
+                              obstacle_density=0.0)
+                
+                # Create planner with appropriate preferences
+                planner = ActionPlanner(PreferenceModel(
+                    distance_preference = 0.7,  # Prefer shorter distance to target
+                    path_preference = 0.9       # Prefer clear paths
+                ))
+                
+                # Select action/waypoint
+                next_waypoint = select_action(planner, beliefs, 
+                                            num_samples=waypoint_count,
+                                            safety_margin=safety_margin,
+                                            policy_length=policy_length,
+                                            density_radius=density_radius)
+                
+                println("Selected waypoint: $(round.(next_waypoint, digits=2))")
+                
+                # Prepare response with waypoint and policy
+                response = Dict(
+                    "next_waypoint" => [next_waypoint[1], next_waypoint[2], next_waypoint[3]],
+                    "policy" => []  # Empty policy for now - could be extended
+                )
+                
+                # Send response
+                ZMQCompat.send(socket, JSON.json(response))
                 
             catch e
-                # Handle any errors during processing
-                if isa(e, InterruptException)
-                    # Allow Ctrl+C to terminate
-                    rethrow(e)
-                end
-                
+                # Handle errors in request processing
                 println("Error processing request: $e")
                 
-                # Attempt to send error response
-                try
-                    error_response = Dict(
-                        "error" => "Error processing request: $(typeof(e))",
-                        "message" => string(e),
-                        "action" => [0.0, 0.0, 0.0],  # Default action
-                        "waypoint" => [0.0, 0.0, 0.0]  # Default waypoint
-                    )
-                    error_json = JSON.json(error_response)
-                    ZMQCompat.send_string(zmq_socket, error_json)
-                catch send_err
-                    println("Failed to send error response: $send_err")
-                end
+                # Send error response
+                error_response = Dict(
+                    "error" => true,
+                    "message" => "Error processing request: $e"
+                )
+                ZMQCompat.send(socket, JSON.json(error_response))
+            end
+            
+        catch e
+            # Handle socket errors
+            if isa(e, InterruptException)
+                println("Server interrupted. Shutting down...")
+                update_server_status("stopped", "Server interrupted")
+                break
+            else
+                println("Socket error: $e")
+                # Continue and try to receive the next message
             end
         end
-    catch e
-        if isa(e, InterruptException)
-            println("Server terminated by interrupt")
-        else
-            println("Server error: $e")
-        end
-    finally
-        # Clean up resources
-        if zmq_socket !== nothing
-            try ZMQCompat.close(zmq_socket); catch; end
-            zmq_socket = nothing
-        end
-        
-        if zmq_ctx !== nothing
-            try ZMQCompat.close(zmq_ctx); catch; end
-            zmq_ctx = nothing
-        end
-        
-        # Remove status file on exit
-        if status_file_path !== nothing && isfile(status_file_path)
-            try
-                rm(status_file_path)
-                println("✓ Removed status file")
-            catch e
-                println("Failed to remove status file: $e")
-            end
-        end
-        
-        # Re-enable garbage collection
-        ccall(:jl_gc_enable, Void, (Cint,), 1)
     end
+    
+catch e
+    # Handle any unexpected errors
+    update_server_status("error", "Unexpected error: $e")
+    println("❌ Fatal error: $e")
+    exit(1)
 end
 
-# Run the server when this script is executed directly
-println("ZMQ server starting...")
-run_zmq_server()
+# Final cleanup
+update_server_status("stopped", "Server shutdown")
+exit(0)
