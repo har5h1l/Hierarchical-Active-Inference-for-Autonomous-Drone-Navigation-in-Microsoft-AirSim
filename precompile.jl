@@ -92,8 +92,9 @@ function precompile_package(pkg_name)
     end
 end
 
-all_packages_loaded = true
+global all_packages_loaded = true
 for pkg in using_packages
+    global all_packages_loaded
     all_packages_loaded &= precompile_package(pkg)
 end
 

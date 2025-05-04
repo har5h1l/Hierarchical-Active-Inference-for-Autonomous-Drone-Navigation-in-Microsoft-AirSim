@@ -236,7 +236,7 @@ try
     # Directly import needed components from modules
     @eval using actinf.StateSpace: DroneState, DroneObservation, create_state_from_observation
     @eval using actinf.Inference: DroneBeliefs, initialize_beliefs, update_beliefs!, expected_state, serialize_beliefs, deserialize_beliefs
-    @eval using actinf.Planning: ActionPlanner, PreferenceModel, select_action
+    @eval using actinf.Planning: ActionPlanner, PreferenceModel, select_action, SUITABILITY_THRESHOLD
     println("✓ Module components imported")
 catch e
     println("❌ Failed to load actinf package: $e")
@@ -305,6 +305,177 @@ try
     Base.sigatomic_end()
 catch e
     println("Warning: Could not set up signal handlers: $e")
+end
+
+# Function to process observation data and return a response
+function process_observation(observation_data::Dict)
+    # Extract data from observation with proper error handling
+    drone_position = try
+        SVector{3, Float64}(get(observation_data, "drone_position", [0.0, 0.0, 0.0])...)
+    catch e
+        println("Error parsing drone_position, using default: $e")
+        SVector{3, Float64}(0.0, 0.0, 0.0)
+    end
+    
+    drone_orientation = try
+        if haskey(observation_data, "drone_orientation") && length(observation_data["drone_orientation"]) >= 4
+            SVector{4, Float64}(observation_data["drone_orientation"]...)
+        else
+            SVector{4, Float64}(1.0, 0.0, 0.0, 0.0)  # Default identity quaternion
+        end
+    catch e
+        println("Error parsing drone_orientation, using default: $e")
+        SVector{4, Float64}(1.0, 0.0, 0.0, 0.0)
+    end
+    
+    target_position = try
+        target_key = haskey(observation_data, "target_position") ? "target_position" : "target_location"
+        SVector{3, Float64}(get(observation_data, target_key, [10.0, 0.0, -3.0])...)
+    catch e
+        println("Error parsing target position, using default: $e")
+        SVector{3, Float64}(10.0, 0.0, -3.0)
+    end
+    
+    # Get optional parameters with proper defaults
+    waypoint_count = get(observation_data, "waypoint_count", 75)
+    obstacle_weight = get(observation_data, "obstacle_weight", 0.7)
+    density_weight = get(observation_data, "density_weight", 1.0)
+    
+    # Get obstacle data with better error handling
+    obstacle_positions = Vector{SVector{3, Float64}}()
+    obstacle_distances = Float64[]
+    
+    try
+        # Handle obstacle positions
+        if haskey(observation_data, "obstacle_positions") && isa(observation_data["obstacle_positions"], Array)
+            for pos in observation_data["obstacle_positions"]
+                if length(pos) >= 3
+                    push!(obstacle_positions, SVector{3, Float64}(pos[1], pos[2], pos[3]))
+                end
+            end
+        end
+        
+        # Handle obstacle distances
+        if haskey(observation_data, "obstacle_distances") && isa(observation_data["obstacle_distances"], Array)
+            obstacle_distances = Float64.(observation_data["obstacle_distances"])
+        end
+    catch e
+        println("Error processing obstacle data: $e")
+    end
+    
+    # Calculate obstacle density if possible
+    obstacle_density = 0.0
+    if !isempty(obstacle_positions) && haskey(observation_data, "density_radius")
+        density_radius = get(observation_data, "density_radius", 5.0)
+        try
+            # Count obstacles within density_radius of drone position
+            nearby_count = count(p -> norm(p - drone_position) < density_radius, obstacle_positions)
+            volume = (4/3) * π * density_radius^3
+            obstacle_density = nearby_count / volume
+        catch e
+            println("Error calculating obstacle density: $e")
+        end
+    end
+    
+    # Create observation object for state creation
+    observation = DroneObservation(
+        drone_position = drone_position,
+        drone_orientation = drone_orientation,
+        target_position = target_position,
+        nearest_obstacle_distances = obstacle_distances,
+        voxel_grid = obstacle_positions,
+        obstacle_density = obstacle_density
+    )
+    
+    # Print key data for debugging
+    println("Drone position: $(round.(drone_position, digits=2))")
+    println("Target position: $(round.(target_position, digits=2))")
+    println("Obstacle density: $(round(obstacle_density, digits=4))")
+    println("$(length(obstacle_positions)) obstacle positions, $(length(obstacle_distances)) distances")
+    
+    # Create state from observation
+    current_state = create_state_from_observation(observation)
+    
+    # Initialize beliefs with obstacle data
+    beliefs = initialize_beliefs(current_state, 
+                               voxel_grid=obstacle_positions, 
+                               obstacle_density=obstacle_density)
+    
+    # Update beliefs with current state
+    update_beliefs!(beliefs, current_state, 
+                  voxel_grid=obstacle_positions, 
+                  obstacle_density=obstacle_density)
+    
+    # Create planner with appropriate parameters matching the Planning module's API
+    planner = ActionPlanner(
+        max_step_size = get(observation_data, "max_step_size", 0.5),
+        num_angles = get(observation_data, "num_angles", 8),
+        num_step_sizes = get(observation_data, "num_step_sizes", 3),
+        pragmatic_weight = get(observation_data, "pragmatic_weight", 1.0),
+        epistemic_weight = get(observation_data, "epistemic_weight", 0.2),
+        risk_weight = get(observation_data, "risk_weight", 2.0),
+        safety_distance = get(observation_data, "safety_distance", 1.5),
+        density_weight = density_weight,
+        preference_model = PreferenceModel()
+    )
+    
+    # Find min obstacle distance for safety calculations
+    obstacle_distance = isempty(obstacle_distances) ? 100.0 : minimum(obstacle_distances)
+    
+    # Select the best actions using select_action matching the Planning module's API
+    selected_actions = select_action(
+        current_state, 
+        beliefs, 
+        planner,
+        drone_position, 
+        target_position,
+        obstacle_distance=obstacle_distance,
+        obstacle_density=obstacle_density,
+        num_policies=get(observation_data, "policy_length", 3),
+        obstacle_weight=obstacle_weight
+    )
+    
+    # Extract best action (first in the list of selected actions)
+    if !isempty(selected_actions)
+        best_action, best_efe = selected_actions[1]
+        next_waypoint = drone_position + best_action
+        
+        println("Best action: $(round.(best_action, digits=2)), EFE: $(round(best_efe, digits=2))")
+        println("Next waypoint: $(round.(next_waypoint, digits=2))")
+        
+        # Prepare response with waypoint and additional data
+        response = Dict(
+            "next_waypoint" => [next_waypoint[1], next_waypoint[2], next_waypoint[3]],
+            "suitability" => current_state.suitability,
+            "distance_to_target" => current_state.distance,
+            "angle_to_target" => [current_state.azimuth, current_state.elevation],
+            "action" => [best_action[1], best_action[2], best_action[3]],
+            "efe" => best_efe
+        )
+        
+        # Add policy information if available (more than one action)
+        if length(selected_actions) > 1
+            policy = []
+            for i in 2:min(length(selected_actions), POLICY_LENGTH+1)
+                action, efe = selected_actions[i]
+                push!(policy, Dict(
+                    "action" => [action[1], action[2], action[3]],
+                    "efe" => efe
+                ))
+            end
+            response["policy"] = policy
+        end
+        
+        return response
+    else
+        println("Warning: No actions selected, returning stay-in-place action")
+        return Dict(
+            "next_waypoint" => [drone_position[1], drone_position[2], drone_position[3]],
+            "suitability" => current_state.suitability,
+            "distance_to_target" => current_state.distance,
+            "error" => "No valid actions found"
+        )
+    end
 end
 
 # Setup ZMQ server infrastructure
@@ -397,99 +568,8 @@ try
                 println("Received request of length $(length(request)) bytes")
                 observation_data = JSON.parse(request)
                 
-                # Process observation data with Active Inference
-                # Extract data from observation
-                drone_position = try
-                    SVector{3, Float64}(get(observation_data, "drone_position", [0.0, 0.0, 0.0])...)
-                catch e
-                    println("Error parsing drone_position, using default: $e")
-                    SVector{3, Float64}(0.0, 0.0, 0.0)
-                end
-                
-                target_position = try
-                    target_key = haskey(observation_data, "target_position") ? "target_position" : "target_location"
-                    SVector{3, Float64}(get(observation_data, target_key, [10.0, 0.0, -3.0])...)
-                catch e
-                    println("Error parsing target position, using default: $e")
-                    SVector{3, Float64}(10.0, 0.0, -3.0)
-                end
-                
-                # Get optional parameters with proper defaults
-                waypoint_count = get(observation_data, "waypoint_count", 75)
-                safety_margin = get(observation_data, "safety_margin", 1.5)
-                policy_length = get(observation_data, "policy_length", 3)
-                density_radius = get(observation_data, "density_radius", 5.0)
-                
-                # Get obstacle data with better error handling
-                obstacle_positions = Vector{SVector{3, Float64}}()
-                obstacle_distances = Float64[]
-                
-                try
-                    # Handle obstacle positions
-                    if haskey(observation_data, "obstacle_positions") && isa(observation_data["obstacle_positions"], Array)
-                        for pos in observation_data["obstacle_positions"]
-                            if length(pos) >= 3
-                                push!(obstacle_positions, SVector{3, Float64}(pos[1], pos[2], pos[3]))
-                            end
-                        end
-                    end
-                    
-                    # Handle obstacle distances
-                    if haskey(observation_data, "obstacle_distances") && isa(observation_data["obstacle_distances"], Array)
-                        obstacle_distances = Float64.(observation_data["obstacle_distances"])
-                    end
-                catch e
-                    println("Error processing obstacle data: $e")
-                end
-                
-                # Create observation object for state creation
-                observation = DroneObservation(
-                    drone_position = drone_position,
-                    drone_orientation = SVector{4, Float64}(1.0, 0.0, 0.0, 0.0),  # Default orientation
-                    target_position = target_position,
-                    nearest_obstacle_distances = obstacle_distances,
-                    voxel_grid = obstacle_positions,
-                    obstacle_density = 0.0  # Will be calculated
-                )
-                
-                # Print key data for debugging
-                println("Drone position: $(round.(drone_position, digits=2))")
-                println("Target position: $(round.(target_position, digits=2))")
-                println("$(length(obstacle_positions)) obstacle positions, $(length(obstacle_distances)) distances")
-                
-                # Create state and update beliefs
-                current_state = create_state_from_observation(observation)
-                
-                # Initialize beliefs
-                beliefs = initialize_beliefs(current_state, 
-                                           voxel_grid=obstacle_positions, 
-                                           obstacle_density=0.0)
-                
-                # Update beliefs with current state
-                update_beliefs!(beliefs, current_state, 
-                              voxel_grid=obstacle_positions, 
-                              obstacle_density=0.0)
-                
-                # Create planner with appropriate preferences
-                planner = ActionPlanner(PreferenceModel(
-                    distance_preference = 0.7,  # Prefer shorter distance to target
-                    path_preference = 0.9       # Prefer clear paths
-                ))
-                
-                # Select action/waypoint
-                next_waypoint = select_action(planner, beliefs, 
-                                            num_samples=waypoint_count,
-                                            safety_margin=safety_margin,
-                                            policy_length=policy_length,
-                                            density_radius=density_radius)
-                
-                println("Selected waypoint: $(round.(next_waypoint, digits=2))")
-                
-                # Prepare response with waypoint and policy
-                response = Dict(
-                    "next_waypoint" => [next_waypoint[1], next_waypoint[2], next_waypoint[3]],
-                    "policy" => []  # Empty policy for now - could be extended
-                )
+                # Process observation using our dedicated function
+                response = process_observation(observation_data)
                 
                 # Send response
                 ZMQCompat.send(socket, JSON.json(response))

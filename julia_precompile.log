@@ -1,16 +1,14 @@
   Activating project at `c:\Users\Satya\Autonomous-Drone-Navigation-in-AirSim-With-Active-Inference`
    Resolving package versions...
-    Updating `C:\Users\Satya\Autonomous-Drone-Navigation-in-AirSim-With-Active-Inference\Project.toml`
-  [d0498c39] ~ actinf v0.1.0 `actinf` ⇒ v0.1.0 `c:\Users\Satya\Autonomous-Drone-Navigation-in-AirSim-With-Active-Inference\actinf`
-    Updating `C:\Users\Satya\Autonomous-Drone-Navigation-in-AirSim-With-Active-Inference\Manifest.toml`
-  [d0498c39] ~ actinf v0.1.0 `actinf` ⇒ v0.1.0 `c:\Users\Satya\Autonomous-Drone-Navigation-in-AirSim-With-Active-Inference\actinf`
+  No Changes to `C:\Users\Satya\Autonomous-Drone-Navigation-in-AirSim-With-Active-Inference\Project.toml`
+  No Changes to `C:\Users\Satya\Autonomous-Drone-Navigation-in-AirSim-With-Active-Inference\Manifest.toml`
 ┌ Warning: Assignment to `all_packages_loaded` in soft scope is ambiguous because a global variable by the same name exists: `all_packages_loaded` will be treated as a new local. Disambiguate by using `local all_packages_loaded` to suppress this warning or `global all_packages_loaded` to assign to the existing global variable.
-└ @ c:\Users\Satya\Autonomous-Drone-Navigation-in-AirSim-With-Active-Inference\precompile.jl:64
+└ @ c:\Users\Satya\Autonomous-Drone-Navigation-in-AirSim-With-Active-Inference\precompile.jl:97
 ERROR: LoadError: UndefVarError: `all_packages_loaded` not defined in local scope
 Stacktrace:
  [1] top-level scope
-   @ c:\Users\Satya\Autonomous-Drone-Navigation-in-AirSim-With-Active-Inference\precompile.jl:64
-in expression starting at c:\Users\Satya\Autonomous-Drone-Navigation-in-AirSim-With-Active-Inference\precompile.jl:63
+   @ c:\Users\Satya\Autonomous-Drone-Navigation-in-AirSim-With-Active-Inference\precompile.jl:97
+in expression starting at c:\Users\Satya\Autonomous-Drone-Navigation-in-AirSim-With-Active-Inference\precompile.jl:96
 
 === Starting Active Inference Precompilation ===
 ✅ Project activated
