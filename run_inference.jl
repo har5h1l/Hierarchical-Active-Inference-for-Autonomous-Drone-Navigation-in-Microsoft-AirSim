@@ -1,166 +1,81 @@
 #!/usr/bin/env julia
 
+println("Starting drone navigation inference script...")
+
 # Only activate if environment is not already active
 if Base.active_project() != abspath(joinpath(@__DIR__, "Project.toml"))
+    println("Activating project environment...")
     import Pkg
     Pkg.activate(@__DIR__)
-    # Note: No need to develop path here as it should be already set up during precompilation
+    println("Project activated")
+else
+    println("Project environment already active")
 end
 
-# Start the ZMQ server if not already running
-function ensure_zmq_server_running()
-    # Check if the server is already running
-    using ZMQ
-    
-    # First, try to connect to the server
-    println("Checking if ZMQ server is already running...")
-    
-    # Platform-specific detection logic
-    if Sys.iswindows()
-        # Windows: Use wmic to check for Julia processes
-        try
-            cmd = `wmic process where "name='julia.exe'" get commandline`
-            output = read(cmd, String)
-            if occursin("zmq_server.jl", output)
-                println("⚠️ Julia process found running ZMQ server (wmic)")
-                return true
-            else
-                println("No ZMQ server process found running (wmic)")
-            end
-        catch e
-            println("Error checking for ZMQ server process: $e")
-        end
-    else
-        # Unix-like: Use ps
-        try
-            cmd = `ps -ef | grep "[z]mq_server.jl"`
-            output = read(cmd, String)
-            if length(output) > 0
-                println("⚠️ Julia process found running ZMQ server (ps)")
-                return true
-            else
-                println("No ZMQ server process found running (ps)")
-            end
-        catch e
-            println("Error checking for ZMQ server process: $e")
-        end
-    end
-    
-    # Direct socket test (try to connect and ping)
+# Import StaticArrays early in the script to ensure SVector is available
+import StaticArrays
+import StaticArrays: SVector
+
+# Load required packages with explicit error handling
+println("Loading required packages...")
+function load_package(pkgname)
     try
-        ctx = Context()
-        socket = Socket(ctx, REQ)
-        socket.linger = 0
-        try
-            socket.rcvtimeo = 1000  # 1 second timeout
-            socket.sndtimeo = 1000  # 1 second timeout
-        catch
-            # Older ZMQ version - use setsockopt
-            ZMQ.setsockopt(socket, ZMQ.RCVTIMEO, 1000)
-            ZMQ.setsockopt(socket, ZMQ.SNDTIMEO, 1000)
-        end
-        
-        socket.connect("tcp://localhost:5555")
-        
-        # Try to ping
-        try
-            socket.send("ping")
-            response = String(socket.recv())
-            if response == "pong"
-                println("✅ Connected to existing ZMQ server (ping successful)")
-                socket.close()
-                ctx.close()
-                return true
-            else
-                println("⚠️ Connected but unexpected response: $response")
-            end
-        catch e
-            println("Could not ping server: $e")
-        end
-        
-        socket.close()
-        ctx.close()
+        println("Loading $pkgname...")
+        @eval import $pkgname
+        println("Successfully loaded $pkgname")
+        return true
     catch e
-        println("Socket connection test failed: $e")
+        println("Error loading $pkgname: $e")
+        return false
     end
-    
-    # If we got here, no server was found - start one
-    println("No running ZMQ server detected, starting a new one...")
-    
-    # Build the path to the server script
-    zmq_server_path = joinpath(@__DIR__, "actinf", "zmq_server.jl")
-    
-    # Check if the server script exists
-    if !isfile(zmq_server_path)
-        println("❌ ZMQ server script not found at: $zmq_server_path")
-        # Try an alternative path
-        zmq_server_path = joinpath(@__DIR__, "actinf", "src", "zmq_server.jl")
-        if !isfile(zmq_server_path)
-            error("ZMQ server script not found at any expected location")
-        end
-    end
-    
-    # Start the server as a background process
-    if Sys.iswindows()
-        # Windows: Use start command to launch in background
-        run(`cmd /c start /B julia $zmq_server_path`, wait=false)
-    else
-        # Unix-like: Use nohup
-        run(`nohup julia $zmq_server_path &`, wait=false)
-    end
-    
-    # Give the server time to start
-    println("ZMQ server starting, waiting 5 seconds for initialization...")
-    sleep(5)
-    
-    # Verify the server started successfully
-    try
-        ctx = Context()
-        socket = Socket(ctx, REQ)
-        socket.linger = 0
-        try
-            socket.rcvtimeo = 5000  # 5 second timeout
-            socket.sndtimeo = 5000  # 5 second timeout
-        catch
-            # Older ZMQ version - use setsockopt
-            ZMQ.setsockopt(socket, ZMQ.RCVTIMEO, 5000)
-            ZMQ.setsockopt(socket, ZMQ.SNDTIMEO, 5000)
-        end
-        
-        socket.connect("tcp://localhost:5555")
-        
-        # Try to ping
-        try
-            socket.send("ping")
-            response = String(socket.recv())
-            if response == "pong"
-                println("✅ ZMQ server started and responding to pings")
-                socket.close()
-                ctx.close()
-                return true
-            else
-                println("⚠️ ZMQ server responded but with unexpected response: $response")
-            end
-        catch e
-            println("⚠️ Could not ping new server: $e")
-        end
-        
-        socket.close()
-        ctx.close()
-    catch e
-        println("⚠️ Could not connect to new server: $e")
-    end
-    
-    println("⚠️ Could not verify ZMQ server is running, but will continue anyway")
-    return false
 end
 
-# Import packages - already precompiled by precompile.jl
-using JSON
-using LinearAlgebra
-using StaticArrays
-using actinf
-using ZMQ
+# Load standard libraries first
+load_package(:JSON)
+load_package(:LinearAlgebra)
+load_package(:StaticArrays)
+
+# Make StaticArrays available in main scope
+using StaticArrays  # This explicitly brings SVector into scope
+using StaticArrays: SVector  # Explicitly import SVector type
+
+# For StaticArrays version compatibility, alias SVector if not defined
+if !isdefined(Main, :SVector)
+    const SVector = StaticArrays.SVector
+    println("Defined SVector alias for compatibility")
+end
+
+# Load actinf with special handling - using include if necessary
+println("Loading actinf package...")
+try
+    # Try direct loading first
+    @eval using actinf
+    println("Successfully loaded actinf package")
+catch e
+    println("Could not load actinf directly: $e")
+    
+    # Try to include the module files manually
+    try
+        println("Attempting to manually include actinf module files...")
+        
+        # Include StateSpace.jl directly
+        include(joinpath(@__DIR__, "actinf", "src", "StateSpace.jl"))
+        include(joinpath(@__DIR__, "actinf", "src", "Inference.jl"))
+        include(joinpath(@__DIR__, "actinf", "src", "Planning.jl"))
+        include(joinpath(@__DIR__, "actinf", "src", "actinf.jl"))
+        
+        # Import the manually included module
+        using .actinf
+        println("Successfully loaded actinf via manual inclusion")
+    catch e2
+        println("Failed to manually include actinf: $e2")
+        error("Cannot continue without actinf package")
+    end
+end
+
+# Import specific components from actinf to make them available in Main scope
+using actinf.StateSpace: DroneObservation, create_state_from_observation
+using actinf.Inference: DroneBeliefs, initialize_beliefs, update_beliefs!, expected_state, serialize_beliefs, deserialize_beliefs
 
 # Constants and parameters with more robust path handling for cross-platform compatibility
 const INTERFACE_DIR = joinpath(@__DIR__, "interface")
@@ -186,12 +101,6 @@ catch e
     # Don't error out, let's try to continue and create the directory in the write section
 end
 
-# Ensure ZMQ server is running before continuing
-println("=== Checking ZMQ Server ===")
-zmq_running = ensure_zmq_server_running()
-println("ZMQ server status: $(zmq_running ? "Running" : "Uncertain")")
-println()
-
 function main()
     # Print startup message
     println("\nStarting drone navigation inference...")
@@ -201,25 +110,97 @@ function main()
         error("Input file $OBS_INPUT_PATH not found.")
     end
 
-    # Read observation data from JSON
+    # Read observation data from JSON with robust error handling
     println("\nReading sensor data...")
-    obs_data = JSON.parsefile(OBS_INPUT_PATH)
+    
+    local obs_data
+    try
+        obs_data = open(OBS_INPUT_PATH, "r") do file
+            JSON.parse(file)
+        end
+        println("Successfully parsed observation data")
+    catch e
+        println("Error parsing JSON from $OBS_INPUT_PATH: $e")
+        # Create fallback minimal data
+        obs_data = Dict(
+            "drone_position" => [0.0, 0.0, 0.0],
+            "target_location" => [10.0, 0.0, -3.0],
+            "drone_orientation" => [1.0, 0.0, 0.0, 0.0],
+            "nearest_obstacle_distances" => [100.0, 100.0],
+            "obstacle_density" => 0.0,
+            "voxel_grid" => []
+        )
+        println("Using fallback observation data")
+    end
 
-    # Extract and print initial positions
-    drone_position = SVector{3, Float64}(get(obs_data, "drone_position", [0.0, 0.0, 0.0])...)
-    target_location = SVector{3, Float64}(get(obs_data, "target_location", [10.0, 0.0, -3.0])...)
+    # Extract and print initial positions with better error checking
+    drone_position = try
+        SVector{3, Float64}(get(obs_data, "drone_position", [0.0, 0.0, 0.0])...)
+    catch e
+        println("Error parsing drone_position, using default: $e")
+        SVector{3, Float64}(0.0, 0.0, 0.0)
+    end
+    
+    target_location = try
+        target_key = haskey(obs_data, "target_position") ? "target_position" : "target_location"
+        SVector{3, Float64}(get(obs_data, target_key, [10.0, 0.0, -3.0])...)
+    catch e
+        println("Error parsing target position, using default: $e")
+        SVector{3, Float64}(10.0, 0.0, -3.0)
+    end
+
+    # Extract remaining data with robust error handling
+    drone_orientation = try
+        SVector{4, Float64}(get(obs_data, "drone_orientation", [1.0, 0.0, 0.0, 0.0])...)
+    catch e
+        println("Error parsing drone_orientation, using default: $e")
+        SVector{4, Float64}(1.0, 0.0, 0.0, 0.0)
+    end
+    
+    nearest_obstacle_distances = try
+        Float64.(get(obs_data, "obstacle_distances", get(obs_data, "nearest_obstacle_distances", [100.0, 100.0])))
+    catch e
+        println("Error parsing nearest_obstacle_distances, using default: $e")
+        Float64[100.0, 100.0]
+    end
+    
+    obstacle_density = try
+        Float64(get(obs_data, "obstacle_density", 0.0))
+    catch e
+        println("Error parsing obstacle_density, using default: $e")
+        0.0
+    end
+    
+    # Handle obstacle positions with better key detection and error handling
+    voxel_grid = Vector{SVector{3, Float64}}()
+    try
+        grid_data = Vector{Vector{Float64}}()
+        
+        # Try different possible keys for obstacle data
+        if haskey(obs_data, "voxel_grid") && !isempty(obs_data["voxel_grid"])
+            grid_data = obs_data["voxel_grid"]
+            println("Using voxel_grid data with $(length(grid_data)) points")
+        elseif haskey(obs_data, "obstacle_positions") && !isempty(obs_data["obstacle_positions"])
+            grid_data = obs_data["obstacle_positions"]
+            println("Using obstacle_positions data with $(length(grid_data)) points")
+        end
+        
+        # Convert points to SVector format with validation
+        for point in grid_data
+            if length(point) >= 3
+                push!(voxel_grid, SVector{3, Float64}(point[1], point[2], point[3]))
+            end
+        end
+        
+        println("Processed $(length(voxel_grid)) valid obstacle points")
+    catch e
+        println("Error processing obstacle positions: $e")
+        voxel_grid = Vector{SVector{3, Float64}}()
+    end
     
     println("\nInitial Positions (Global Coordinates):")
     println("Drone:  [$(round(drone_position[1], digits=2)), $(round(drone_position[2], digits=2)), $(round(drone_position[3], digits=2))]")
     println("Target: [$(round(target_location[1], digits=2)), $(round(target_location[2], digits=2)), $(round(target_location[3], digits=2))]")
-    
-    # Extract remaining data
-    drone_orientation = SVector{4, Float64}(get(obs_data, "drone_orientation", [1.0, 0.0, 0.0, 0.0])...)
-    nearest_obstacle_distances = get(obs_data, "nearest_obstacle_distances", [100.0, 100.0])
-    obstacle_density = get(obs_data, "obstacle_density", 0.0)
-    
-    # Parse voxel grid more efficiently
-    voxel_grid = [SVector{3, Float64}(point...) for point in get(obs_data, "voxel_grid", Vector{Vector{Float64}}()) if length(point) == 3]
 
     # Create DroneObservation object
     observation = DroneObservation(
@@ -239,10 +220,12 @@ function main()
     beliefs = try
         if isfile(INFERRED_STATE_PATH)
             println("Found existing inferred state file: $INFERRED_STATE_PATH")
-            prev_beliefs_json = JSON.parsefile(INFERRED_STATE_PATH)
+            prev_beliefs_json = open(INFERRED_STATE_PATH, "r") do file
+                JSON.parse(file)
+            end
             prev_beliefs = haskey(prev_beliefs_json, "beliefs") ? 
                           deserialize_beliefs(prev_beliefs_json["beliefs"]) :
-                          initialize_beliefs(current_state, voxel_grid=voxel_grid)
+                          initialize_beliefs(current_state, voxel_grid=voxel_grid, obstacle_density=obstacle_density)
             update_beliefs!(prev_beliefs, current_state; voxel_grid=voxel_grid, obstacle_density=obstacle_density)
         else
             println("No existing inferred state file, initializing new beliefs")
@@ -342,4 +325,25 @@ function main()
 end
 
 # Run the main function
-main()
+try
+    main()
+    println("\nInference script completed successfully")
+catch e
+    println("\n❌ Error in inference script main function: $e")
+    bt = backtrace()
+    println("Stack trace:")
+    for (i, frame) in enumerate(bt)
+        if i > 10  # Limit stack trace to first 10 frames
+            println("...")
+            break
+        end
+        try
+            frame_info = Base.StackTraces.lookup(frame)
+            println("  $(frame_info[1].func) at $(frame_info[1].file):$(frame_info[1].line)")
+        catch
+            println("  [Frame $i]")
+        end
+    end
+    # Re-throw for proper exit code
+    rethrow(e)
+end

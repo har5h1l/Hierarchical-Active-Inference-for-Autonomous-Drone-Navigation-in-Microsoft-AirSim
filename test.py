@@ -45,7 +45,7 @@ DENSITY_RADIUS = 5.0  # Radius for density evaluation
 ARRIVAL_THRESHOLD = 1.2  # meters
 MAX_ITERATIONS = 100
 INTERFACE_DIR = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "interface"))
-JULIA_PATH = "julia --project=."  # Path to Julia executable with project environment
+JULIA_PATH = "julia"  # Base Julia executable path
 # Alternative ports in case the primary port is unavailable
 ZMQ_PORTS = [5555, 5556, 5557, 5558]  # Port 5555 is default in zmq_server.jl
 ZMQ_SERVER_ADDRESS = f"tcp://localhost:{5555}"  # ZeroMQ server address with the first port
@@ -199,739 +199,226 @@ class ZMQInterface:
             self.context = None
             return False
 
-    def _sanitize_for_json(self, obj):
-        """
-        Recursively sanitize an object for JSON serialization, converting NumPy types to native Python types.
-        
-        Args:
-            obj: Any Python object to sanitize
-            
-        Returns:
-            JSON-serializable version of the object
-        """
-        # Handle None
-        if obj is None:
-            return None
-            
-        # Handle NumPy scalars (convert to native Python types)
-        # Use exact type names instead of np.float_ which is deprecated in NumPy 2.0
-        if isinstance(obj, (np.integer, np.int8, np.int16, np.int32, np.int64, np.uint8, np.uint16, np.uint32, np.uint64)):
-            return int(obj)
-        elif isinstance(obj, (np.floating, np.float16, np.float32, np.float64)):
-            return float(obj)
-        elif isinstance(obj, np.bool_):
-            return bool(obj)
-        elif isinstance(obj, np.ndarray):
-            return self._sanitize_for_json(obj.tolist())
-            
-        # Handle lists, tuples and sets
-        elif isinstance(obj, (list, tuple, set)):
-            return [self._sanitize_for_json(item) for item in obj]
-            
-        # Handle dictionaries
-        elif isinstance(obj, dict):
-            return {key: self._sanitize_for_json(value) for key, value in obj.items()}
-            
-        # Handle NumPy arrays not caught above
-        elif hasattr(obj, 'dtype') and hasattr(obj, 'tolist'):
-            return self._sanitize_for_json(obj.tolist())
-            
-        # Let JSON serializer handle other types or fail with clear error
-        return obj
-
-    def send_observation_and_receive_action(self, observation):
-        """Send an observation to the Julia ZMQ server and receive the next action (waypoint)
-        
-        Args:
-            observation: Dictionary containing environmental data including:
-                         - drone_position
-                         - target_position
-                         - obstacle_positions
-                         - obstacle_distances
-                         - other parameters needed by the active inference model
-        
-        Returns:
-            tuple: (next_waypoint, policy) where:
-                   - next_waypoint is a list [x, y, z] in NED coordinates
-                   - policy is a list of future waypoints (may be empty if not returned by server)
-        """
-        # Ensure socket is connected
-        if not hasattr(self, 'socket') or self.socket is None:
-            print("ZMQ socket not initialized, attempting to connect...")
-            success = self._setup_zmq_connection()
-            if not success:
-                print("❌ Failed to establish ZMQ connection")
-                return None, []
-        
-        # Transform observations to match server expectations
-        transformed_observation = self._sanitize_for_json(observation)
-        
-        # Convert obstacle points to voxel grid format
-        if 'obstacle_positions' in transformed_observation and len(transformed_observation['obstacle_positions']) > 0:
-            transformed_observation['voxel_grid'] = transformed_observation.pop('obstacle_positions')
-            
-            if 'obstacle_distances' in transformed_observation and len(transformed_observation['obstacle_distances']) > 0:
-                transformed_observation['nearest_obstacle_dist'] = min(transformed_observation['obstacle_distances'])
-                transformed_observation['nearest_obstacle_distances'] = transformed_observation.pop('obstacle_distances')
-            
-            obstacle_count = len(transformed_observation['voxel_grid'])
-            if obstacle_count > 0 and 'density_radius' in transformed_observation:
-                density = min(1.0, obstacle_count / (100.0 * transformed_observation['density_radius']))
-                transformed_observation['obstacle_density'] = density
-                print(f"Calculated obstacle density: {density:.3f} based on {obstacle_count} obstacles")
-            else:
-                transformed_observation['obstacle_density'] = 0.0
-        else:
-            transformed_observation['voxel_grid'] = []
-            transformed_observation['nearest_obstacle_distances'] = [100.0, 100.0]
-            transformed_observation['obstacle_density'] = 0.0
-        
-        # Add suitability preferences
-        transformed_observation['target_preference_weight'] = 0.7
-        transformed_observation['obstacle_repulsion_weight'] = 0.6
-        
-        # Add suitability weights dictionary for planning
-        transformed_observation['suitability_weights'] = {
-            'nearest_obstacle_weight': 0.5,
-            'obstacle_density_weight': 0.5,
-            'min_suitability_threshold': 0.3
-        }
-        
-        # Convert to JSON string with extra validation
-        try:
-            json_data = json.dumps(transformed_observation, cls=NumpyJSONEncoder)
-            # Validate JSON can be parsed back
-            test = json.loads(json_data)
-            if not isinstance(test, dict):
-                raise ValueError("JSON did not serialize to a dictionary")
-        except Exception as e:
-            print(f"❌ Error serializing observation to JSON: {str(e)}")
-            traceback.print_exc()
-            return None, []
-        
-        # Set up variables for retry logic
-        max_retries = ZMQ_MAX_RETRIES
-        retry_count = 0
-        success = False
-        
-        # Try sending and receiving with retries
-        while retry_count <= max_retries and not success:
-            try:
-                # Send observation
-                print(f"Sending observation to Julia server (attempt {retry_count + 1}/{max_retries + 1})...")
-                print(f"Observation size: {len(json_data)/1024:.1f} KB")
-                
-                # First check if socket is in valid state
-                try:
-                    events = self.socket.getsockopt(zmq.EVENTS)
-                    if not (events & zmq.POLLOUT):
-                        print("Socket not ready for sending, resetting...")
-                        self._reset_socket()
-                except zmq.ZMQError:
-                    print("Error checking socket state, resetting...")
-                    self._reset_socket()
-                
-                # Use send with a timeout poll to avoid blocking forever
-                self.socket.send_string(json_data, flags=zmq.NOBLOCK)
-                
-                # Receive response with polling to handle timeout
-                print("Waiting for response from Julia server...")
-                poller = zmq.Poller()
-                poller.register(self.socket, zmq.POLLIN)
-                
-                # Use poller with timeout
-                if poller.poll(ZMQ_TIMEOUT):  # Timeout in milliseconds
-                    # Receive the response
-                    response_str = self.socket.recv_string()
-                    success = True
-                    print(f"Successfully received response: {len(response_str)/1024:.1f} KB")
-                else:
-                    print(f"⚠️ Timeout waiting for response (attempt {retry_count + 1}/{max_retries + 1})")
-                    retry_count += 1
-                    
-                    if retry_count <= max_retries:
-                        print("Resetting socket and retrying...")
-                        self._reset_socket()
-                        time.sleep(2)  # Longer pause before retry
-                    else:
-                        print("❌ Maximum retries reached. Using fallback strategy.")
-                        return None, []
-            
-            except zmq.ZMQError as e:
-                print(f"❌ ZMQ error communicating with server: {str(e)}")
-                retry_count += 1
-                
-                if retry_count <= max_retries:
-                    print(f"Resetting socket and retrying (attempt {retry_count}/{max_retries})...")
-                    self._reset_socket()
-                    time.sleep(2)  # Longer pause before retry
-                else:
-                    print("❌ Maximum retries reached. Using fallback strategy.")
-                    return None, []
-            
-            except Exception as e:
-                print(f"❌ Unexpected error: {str(e)}")
-                traceback.print_exc()
-                return None, []
-        
-        # Process the received response
-        if not success:
-            return None, []
-        
-        try:
-            # Parse the response JSON
-            response = json.loads(response_str)
-            print(f"Response keys: {list(response.keys())}")
-            
-            # Check for any error message from the server
-            if 'error' in response:
-                print(f"⚠️ Server reported an error: {response['error']}")
-            
-            # Try to extract the waypoint from different possible keys
-            next_waypoint = None
-            for key in ['waypoint', 'action', 'next_waypoint']:
-                if key in response and isinstance(response[key], list) and len(response[key]) == 3:
-                    next_waypoint = response[key]
-                    break
-            
-            # If no valid waypoint found, look for more detailed info
-            if next_waypoint is None:
-                print(f"❌ Could not find valid waypoint in response")
-                print(f"Response content: {response}")
-                return None, []
-                
-            # Extract policy if present
-            policy = response.get('policy', [])
-            
-            # Validate next_waypoint
-            if isinstance(next_waypoint, list) and len(next_waypoint) == 3:
-                # Check for invalid values
-                if any(math.isnan(x) or math.isinf(x) for x in next_waypoint):
-                    print(f"⚠️ Invalid values in waypoint: {next_waypoint}")
-                    return None, []
-                
-                print(f"Successfully extracted waypoint: {[round(p, 2) for p in next_waypoint]}")
-                return next_waypoint, policy
-            else:
-                print(f"❌ Invalid waypoint format: {next_waypoint}")
-                return None, []
-                
-        except json.JSONDecodeError:
-            print(f"❌ Failed to decode JSON response from server")
-            print(f"Raw response: {response_str[:200]}...")  # Print first 200 chars
-            return None, []
-            
-        except Exception as e:
-            print(f"❌ Error processing server response: {str(e)}")
-            traceback.print_exc()
-            return None, []
-
     def _is_server_running(self):
         """Check if the Julia ZMQ server is actually running and listening
         
         Returns:
             bool: True if server is confirmed running, False otherwise
         """
-        # First check if there's a Julia process running the ZMQ server
-        julia_running = False
-        
-        try:
-            # Platform-specific process checking
-            if platform.system() == "Windows":
-                # On Windows, use more reliable methods to check for Julia processes
-                try:
-                    # First try with wmic for more detailed information
-                    wmic_cmd = "wmic process where name='julia.exe' get commandline"
-                    result = subprocess.run(wmic_cmd, shell=True, capture_output=True, text=True)
-                    
-                    if "zmq_server.jl" in result.stdout:
-                        print("✅ Julia ZMQ server process found running on Windows (wmic)")
-                        julia_running = True
-                    elif "julia.exe" in result.stdout:
-                        print("⚠️ Julia process found but can't confirm if it's running ZMQ server (wmic)")
-                        julia_running = True  # Assume it might be our server
-                    else:
-                        # Fallback to tasklist which is more reliable on some Windows versions
-                        result = subprocess.run(["tasklist", "/FI", "IMAGENAME eq julia.exe"], 
-                                               capture_output=True, text=True)
-                        if "julia.exe" in result.stdout.lower():
-                            print("✅ Julia process found running on Windows (tasklist)")
-                            julia_running = True
-                        else:
-                            # Additional check with netstat to see if something is using our port
-                            port = self.server_address.split(":")[-1]
-                            result = subprocess.run(
-                                ["netstat", "-ano", "|", "findstr", f":{port}"],
-                                shell=True, capture_output=True, text=True)
-                            if "LISTENING" in result.stdout:
-                                print(f"⚠️ Something is listening on port {port} but couldn't confirm if it's Julia")
-                                julia_running = True  # Assume it might be our server
-                            else:
-                                print("❌ No Julia process found running on Windows")
-                                return False
-                except Exception as e:
-                    print(f"Error checking for process on Windows: {str(e)}")
-                    # Continue with socket check as fallback
-            else:
-                # macOS/Linux approach using ps
-                result = subprocess.run(["ps", "-ef"], capture_output=True, text=True)
-                if "julia" in result.stdout and "zmq_server.jl" in result.stdout:
-                    print("✅ Julia ZMQ server process found running")
-                    julia_running = True
-                else:
-                    # Check for just Julia - it might be running the server without explicit cmdline
-                    if "julia" in result.stdout:
-                        print("⚠️ Julia process found but can't confirm if it's running ZMQ server")
-                        julia_running = True  # Assume it might be our server
-                    else:
-                        print("❌ No Julia process found running")
-                        return False
-        except Exception as e:
-            print(f"Error checking for Julia process: {str(e)}")
-            # Continue with socket check as fallback
-        
-        # Next check if there's a status file indicating server is running - platform independent
-        status_file_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "zmq_server_running.status")
-        if os.path.exists(status_file_path):
-            # Check if the file was created recently (within last 5 minutes)
-            try:
-                file_age = time.time() - os.path.getmtime(status_file_path)
-                if file_age < 300:  # 5 minutes in seconds
-                    print(f"✅ Found recent ZMQ server status file (age: {file_age:.1f}s)")
-                    return True
-                else:
-                    print(f"⚠️ Found stale ZMQ server status file (age: {file_age:.1f}s)")
-                    # Don't return yet, continue with other checks
-            except Exception:
-                print("✅ Found ZMQ server status file but couldn't check age")
-                return True
-                
-        # If Julia is running but we need to verify server responsiveness, try a socket connection
-        if julia_running:
-            if hasattr(self, 'socket') and self.socket is not None:
-                try:
-                    # Check socket status in platform-independent way
-                    events = self.socket.getsockopt(zmq.EVENTS)
-                    if events & zmq.POLLOUT:
-                        print("✅ ZMQ socket appears to be in valid state")
-                        return True
-                    else:
-                        print("⚠️ ZMQ socket exists but may not be usable")
-                except zmq.ZMQError:
-                    print("⚠️ Error checking socket state")
-            
-            # Try to create a test socket to see if the server is listening
-            try:
-                test_context = zmq.Context()
-                test_socket = test_context.socket(zmq.REQ)
-                test_socket.setsockopt(zmq.LINGER, 0)
-                test_socket.setsockopt(zmq.RCVTIMEO, 500)  # Short timeout for quick check
-                test_socket.connect(self.server_address)
-                
-                # On Windows, try more aggressive connection test
-                if platform.system() == "Windows":
-                    try:
-                        # Send a ping with short timeout
-                        test_socket.send_string("ping", flags=zmq.NOBLOCK)
-                        poller = zmq.Poller()
-                        poller.register(test_socket, zmq.POLLIN)
-                        if poller.poll(1000):  # 1 second timeout
-                            response = test_socket.recv_string()
-                            if response == "pong":
-                                print("✅ Successfully received pong from server")
-                                test_socket.close()
-                                test_context.term()
-                                return True
-                    except Exception:
-                        # Fall through to basic connection success
-                        pass
-                
-                # Just connecting succeeded
-                test_socket.close()
-                test_context.term()
-                print("✅ Successfully connected test socket to server")
-                return True
-            except Exception as e:
-                print(f"⚠️ Could not connect test socket: {e}")
-                if 'test_socket' in locals():
-                    test_socket.close()
-                if 'test_context' in locals():
-                    test_context.term()
-            
-            # If we get here with Julia running, give it the benefit of doubt
-            # The server might still be initializing
-            print("⚠️ Julia is running but server might not be ready yet")
-            return julia_running
-            
-        # All checks failed
-        return False
-
+        # ...existing code...
+    
     def _start_server(self):
         """Start the Julia ZMQ server as a separate process
         
         Returns:
             bool: True if server was successfully started, False otherwise
         """
-        print("Starting Julia ZMQ server...")
+        # ...existing code...
         
-        # Get the path to the zmq_server.jl script
-        cwd = os.path.dirname(os.path.abspath(__file__))
+    def send_observation_and_receive_action(self, observation):
+        """Send observation data to Julia and receive next waypoint.
         
-        # First check in the "actinf" subdirectory (preferred location)
-        zmq_server_path = os.path.join(cwd, "actinf", "zmq_server.jl")
-        if not os.path.exists(zmq_server_path):
-            # Try parent directory as fallback
-            zmq_server_path = os.path.join(cwd, "zmq_server.jl")
-            if not os.path.exists(zmq_server_path):
-                print(f"❌ zmq_server.jl not found at {zmq_server_path}")
-                return False
-        
-        print(f"Found zmq_server.jl at: {zmq_server_path}")
-        
-        # Find Julia executable
-        julia_path = "julia"  # Default to system path
-        
-        if platform.system() == "Windows":
-            # Windows-specific Julia paths
-            possible_julia_paths = [
-                r"C:\Julia-1.9.3\bin\julia.exe",
-                r"C:\Julia-1.9.2\bin\julia.exe",
-                r"C:\Julia-1.9.1\bin\julia.exe",
-                r"C:\Julia-1.9.0\bin\julia.exe",
-                r"C:\Julia-1.8.5\bin\julia.exe",
-                r"C:\Users\%USERNAME%\AppData\Local\Programs\Julia-1.9.3\bin\julia.exe",
-                r"C:\Users\%USERNAME%\AppData\Local\Programs\Julia-1.9.2\bin\julia.exe",
-                r"C:\Users\%USERNAME%\AppData\Local\Programs\Julia-1.9.1\bin\julia.exe",
-                r"C:\Users\%USERNAME%\AppData\Local\Programs\Julia-1.9.0\bin\julia.exe",
-                r"C:\Users\%USERNAME%\AppData\Local\Programs\Julia-1.8.5\bin\julia.exe"
-            ]
-            
-            # Expand %USERNAME% environment variable in Windows paths
-            username = os.environ.get('USERNAME', '')
-            possible_julia_paths = [path.replace('%USERNAME%', username) for path in possible_julia_paths]
-            
-            # Try each path
-            for path in possible_julia_paths:
-                if os.path.exists(path):
-                    julia_path = path
-                    print(f"Found Julia at: {julia_path}")
-                    break
-        
+        Args:
+            observation: Dict containing drone observation data
+                Required keys: drone_position, target_position
+                
+        Returns:
+            tuple: (next_waypoint, policy) or (None, None) if communication failed
+        """
         try:
-            # First make sure any existing julia process with zmq_server.jl is terminated
-            if platform.system() == "Windows":
-                try:
-                    # On Windows, we need to use different commands
-                    find_cmd = "wmic process where \"commandline like '%zmq_server.jl%' and name='julia.exe'\" get processid"
-                    result = subprocess.run(find_cmd, shell=True, capture_output=True, text=True)
-                    
-                    # Parse output to find PIDs
-                    lines = result.stdout.strip().split('\n')
-                    if len(lines) > 1:  # First line is header
-                        for line in lines[1:]:
-                            try:
-                                pid = int(line.strip())
-                                if pid > 0:
-                                    kill_cmd = f"taskkill /F /PID {pid}"
-                                    subprocess.run(kill_cmd, shell=True, capture_output=True, text=True)
-                                    print(f"Terminated existing Julia ZMQ server process with PID {pid}")
-                            except (ValueError, TypeError):
-                                pass
-                except Exception as e:
-                    print(f"Warning when trying to kill existing Julia processes: {e}")
-            else:
-                # On Unix-like systems, use pkill
-                try:
-                    subprocess.run(["pkill", "-f", "zmq_server.jl"], 
-                                  capture_output=True, text=True)
-                except Exception as e:
-                    print(f"Warning when trying to kill existing Julia processes: {e}")
+            print("\nSending observation to Active Inference engine...")
             
-            # Brief pause to ensure process termination
-            time.sleep(1)
+            # Make sure interface directory exists
+            interface_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "interface")
+            os.makedirs(interface_dir, exist_ok=True)
             
-            # Start the ZMQ server with platform-specific approach
-            if platform.system() == "Windows":
-                print("Starting ZMQ server on Windows...")
-                
-                # Create log file path
-                log_path = os.path.join(cwd, "zmq_server.log")
-                
-                # Run with visible window, captured output, and logged to file
-                startupinfo = subprocess.STARTUPINFO()
-                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-                startupinfo.wShowWindow = 1  # SW_NORMAL
-                
-                # For Windows, use Popen to create a detached process
-                with open(log_path, "w") as log_file:
-                    subprocess.Popen(
-                        [julia_path, zmq_server_path],
-                        stdout=log_file,
-                        stderr=log_file,
-                        cwd=cwd,
-                        creationflags=subprocess.CREATE_NEW_CONSOLE,
-                        startupinfo=startupinfo
-                    )
-                
-                print(f"ZMQ server started - logs will be written to {log_path}")
-            else:
-                # For Unix-like systems, use a background process
-                print("Starting ZMQ server on Unix-like system...")
-                log_path = os.path.join(cwd, "zmq_server.log")
-                
-                # Use nohup to detach the process properly
-                with open(log_path, "w") as log_file:
-                    # Start Julia process in background
-                    subprocess.Popen(
-                        [julia_path, zmq_server_path],
-                        stdout=log_file,
-                        stderr=log_file,
-                        cwd=cwd
-                    )
-                
-                print(f"ZMQ server started - logs will be written to {log_path}")
+            # Path to the input/output files
+            obs_input_path = os.path.join(interface_dir, "obs_input.json")
+            inferred_state_path = os.path.join(interface_dir, "inferred_state.json")
+            next_waypoint_path = os.path.join(interface_dir, "next_waypoint.json")
             
-            # Wait for the server to initialize
-            print("Waiting for ZMQ server to initialize...")
-            server_ready = False
-            max_wait = 60  # Maximum seconds to wait
-            start_time = time.time()
+            # Write observation to JSON file
+            try:
+                with open(obs_input_path, 'w') as f:
+                    json.dump(observation, f, cls=NumpyJSONEncoder)
+                print("Successfully wrote observation to file")
+            except Exception as e:
+                print(f"Error writing observation to file: {e}")
+                return None, None
             
-            while not server_ready and (time.time() - start_time) < max_wait:
-                # Check if the server is running
-                if self._is_server_running():
-                    server_ready = True
-                    print(f"ZMQ server is ready after {time.time() - start_time:.1f} seconds")
-                    break
-                
-                # Progress indicator
-                if (time.time() - start_time) % 5 < 0.1:  # Show message roughly every 5 seconds
-                    elapsed = time.time() - start_time
-                    print(f"Still waiting for ZMQ server after {elapsed:.1f}s...")
-                
-                time.sleep(1)
-            
-            if not server_ready:
-                print(f"❌ Timed out waiting for ZMQ server to initialize after {max_wait} seconds")
-                print("Please check the ZMQ server log file for errors")
-                return False
-            
-            return True
-            
-        except Exception as e:
-            print(f"❌ Error starting ZMQ server: {str(e)}")
-            traceback.print_exc()
-            return False
-
-# Function to initialize ZMQ with Julia precompilation
-def initialize_zmq_with_precompilation():
-    """Initialize the ZMQ interface after running Julia precompilation
-    
-    This ensures Julia components are properly compiled before any communication
-    starts, preventing timeouts and connection issues.
-    
-    Returns:
-        ZMQInterface: The initialized ZMQ interface
-    """
-    print("\n==== Running Julia Precompilation ====")
-    precompile_success = False
-    
-    # Get current working directory for consistent path handling on all platforms
-    cwd = os.path.dirname(os.path.abspath(__file__))
-    
-    try:
-        # Find Julia executable with better platform-specific handling
-        julia_path = "julia"  # Default command in PATH
-        
-        if platform.system() == "Windows":
-            # Windows-specific Julia paths
-            possible_julia_paths = [
-                r"C:\Julia-1.9.3\bin\julia.exe",
-                r"C:\Julia-1.9.2\bin\julia.exe",
-                r"C:\Julia-1.9.1\bin\julia.exe",
-                r"C:\Julia-1.9.0\bin\julia.exe",
-                r"C:\Julia-1.8.5\bin\julia.exe",
-                r"C:\Users\%USERNAME%\AppData\Local\Programs\Julia-1.9.3\bin\julia.exe",
-                r"C:\Users\%USERNAME%\AppData\Local\Programs\Julia-1.9.2\bin\julia.exe",
-                r"C:\Users\%USERNAME%\AppData\Local\Programs\Julia-1.9.1\bin\julia.exe",
-                r"C:\Users\%USERNAME%\AppData\Local\Programs\Julia-1.9.0\bin\julia.exe",
-                r"C:\Users\%USERNAME%\AppData\Local\Programs\Julia-1.8.5\bin\julia.exe"
-            ]
-            
-            # Expand %USERNAME% environment variable in Windows paths
-            username = os.environ.get('USERNAME', '')
-            possible_julia_paths = [path.replace('%USERNAME%', username) for path in possible_julia_paths]
-            
-            # Try each path
-            for path in possible_julia_paths:
-                if os.path.exists(path):
-                    julia_path = path
-                    print(f"Found Julia at: {julia_path}")
-                    break
-        
-        # Create ZMQ interface first to initialize properties
-        print("Creating ZMQ interface...")
-        zmq_interface = ZMQInterface(defer_connection=True)
-        
-        # Attempt to check if server is already running
-        if zmq_interface._is_server_running():
-            print("ZMQ server is already running - proceeding with the existing server")
-            return zmq_interface
-            
-        # Run precompilation script to prepare Julia environment with timeout
-        print("Starting Julia precompilation (this may take several minutes)...")
-        print("Precompiling RxInfer and Active Inference package dependencies...")
-        
-        # Verify precompile.jl exists
-        precompile_script = os.path.join(cwd, "precompile.jl")
-        if not os.path.exists(precompile_script):
-            print(f"⚠️ Precompilation script not found at {precompile_script}")
-            print("Will proceed without precompilation")
-        else:
-            # Add a reasonable timeout for precompilation (10 minutes)
-            precompile_timeout = 600  # seconds
+            # Determine which Julia execution mode to use - direct script or ZMQ
+            use_zmq = True
             
             try:
-                # Use platform-specific precompilation approach
-                if platform.system() == "Windows":
-                    print(f"Running Windows-optimized precompilation with {precompile_timeout}s timeout...")
+                # First, try the ZMQ approach
+                if use_zmq and hasattr(self, 'socket') and self.socket:
+                    print("Using ZMQ for inference communication...")
                     
-                    # On Windows, create a log file for capturing output
-                    precompile_log = os.path.join(cwd, "julia_precompile.log")
+                    # Convert observation to JSON string
+                    obs_json = json.dumps(observation, cls=NumpyJSONEncoder)
                     
-                    # First kill any existing Julia processes that might interfere
-                    try:
-                        subprocess.run(["taskkill", "/F", "/IM", "julia.exe"], 
-                                     capture_output=True, text=True)
-                        time.sleep(1)  # Give time for processes to terminate
-                    except Exception as e:
-                        print(f"Note: Could not kill existing Julia processes: {str(e)}")
+                    # Send request with retry mechanism
+                    max_retries = ZMQ_MAX_RETRIES
+                    request_successful = False
                     
-                    # Use different approach on Windows since timeout handling works differently
-                    try:
-                        # Create a detached process with window showing status
-                        startupinfo = subprocess.STARTUPINFO()
-                        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-                        startupinfo.wShowWindow = 1  # SW_SHOWNORMAL
-                        
-                        # Start with separate window to make it visible
-                        julia_cmd = [julia_path, precompile_script]
-                        print(f"Executing: {' '.join(julia_cmd)}")
-                        
-                        with open(precompile_log, "w") as log_file:
-                            precompile_process = subprocess.Popen(
-                                julia_cmd,
-                                stdout=log_file,
-                                stderr=log_file,
-                                cwd=cwd,
-                                creationflags=subprocess.CREATE_NEW_CONSOLE
-                            )
-                        
-                        # Wait for precompilation with timeout
-                        print(f"Waiting for precompilation to complete (timeout: {precompile_timeout}s)...")
-                        
-                        # Wait with timeout
+                    for retry in range(max_retries):
                         try:
-                            return_code = precompile_process.wait(timeout=precompile_timeout)
-                            if return_code == 0:
-                                print("✅ Julia precompilation completed successfully")
-                                precompile_success = True
+                            # Send observation data
+                            self.socket.send_string(obs_json)
+                            print(f"Sent observation data via ZMQ (retry {retry+1}/{max_retries})")
+                            
+                            # Set up poller for timeout
+                            poller = zmq.Poller()
+                            poller.register(self.socket, zmq.POLLIN)
+                            
+                            # Wait for response with timeout
+                            if poller.poll(ZMQ_TIMEOUT):
+                                # Receive response
+                                response = self.socket.recv_string()
+                                request_successful = True
+                                print("Received response from ZMQ server")
+                                break
                             else:
-                                print(f"⚠️ Precompilation returned non-zero exit code: {return_code}")
-                        except subprocess.TimeoutExpired:
-                            print(f"⚠️ Precompilation timed out after {precompile_timeout} seconds")
-                            # Try to terminate the process
-                            try:
-                                precompile_process.terminate()
+                                print(f"ZMQ response timeout (attempt {retry+1}/{max_retries})")
+                                
+                                # Reset socket on timeout
+                                if retry < max_retries - 1:  # Don't reset on last attempt
+                                    print("Resetting socket for next attempt...")
+                                    self._reset_socket()
+                                    time.sleep(1)  # Brief pause before retry
+                        except zmq.ZMQError as e:
+                            print(f"ZMQ error during communication (attempt {retry+1}/{max_retries}): {e}")
+                            if retry < max_retries - 1:
+                                print("Resetting socket for next attempt...")
+                                self._reset_socket()
                                 time.sleep(1)
-                                if precompile_process.poll() is None:
-                                    precompile_process.kill()
-                            except Exception as e:
-                                print(f"Error terminating precompilation process: {e}")
-                        
-                        # Check precompile log file
-                        if os.path.exists(precompile_log):
-                            try:
-                                with open(precompile_log, 'r') as f:
-                                    log_content = f.read()
-                                    last_lines = log_content.strip().split('\n')[-5:]
-                                    print("Last few lines of precompilation log:")
-                                    for line in last_lines:
-                                        print(f"  {line}")
-                            except Exception as e:
-                                print(f"Error reading precompile log: {e}")
-                    except Exception as e:
-                        print(f"Error during Windows precompilation: {e}")
-                        traceback.print_exc()
-                else:
-                    # macOS/Linux approach with simpler subprocess.run
-                    julia_cmd = [julia_path, precompile_script]
-                    print(f"Running precompilation with {precompile_timeout}s timeout...")
-                    result = subprocess.run(
-                        julia_cmd, 
-                        capture_output=True, 
-                        text=True, 
-                        timeout=precompile_timeout
-                    )
                     
-                    if result.returncode == 0:
-                        print("✅ Julia precompilation completed successfully:")
-                        # Get the last few lines for better confirmation
-                        output_lines = result.stdout.strip().split("\n")
-                        for line in output_lines[-3:]:  # Print last 3 lines
-                            if line.strip():  # Only print non-empty lines
-                                print(f"  {line}")
-                        precompile_success = True
+                    # Process the response from ZMQ if successful
+                    if request_successful:
+                        try:
+                            result = json.loads(response)
+                            waypoint = result.get("next_waypoint")
+                            policy = result.get("policy", [])
+                            
+                            if waypoint:
+                                print(f"Next waypoint from ZMQ: {[round(p, 2) for p in waypoint]}")
+                                return waypoint, policy
+                            else:
+                                print("Error: No waypoint in ZMQ response")
+                        except json.JSONDecodeError:
+                            print(f"Error decoding ZMQ JSON response")
+                        except Exception as e:
+                            print(f"Error processing ZMQ response: {str(e)}")
+                            
+                    # If ZMQ approach failed, fall back to script execution
+                    print("ZMQ communication failed, falling back to script execution")
+                
+                # If ZMQ failed or wasn't used, run the Julia scripts directly
+                print("Running Julia scripts for inference and planning...")
+                
+                # Get Julia path
+                julia_path = "julia"
+                
+                # For Windows, search in common Julia installation paths
+                if platform.system() == "Windows":
+                    possible_julia_paths = [
+                        r"C:\Julia-1.9.3\bin\julia.exe",
+                        r"C:\Julia-1.9.2\bin\julia.exe",
+                        r"C:\Julia-1.9.1\bin\julia.exe",
+                        r"C:\Julia-1.9.0\bin\julia.exe",
+                        r"C:\Julia-1.8.5\bin\julia.exe",
+                        r"C:\Users\%USERNAME%\AppData\Local\Programs\Julia-1.9.3\bin\julia.exe",
+                        r"C:\Users\%USERNAME%\AppData\Local\Programs\Julia-1.9.2\bin\julia.exe",
+                        r"C:\Users\%USERNAME%\AppData\Local\Programs\Julia-1.9.1\bin\julia.exe",
+                        r"C:\Users\%USERNAME%\AppData\Local\Programs\Julia-1.9.0\bin\julia.exe",
+                        r"C:\Users\%USERNAME%\AppData\Local\Programs\Julia-1.8.5\bin\julia.exe"
+                    ]
+                    
+                    # Expand %USERNAME% environment variable in Windows paths
+                    username = os.environ.get('USERNAME', '')
+                    possible_julia_paths = [path.replace('%USERNAME%', username) for path in possible_julia_paths]
+                    
+                    # Try each path
+                    for path in possible_julia_paths:
+                        if os.path.exists(path):
+                            julia_path = path
+                            break
+                
+                # Get current directory for script paths
+                current_dir = os.path.dirname(os.path.abspath(__file__))
+                inference_script = os.path.join(current_dir, "run_inference.jl")
+                planning_script = os.path.join(current_dir, "run_planning.jl")
+                
+                # Verify scripts exist
+                if not os.path.exists(inference_script):
+                    print(f"❌ Error: Inference script not found at {inference_script}")
+                    return None, None
+                
+                if not os.path.exists(planning_script):
+                    print(f"❌ Error: Planning script not found at {planning_script}")
+                    return None, None
+                
+                # Run inference script first to update the belief state - with explicit project activation
+                try:
+                    print(f"Running inference script: {inference_script}")
+                    # Use --project=. to ensure the project environment is activated
+                    subprocess.run([julia_path, "--project=.", inference_script], check=True)
+                except subprocess.CalledProcessError as e:
+                    print(f"❌ Error running Julia scripts: {e}")
+                    return None, None
+                except Exception as e:
+                    print(f"❌ Unexpected error in inference script: {e}")
+                    traceback.print_exc()
+                    return None, None
+                
+                # Run planning script to get next waypoint - with explicit project activation
+                try:
+                    print(f"Running planning script: {planning_script}")
+                    # Use --project=. to ensure the project environment is activated
+                    subprocess.run([julia_path, "--project=.", planning_script], check=True)
+                except subprocess.CalledProcessError as e:
+                    print(f"❌ Error running planning script: {e}")
+                    return None, None
+                except Exception as e:
+                    print(f"❌ Unexpected error in planning script: {e}")
+                    traceback.print_exc()
+                    return None, None
+                
+                # Check if the waypoint file was created
+                if not os.path.exists(next_waypoint_path):
+                    print(f"❌ Waypoint file not found at {next_waypoint_path}")
+                    return None, None
+                
+                # Read the next waypoint
+                try:
+                    with open(next_waypoint_path, 'r') as f:
+                        waypoint_data = json.load(f)
+                        
+                    waypoint = waypoint_data.get("next_waypoint")
+                    policy = waypoint_data.get("policy", [])
+                    
+                    if waypoint:
+                        print(f"Next waypoint from direct scripts: {[round(p, 2) for p in waypoint]}")
+                        return waypoint, policy
                     else:
-                        print(f"⚠️ Julia precompilation returned code {result.returncode}:")
-                        print(result.stderr[:500])  # Print first 500 chars of error
-                        print("Attempting to continue despite precompilation issues...")
-            except subprocess.TimeoutExpired:
-                print(f"⚠️ Julia precompilation timed out after {precompile_timeout} seconds")
-                print("Proceeding without completed precompilation")
-                # Try to terminate any hanging Julia process
-                if platform.system() != "Windows":
-                    # For macOS
-                    subprocess.run(["pkill", "-f", "julia precompile.jl"], 
-                                  capture_output=True, text=True)
-                else:
-                    # For Windows - try to kill any julia.exe processes
-                    subprocess.run(["taskkill", "/F", "/IM", "julia.exe"], 
-                                   capture_output=True, text=True)
-
-    except FileNotFoundError:
-        print("⚠️ Julia executable not found in PATH")
-        print("Make sure Julia is installed and accessible in the system PATH")
-        print("Continuing without precompilation, connectivity may be affected")
-    except Exception as e:
-        print(f"⚠️ Error during precompilation setup: {str(e)}")
-        traceback.print_exc()
-        print("Continuing without precompilation")
-    
-    # Explicitly start ZMQ server now - this is the critical change
-    print("\n==== Explicitly Starting Julia ZMQ Server ====")
-    
-    # If we don't have an interface yet, create one
-    if 'zmq_interface' not in locals():
-        zmq_interface = ZMQInterface(defer_connection=True)
-    
-    # Call the explicit server start method, which will start the server if not already running
-    server_started = zmq_interface._start_server()
-    
-    if server_started:
-        print("✅ ZMQ server started successfully")
-        # Now we can set up the ZMQ connection
-        connection_success = zmq_interface._setup_zmq_connection()
-        if connection_success:
-            print("✅ ZMQ connection established")
-        else:
-            print("❌ Failed to establish ZMQ connection after starting server")
-            print("Please check Julia installation and dependencies")
-    else:
-        print("❌ Failed to start ZMQ server")
-        print("Navigation will not work without the ZMQ server")
-    
-    return zmq_interface
+                        print("❌ No waypoint in response file")
+                        return None, None
+                except json.JSONDecodeError:
+                    print(f"❌ Error decoding waypoint JSON")
+                    return None, None
+                except Exception as e:
+                    print(f"❌ Error reading waypoint file: {e}")
+                    return None, None
+                
+            except Exception as e:
+                print(f"❌ Error in script execution: {e}")
+                traceback.print_exc()
+                return None, None
+                
+        except Exception as e:
+            print(f"❌ Unhandled error in active inference processing: {e}")
+            traceback.print_exc()
+            return None, None
 
 # Connect to AirSim
 client = airsim.MultirotorClient()
@@ -1055,6 +542,297 @@ class Scanner:
 scanner = Scanner(client)
 
 # Initialize ZMQ interface with proper precompilation
+def initialize_zmq_with_precompilation():
+    """Initialize the ZMQ interface after running Julia precompilation
+    
+    This ensures Julia components are properly compiled before any communication
+    starts, preventing timeouts and connection issues.
+    
+    Returns:
+        ZMQInterface: The initialized ZMQ interface
+    """
+    print("\n==== Running Julia Precompilation ====")
+    precompile_success = False
+    
+    # Get current working directory for consistent path handling on all platforms
+    cwd = os.path.dirname(os.path.abspath(__file__))
+    
+    try:
+        # Find Julia executable with better platform-specific handling
+        julia_path = "julia"  # Default command in PATH
+        
+        if platform.system() == "Windows":
+            # Windows-specific Julia paths
+            possible_julia_paths = [
+                r"C:\Julia-1.9.3\bin\julia.exe",
+                r"C:\Julia-1.9.2\bin\julia.exe",
+                r"C:\Julia-1.9.1\bin\julia.exe",
+                r"C:\Julia-1.9.0\bin\julia.exe",
+                r"C:\Julia-1.8.5\bin\julia.exe",
+                r"C:\Users\%USERNAME%\AppData\Local\Programs\Julia-1.9.3\bin\julia.exe",
+                r"C:\Users\%USERNAME%\AppData\Local\Programs\Julia-1.9.2\bin\julia.exe",
+                r"C:\Users\%USERNAME%\AppData\Local\Programs\Julia-1.9.1\bin\julia.exe",
+                r"C:\Users\%USERNAME%\AppData\Local\Programs\Julia-1.9.0\bin\julia.exe",
+                r"C:\Users\%USERNAME%\AppData\Local\Programs\Julia-1.8.5\bin\julia.exe"
+            ]
+            
+            # Expand %USERNAME% environment variable in Windows paths
+            username = os.environ.get('USERNAME', '')
+            possible_julia_paths = [path.replace('%USERNAME%', username) for path in possible_julia_paths]
+            
+            # Try each path
+            for path in possible_julia_paths:
+                if os.path.exists(path):
+                    julia_path = path
+                    print(f"Found Julia at: {julia_path}")
+                    break
+        
+        # Create ZMQ interface first to initialize properties
+        print("Creating ZMQ interface...")
+        zmq_interface = ZMQInterface(defer_connection=True)
+        
+        # Install required packages before running precompilation
+        print("\n==== Installing Required Julia Packages ====")
+        
+        # Create a temporary Julia script to install packages
+        install_script_path = os.path.join(cwd, "install_packages.jl")
+        with open(install_script_path, "w") as f:
+            f.write("""
+            # Install required packages for active inference
+            import Pkg
+            
+            # Activate the project
+            Pkg.activate(".")
+            
+            # Add required packages
+            required_packages = [
+                "JSON",
+                "LinearAlgebra",
+                "StaticArrays",
+                "ZMQ"
+            ]
+            
+            for pkg in required_packages
+                if pkg != "LinearAlgebra"  # LinearAlgebra is a standard library
+                    println("Adding package: $pkg")
+                    try
+                        Pkg.add(pkg)
+                    catch e
+                        println("Error adding $pkg: $e")
+                    end
+                end
+            end
+            
+            # Develop the actinf package
+            println("Developing actinf package...")
+            try
+                Pkg.develop(path="actinf")
+            catch e
+                println("Error developing actinf: $e")
+            end
+            
+            # Instantiate and precompile
+            println("Instantiating project...")
+            Pkg.instantiate()
+            
+            println("Resolving project...")
+            Pkg.resolve()
+            
+            println("Building project...")
+            Pkg.build()
+            
+            println("Installation complete!")
+            """)
+        
+        # Run the installation script
+        print(f"Running package installation script...")
+        try:
+            result = subprocess.run(
+                [julia_path, install_script_path], 
+                capture_output=True, 
+                text=True, 
+                timeout=600  # 10 minutes timeout
+            )
+            if result.returncode == 0:
+                print("✅ Package installation successful")
+                print(f"Output: {result.stdout[-200:]}")  # Show the last 200 chars
+            else:
+                print(f"⚠️ Package installation returned code {result.returncode}")
+                print(f"Error: {result.stderr[:500]}")
+        except Exception as e:
+            print(f"⚠️ Error during package installation: {str(e)}")
+        finally:
+            # Clean up installation script
+            try:
+                os.remove(install_script_path)
+            except:
+                pass
+        
+        # Attempt to check if server is already running
+        if hasattr(zmq_interface, '_is_server_running') and zmq_interface._is_server_running():
+            print("ZMQ server is already running - proceeding with the existing server")
+            return zmq_interface
+            
+        # Run precompilation script to prepare Julia environment with timeout
+        print("Starting Julia precompilation (this may take several minutes)...")
+        print("Precompiling Active Inference package dependencies...")
+        
+        # Verify precompile.jl exists
+        precompile_script = os.path.join(cwd, "precompile.jl")
+        if not os.path.exists(precompile_script):
+            print(f"⚠️ Precompilation script not found at {precompile_script}")
+            print("Will proceed without precompilation")
+        else:
+            # Add a reasonable timeout for precompilation (10 minutes)
+            precompile_timeout = 600  # seconds
+            
+            try:
+                # Use platform-specific precompilation approach
+                if platform.system() == "Windows":
+                    print(f"Running Windows-optimized precompilation with {precompile_timeout}s timeout...")
+                    
+                    # On Windows, create a log file for capturing output
+                    precompile_log = os.path.join(cwd, "julia_precompile.log")
+                    
+                    # First kill any existing Julia processes that might interfere
+                    try:
+                        subprocess.run(["taskkill", "/F", "/IM", "julia.exe"], 
+                                     capture_output=True, text=True)
+                        time.sleep(1)  # Give time for processes to terminate
+                    except Exception as e:
+                        print(f"Note: Could not kill existing Julia processes: {str(e)}")
+                    
+                    # Use different approach on Windows since timeout handling works differently
+                    try:
+                        # Create a detached process with window showing status
+                        startupinfo = subprocess.STARTUPINFO()
+                        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                        startupinfo.wShowWindow = 1  # SW_SHOWNORMAL
+                        
+                        # Start with separate window to make it visible
+                        julia_cmd = [julia_path, precompile_script]
+                        print(f"Executing: {' '.join(julia_cmd)}")
+                        
+                        with open(precompile_log, "w") as log_file:
+                            precompile_process = subprocess.Popen(
+                                julia_cmd,
+                                stdout=log_file,
+                                stderr=log_file,
+                                cwd=cwd,
+                                creationflags=subprocess.CREATE_NEW_CONSOLE,
+                                startupinfo=startupinfo
+                            )
+                        
+                        # Wait for precompilation with timeout
+                        print(f"Waiting for precompilation to complete (timeout: {precompile_timeout}s)...")
+                        
+                        # Wait with timeout
+                        try:
+                            return_code = precompile_process.wait(timeout=precompile_timeout)
+                            if return_code == 0:
+                                print("✅ Julia precompilation completed successfully")
+                                precompile_success = True
+                            else:
+                                print(f"⚠️ Precompilation returned non-zero exit code: {return_code}")
+                        except subprocess.TimeoutExpired:
+                            print(f"⚠️ Precompilation timed out after {precompile_timeout} seconds")
+                            # Try to terminate the process
+                            try:
+                                precompile_process.terminate()
+                                time.sleep(1)
+                                if precompile_process.poll() is None:
+                                    precompile_process.kill()
+                            except Exception as e:
+                                print(f"Error terminating precompilation process: {e}")
+                        
+                        # Check precompile log file
+                        if os.path.exists(precompile_log):
+                            try:
+                                with open(precompile_log, 'r') as f:
+                                    log_content = f.read()
+                                    last_lines = log_content.strip().split('\n')[-5:]
+                                    print("Last few lines of precompilation log:")
+                                    for line in last_lines:
+                                        print(f"  {line}")
+                            except Exception as e:
+                                print(f"Error reading precompile log: {e}")
+                    except Exception as e:
+                        print(f"Error during Windows precompilation: {e}")
+                        traceback.print_exc()
+                else:
+                    # macOS/Linux approach with simpler subprocess.run
+                    julia_cmd = [julia_path, precompile_script]
+                    print(f"Running precompilation with {precompile_timeout}s timeout...")
+                    result = subprocess.run(
+                        julia_cmd, 
+                        capture_output=True, 
+                        text=True, 
+                        timeout=precompile_timeout
+                    )
+                    
+                    if result.returncode == 0:
+                        print("✅ Julia precompilation completed successfully:")
+                        # Get the last few lines for better confirmation
+                        output_lines = result.stdout.strip().split("\n")
+                        for line in output_lines[-3:]:  # Print last 3 lines
+                            if line.strip():  # Only print non-empty lines
+                                print(f"  {line}")
+                        precompile_success = True
+                    else:
+                        print(f"⚠️ Julia precompilation returned code {result.returncode}:")
+                        print(result.stderr[:500])  # Print first 500 chars of error
+                        print("Attempting to continue despite precompilation issues...")
+            except subprocess.TimeoutExpired:
+                print(f"⚠️ Julia precompilation timed out after {precompile_timeout} seconds")
+                print("Proceeding without completed precompilation")
+                # Try to terminate any hanging Julia process
+                if platform.system() != "Windows":
+                    # For macOS
+                    subprocess.run(["pkill", "-f", "julia precompile.jl"], 
+                                  capture_output=True, text=True)
+                else:
+                    # For Windows - try to kill any julia.exe processes
+                    subprocess.run(["taskkill", "/F", "/IM", "julia.exe"], 
+                                   capture_output=True, text=True)
+
+    except FileNotFoundError:
+        print("⚠️ Julia executable not found in PATH")
+        print("Make sure Julia is installed and accessible in the system PATH")
+        print("Continuing without precompilation, connectivity may be affected")
+    except Exception as e:
+        print(f"⚠️ Error during precompilation setup: {str(e)}")
+        traceback.print_exc()
+        print("Continuing without precompilation")
+    
+    # Explicitly start ZMQ server now - this is the critical change
+    print("\n==== Explicitly Starting Julia ZMQ Server ====")
+    
+    # If we don't have an interface yet, create one
+    if 'zmq_interface' not in locals():
+        zmq_interface = ZMQInterface(defer_connection=True)
+    
+    # Call the explicit server start method, which will start the server if not already running
+    if hasattr(zmq_interface, '_start_server'):
+        server_started = zmq_interface._start_server()
+        
+        if server_started:
+            print("✅ ZMQ server started successfully")
+            # Now we can set up the ZMQ connection
+            connection_success = zmq_interface._setup_zmq_connection()
+            if connection_success:
+                print("✅ ZMQ connection established")
+            else:
+                print("❌ Failed to establish ZMQ connection after starting server")
+                print("Please check Julia installation and dependencies")
+        else:
+            print("❌ Failed to start ZMQ server")
+            print("Navigation will not work without the ZMQ server")
+    else:
+        print("❌ ZMQInterface does not have _start_server method")
+        print("This is likely a version mismatch or implementation error")
+    
+    return zmq_interface
+
 zmq_interface = initialize_zmq_with_precompilation()
 
 def move_to_waypoint(client, current_pos, waypoint, velocity=2):
@@ -1254,5 +1032,8 @@ def main():
     client.armDisarm(False)
 
 main()
+
+
+
 
 

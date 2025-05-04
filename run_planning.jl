@@ -1,22 +1,89 @@
 #!/usr/bin/env julia
 
-# Activate the project environment if needed
+println("Starting drone navigation planning script...")
+
+# Check if we're running in a precompiled environment - fixed to avoid circular dependency
+const IS_PRECOMPILED = haskey(ENV, "JULIA_ACTINF_PRECOMPILED")
+
+# Only activate if environment is not already active
 if Base.active_project() != abspath(joinpath(@__DIR__, "Project.toml"))
+    println("Activating project environment...")
     import Pkg
     Pkg.activate(@__DIR__)
-    # No need for develop and instantiate as they're done during precompilation
+    println("Project activated")
+else
+    println("Project environment already active")
 end
 
-# Import required modules - already precompiled
-using JSON
-using LinearAlgebra
-using StaticArrays
-using actinf
+# Import required packages with explicit error handling
+if !IS_PRECOMPILED
+    println("Loading required packages...")
+    function load_package(pkgname)
+        try
+            println("Loading $pkgname...")
+            @eval import $pkgname
+            println("Successfully loaded $pkgname")
+            return true
+        catch e
+            println("Error loading $pkgname: $e")
+            return false
+        end
+    end
+
+    # Load standard libraries first
+    load_package(:JSON)
+    load_package(:LinearAlgebra)
+    load_package(:StaticArrays)
+
+    # Add direct imports for functions to make them available in Main scope
+    using StaticArrays: SVector
+    using LinearAlgebra: norm
+
+    # Load actinf with special handling - using include if necessary
+    println("Loading actinf package...")
+    try
+        # Try direct loading first
+        @eval using actinf
+        println("Successfully loaded actinf package")
+    catch e
+        println("Could not load actinf directly: $e")
+        
+        # Try to include the module files manually
+        try
+            println("Attempting to manually include actinf module files...")
+            
+            # Include module files directly
+            include(joinpath(@__DIR__, "actinf", "src", "StateSpace.jl"))
+            include(joinpath(@__DIR__, "actinf", "src", "Inference.jl"))
+            include(joinpath(@__DIR__, "actinf", "src", "Planning.jl"))
+            include(joinpath(@__DIR__, "actinf", "src", "actinf.jl"))
+            
+            # Import the manually included module
+            using .actinf
+            println("Successfully loaded actinf via manual inclusion")
+        catch e2
+            println("Failed to manually include actinf: $e2")
+            error("Cannot continue without actinf package")
+        end
+    end
+else
+    # In precompiled mode, just ensure the necessary modules are available
+    println("Using precompiled dependencies")
+    using JSON, LinearAlgebra, StaticArrays
+    using StaticArrays: SVector
+    using actinf
+end
+
+# Import specific components from actinf to make them available in Main scope
+using actinf.StateSpace: DroneState, DroneObservation, create_state_from_observation
+using actinf.Inference: deserialize_beliefs, initialize_beliefs
+using actinf.Planning: ActionPlanner, PreferenceModel, select_action
 
 # Constants and parameters with more robust path handling for cross-platform compatibility
 const INTERFACE_DIR = joinpath(@__DIR__, "interface")
 const INFERRED_STATE_PATH = joinpath(INTERFACE_DIR, "inferred_state.json")
 const ACTION_OUTPUT_PATH = joinpath(INTERFACE_DIR, "action_output.json")
+const NEXT_WAYPOINT_PATH = joinpath(INTERFACE_DIR, "next_waypoint.json") # For backward compatibility
 const OBS_INPUT_PATH = joinpath(INTERFACE_DIR, "obs_input.json")
 
 # Hyperparameters
@@ -29,6 +96,13 @@ try
     if !isdir(INTERFACE_DIR)
         mkpath(INTERFACE_DIR)
         println("Created interface directory: $INTERFACE_DIR")
+    end
+    
+    # Test write access by touching the file - safer approach
+    temp_file = joinpath(INTERFACE_DIR, "test_write_access.tmp")
+    touch(temp_file)
+    if isfile(temp_file)
+        rm(temp_file)  # Clean up the test file if successful
     end
 catch e
     println("Warning: Issue with interface directory: $e")
@@ -55,7 +129,9 @@ function main()
     println("Reading inferred state from $INFERRED_STATE_PATH...")
     local data
     try
-        data = JSON.parsefile(INFERRED_STATE_PATH)
+        data = open(INFERRED_STATE_PATH) do f
+            JSON.parse(f)
+        end
         println("Successfully parsed inferred state file")
     catch e
         println("Error parsing inferred state file: $e")
@@ -78,7 +154,9 @@ function main()
     
     if isfile(OBS_INPUT_PATH)
         try
-            obs_data = JSON.parsefile(OBS_INPUT_PATH)
+            obs_data = open(OBS_INPUT_PATH) do f
+                JSON.parse(f)
+            end
             obstacle_repulsion_weight = get(obs_data, "obstacle_repulsion_weight", 0.0)
             direct_path_clear = get(obs_data, "direct_path_clear", true)
             direct_path_suitability = get(obs_data, "direct_path_suitability", 1.0)
@@ -126,22 +204,40 @@ function main()
     # Extract other data safely
     drone_position = try
         SVector{3, Float64}(get(data, "drone_position", [0.0, 0.0, 0.0])...)
-    catch
+    catch e
+        println("Error parsing drone position: $e")
         SVector{3, Float64}(0.0, 0.0, 0.0)
     end
     
     target_position = try
         SVector{3, Float64}(get(data, "target_position", [10.0, 0.0, -3.0])...)
-    catch
+    catch e
+        println("Error parsing target position: $e")
         SVector{3, Float64}(10.0, 0.0, -3.0)
     end
     
-    nearest_obstacle_distances = get(data, "nearest_obstacle_distances", [100.0, 100.0])
-    obstacle_density = get(data, "obstacle_density", 0.0)
+    nearest_obstacle_distances = try
+        Float64.(get(data, "nearest_obstacle_distances", [100.0, 100.0]))
+    catch e
+        println("Error parsing obstacle distances: $e")
+        Float64[100.0, 100.0]
+    end
+    
+    obstacle_density = try
+        Float64(get(data, "obstacle_density", 0.0))
+    catch e
+        println("Error parsing obstacle density: $e")
+        0.0
+    end
     
     # Calc distance to target
     current_to_target = target_position - drone_position
     current_to_target_dist = norm(current_to_target)
+    
+    # Print crucial information for debugging
+    println("\nCurrent position: [$(round(drone_position[1], digits=2)), $(round(drone_position[2], digits=2)), $(round(drone_position[3], digits=2))]")
+    println("Target position: [$(round(target_position[1], digits=2)), $(round(target_position[2], digits=2)), $(round(target_position[3], digits=2))]")
+    println("Distance to target: $(round(current_to_target_dist, digits=2))")
     
     # Calculate target preference vs obstacle avoidance weights
     # More target preference when:
@@ -217,7 +313,7 @@ function main()
     
     # Override the suitability threshold used in planning
     # This ensures that the filtering step in select_action uses the updated threshold
-    global SUITABILITY_THRESHOLD = suitability_threshold
+    global actinf.Planning.SUITABILITY_THRESHOLD = suitability_threshold
     
     # Select best actions using the planner
     obstacle_distance = isempty(nearest_obstacle_distances) ? 100.0 : minimum(nearest_obstacle_distances)
@@ -226,6 +322,13 @@ function main()
     if haskey(data, "nearest_obstacle_dist")
         obstacle_distance = data["nearest_obstacle_dist"]
     end
+    
+    println("Planning with parameters:")
+    println("- Target preference weight: $(round(target_preference_weight, digits=2))")
+    println("- Obstacle weight: $(round(obstacle_weight, digits=2))")
+    println("- Suitability threshold: $(round(suitability_threshold, digits=2))")
+    println("- Obstacle distance: $(round(obstacle_distance, digits=2))")
+    println("- Obstacle density: $(round(obstacle_density, digits=2))")
     
     actions_with_efe = select_action(
         current_state,
@@ -247,9 +350,21 @@ function main()
     best_action_array = [best_action[1], best_action[2], best_action[3]]
     policy_array = [[a[1], a[2], a[3]] for a in policy]
     
+    # Calculate next waypoint based on current position and action
+    next_waypoint = [
+        drone_position[1] + best_action[1],
+        drone_position[2] + best_action[2], 
+        drone_position[3] + best_action[3]
+    ]
+    
+    println("Selected next waypoint: [$(round(next_waypoint[1], digits=2)), $(round(next_waypoint[2], digits=2)), $(round(next_waypoint[3], digits=2))]")
+    println("Action vector: [$(round(best_action[1], digits=2)), $(round(best_action[2], digits=2)), $(round(best_action[3], digits=2))]")
+    
     # Create action output data
     action_data = Dict(
-        "next_waypoint" => best_action_array,
+        "action" => best_action_array,
+        "next_waypoint" => next_waypoint,
+        "waypoint" => next_waypoint,  # Alternative key for compatibility
         "policy" => policy_array,
         "expected_free_energy" => best_efe
     )
@@ -264,7 +379,12 @@ function main()
         
         println("Saving action to $ACTION_OUTPUT_PATH...")
         open(ACTION_OUTPUT_PATH, "w") do f
-            JSON.print(f, action_data, 2)  # Pretty print with 2-space indent
+            JSON.print(f, action_data)
+        end
+        
+        # Also save to next_waypoint.json for backward compatibility
+        open(NEXT_WAYPOINT_PATH, "w") do f
+            JSON.print(f, action_data)
         end
         
         # Verify the file was written
@@ -279,7 +399,7 @@ function main()
             # Try a different approach as fallback
             println("Retrying write with alternative approach...")
             file = open(ACTION_OUTPUT_PATH, "w")
-            JSON.print(file, action_data, 2)
+            JSON.print(file, action_data)
             close(file)
             println("Alternative write approach completed")
         catch e2
@@ -288,13 +408,34 @@ function main()
             fallback_path = joinpath(dirname(@__FILE__), "action_output_fallback.json")
             println("Trying last resort to $fallback_path")
             open(fallback_path, "w") do f
-                JSON.print(f, action_data, 2)
+                JSON.print(f, action_data)
             end
         end
     end
     
-    println("Planning complete. Selected waypoint: $(best_action_array)")
+    println("Planning complete. Selected waypoint: $(next_waypoint)")
 end
 
-# Run the main function
-main()
+# Run the main function with better error handling
+try
+    main()
+    println("\nPlanning script completed successfully")
+catch e
+    println("\n❌ Error in planning script main function: $e")
+    bt = backtrace()
+    println("Stack trace:")
+    for (i, frame) in enumerate(bt)
+        if i > 10  # Limit stack trace to first 10 frames
+            println("...")
+            break
+        end
+        try
+            frame_info = Base.StackTraces.lookup(frame)
+            println("  $(frame_info[1].func) at $(frame_info[1].file):$(frame_info[1].line)")
+        catch
+            println("  [Frame $i]")
+        end
+    end
+    # Re-throw for proper exit code
+    rethrow(e)
+end

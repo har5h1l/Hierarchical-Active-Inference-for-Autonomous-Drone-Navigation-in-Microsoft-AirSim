@@ -5,6 +5,12 @@
 
 println("Starting Active Inference ZMQ Server...")
 
+# Activate the project environment first to ensure packages are available
+println("Activating project environment...")
+import Pkg
+Pkg.activate(dirname(@__FILE__))
+println("Project activated")
+
 # ZMQ.jl API compatibility layer
 # This ensures the script works with both newer and older versions of ZMQ.jl
 module ZMQCompat
@@ -185,24 +191,6 @@ catch e
     end
 end
 
-# Activate project environment
-println("Setting up Julia environment...")
-if Base.active_project() != abspath(joinpath(dirname(@__DIR__), "Project.toml"))
-    try
-        import Pkg
-        Pkg.activate(dirname(@__DIR__))
-        println("✓ Project activated")
-        try
-            Pkg.develop(path=@__DIR__)  # Develop the actinf package
-            println("✓ Actinf package developed")
-        catch e
-            println("⚠️ Could not develop actinf package: $e")
-        end
-    catch e
-        println("❌ Error activating project: $e")
-    end
-end
-
 # Check Julia version
 println("Running on Julia version: $(VERSION)")
 
@@ -222,9 +210,32 @@ try
     println("Loading actinf package...")
     @eval using actinf
     println("✓ actinf package loaded")
+    
+    # Directly import needed components from modules
+    @eval using actinf.StateSpace: DroneState, DroneObservation, create_state_from_observation
+    @eval using actinf.Inference: DroneBeliefs, initialize_beliefs, update_beliefs!, expected_state, serialize_beliefs, deserialize_beliefs
+    @eval using actinf.Planning: ActionPlanner, PreferenceModel, select_action
+    println("✓ Module components imported")
 catch e
     println("❌ Failed to load actinf package: $e")
-    global packages_loaded = false
+    println("Trying to include manually...")
+    
+    try
+        # Include files directly
+        include(joinpath(@__DIR__, "src", "StateSpace.jl"))
+        include(joinpath(@__DIR__, "src", "Inference.jl"))
+        include(joinpath(@__DIR__, "src", "Planning.jl"))
+        include(joinpath(@__DIR__, "src", "actinf.jl"))
+        
+        # Import modules
+        using .StateSpace
+        using .Inference
+        using .Planning
+        println("✓ actinf modules loaded manually")
+    catch e2
+        println("❌ Failed to manually include actinf modules: $e2")
+        global packages_loaded = false
+    end
 end
 
 if !packages_loaded
@@ -238,6 +249,11 @@ const POLICY_LENGTH = 3  # Number of steps in the policy
 const SOCKET_TIMEOUT = 10000  # 10 seconds timeout
 const MAX_RETRIES = 3
 const RETRY_DELAY = 2  # seconds
+
+# Global socket and context variables
+global zmq_ctx = nothing
+global zmq_socket = nothing
+global connection_initialized = false
 
 # Print server info
 println("Server initialized with:")
@@ -254,133 +270,174 @@ end
 # Initialize beliefs as a global variable for persistence across requests
 global current_beliefs = nothing
 
-# Function to handle socket setup with proper error handling
-function setup_socket()
+# Function to process an observation and produce the next action
+function process_observation(data::Dict)
+    # ...existing code...
+end
+
+# Function to explicitly set up the ZMQ connection
+function _setup_zmq_connection()
+    global zmq_ctx, zmq_socket, connection_initialized
+    
+    # If already initialized, return early
+    if connection_initialized
+        println("ZMQ connection already initialized.")
+        return true
+    end
+    
+    println("Setting up ZMQ connection...")
     try
-        ctx = ZMQ.Context()
-        socket = ZMQ.Socket(ctx, ZMQ.REP)
+        zmq_ctx = ZMQ.Context()
+        zmq_socket = ZMQ.Socket(zmq_ctx, ZMQ.REP)
         
         # Set socket options with proper error handling
-        try
-            ZMQCompat.set_linger(socket, 0)
-            ZMQCompat.set_rcvhwm(socket, 100)
-            ZMQCompat.set_sndhwm(socket, 100)
-            ZMQCompat.set_tcp_keepalive(socket, 1)
-            
-            # Set timeouts
-            if ZMQCompat.using_new_api
-                socket.rcvtimeo = SOCKET_TIMEOUT
-                socket.sndtimeo = SOCKET_TIMEOUT
-            else
-                ZMQ.setsockopt(socket, ZMQ.RCVTIMEO, SOCKET_TIMEOUT)
-                ZMQ.setsockopt(socket, ZMQ.SNDTIMEO, SOCKET_TIMEOUT)
-            end
-            
-            # Bind socket
-            ZMQCompat.bind(socket, SOCKET_ADDRESS)
-            println("✓ Socket bound successfully")
-            return (ctx, socket)
-        catch e
-            println("❌ Error setting socket options: $e")
-            ZMQCompat.close(socket)
-            ZMQCompat.close(ctx)
-            rethrow(e)
+        ZMQCompat.set_linger(zmq_socket, 0)
+        ZMQCompat.set_rcvhwm(zmq_socket, 100)
+        ZMQCompat.set_sndhwm(zmq_socket, 100)
+        ZMQCompat.set_tcp_keepalive(zmq_socket, 1)
+        
+        # Set timeouts
+        if ZMQCompat.using_new_api
+            zmq_socket.rcvtimeo = SOCKET_TIMEOUT
+            zmq_socket.sndtimeo = SOCKET_TIMEOUT
+        else
+            ZMQ.setsockopt(zmq_socket, ZMQ.RCVTIMEO, SOCKET_TIMEOUT)
+            ZMQ.setsockopt(zmq_socket, ZMQ.SNDTIMEO, SOCKET_TIMEOUT)
         end
+        
+        # Bind socket
+        ZMQCompat.bind(zmq_socket, SOCKET_ADDRESS)
+        println("✓ ZMQ connection established successfully")
+        
+        # Mark as initialized
+        connection_initialized = true
+        return true
     catch e
-        println("❌ Error creating socket: $e")
-        rethrow(e)
-    end
-end
-
-# Function to handle client requests with retries
-function handle_request(socket)
-    retry_count = 0
-    while retry_count < MAX_RETRIES
-        try
-            # Receive request
-            request = String(ZMQCompat.recv(socket))
-            println("Received request of length: $(length(request))")
-            
-            # Parse JSON with error handling
-            try
-                data = JSON.parse(request)
-                
-                # Process the request and generate response
-                response = process_observation(data)
-                
-                # Send response
-                ZMQCompat.send(socket, JSON.json(response))
-                println("✓ Request processed successfully")
-                return true
-            catch e
-                println("❌ Error processing request: $e")
-                ZMQCompat.send(socket, JSON.json(Dict("error" => "Invalid request format")))
-                return false
-            end
-        catch e
-            println("❌ Error in request handling (attempt $(retry_count + 1)/$MAX_RETRIES): $e")
-            retry_count += 1
-            if retry_count < MAX_RETRIES
-                println("Retrying in $RETRY_DELAY seconds...")
-                sleep(RETRY_DELAY)
-            end
+        println("❌ Error setting up ZMQ connection: $e")
+        
+        # Cleanup on failure
+        if zmq_socket !== nothing
+            try ZMQCompat.close(zmq_socket); catch; end
+            zmq_socket = nothing
         end
+        
+        if zmq_ctx !== nothing
+            try ZMQCompat.close(zmq_ctx); catch; end
+            zmq_ctx = nothing
+        end
+        
+        return false
     end
-    println("❌ Maximum retries reached, closing socket")
-    return false
 end
 
-# Main server loop with proper cleanup
-function run_server()
-    println("\nStarting ZMQ server loop...")
+"""
+    run_zmq_server()
+
+Run a ZMQ server that processes incoming observation data using active inference.
+"""
+function run_zmq_server()
+    global zmq_ctx, zmq_socket
     
-    # Create status file to indicate server is running
+    # Make sure ZMQ connection is set up first
+    if !_setup_zmq_connection()
+        println("Failed to set up ZMQ connection. Exiting.")
+        return
+    end
+    
+    # Create status file if path is specified
     if status_file_path !== nothing
-        try
-            touch(status_file_path)
-            println("✓ Created status file")
-        catch e
-            println("❌ Could not create status file: $e")
-        end
+        touch(status_file_path)
+        println("✓ Created status file: $status_file_path")
     end
     
-    # Setup socket
-    ctx, socket = setup_socket()
+    println("Starting ZMQ server loop")
+    
+    # For improved performance, avoid garbage collection pauses during request handling
+    ccall(:jl_gc_enable, Void, (Cint,), 0)
     
     try
         while true
+            # Wait for a message with proper error handling
             try
-                if !handle_request(socket)
-                    println("Request handling failed, resetting socket...")
-                    ZMQCompat.close(socket)
-                    ZMQCompat.close(ctx)
-                    ctx, socket = setup_socket()
+                # Receive a request
+                request_json = ZMQCompat.recv_string(zmq_socket)
+                
+                # Parse JSON request
+                request = JSON.parse(request_json)
+                
+                # Handle ping specially for health checks
+                if haskey(request, "ping")
+                    # Reply to ping with pong
+                    response = Dict("pong" => true, "message" => "pong-response")
+                    response_json = JSON.json(response)
+                    ZMQCompat.send_string(zmq_socket, response_json)
+                    continue
                 end
+                
+                # Process the observation data
+                response = process_observation(request)
+                
+                # Send the response back
+                response_json = JSON.json(response)
+                ZMQCompat.send_string(zmq_socket, response_json)
+                
             catch e
-                println("❌ Error in server loop: $e")
-                println("Resetting socket and continuing...")
-                ZMQCompat.close(socket)
-                ZMQCompat.close(ctx)
-                ctx, socket = setup_socket()
+                # Handle any errors during processing
+                if isa(e, InterruptException)
+                    # Allow Ctrl+C to terminate
+                    rethrow(e)
+                end
+                
+                println("Error processing request: $e")
+                
+                # Attempt to send error response
+                try
+                    error_response = Dict(
+                        "error" => "Error processing request: $(typeof(e))",
+                        "message" => string(e),
+                        "action" => [0.0, 0.0, 0.0],  # Default action
+                        "waypoint" => [0.0, 0.0, 0.0]  # Default waypoint
+                    )
+                    error_json = JSON.json(error_response)
+                    ZMQCompat.send_string(zmq_socket, error_json)
+                catch send_err
+                    println("Failed to send error response: $send_err")
+                end
             end
         end
+    catch e
+        if isa(e, InterruptException)
+            println("Server terminated by interrupt")
+        else
+            println("Server error: $e")
+        end
     finally
-        # Cleanup
-        println("\nCleaning up server resources...")
-        if status_file_path !== nothing
+        # Clean up resources
+        if zmq_socket !== nothing
+            try ZMQCompat.close(zmq_socket); catch; end
+            zmq_socket = nothing
+        end
+        
+        if zmq_ctx !== nothing
+            try ZMQCompat.close(zmq_ctx); catch; end
+            zmq_ctx = nothing
+        end
+        
+        # Remove status file on exit
+        if status_file_path !== nothing && isfile(status_file_path)
             try
                 rm(status_file_path)
                 println("✓ Removed status file")
             catch e
-                println("❌ Could not remove status file: $e")
+                println("Failed to remove status file: $e")
             end
         end
-        ZMQCompat.close(socket)
-        ZMQCompat.close(ctx)
-        println("✓ Server resources cleaned up")
+        
+        # Re-enable garbage collection
+        ccall(:jl_gc_enable, Void, (Cint,), 1)
     end
 end
 
-# Start the server
-println("\n=== Starting ZMQ Server ===")
-run_server()
+# Run the server when this script is executed directly
+println("ZMQ server starting...")
+run_zmq_server()

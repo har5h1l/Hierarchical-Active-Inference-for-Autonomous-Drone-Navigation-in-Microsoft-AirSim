@@ -206,17 +206,19 @@ class ZMQInterface:
             # Connect to server
             ping_socket.connect(self.server_address)
             
-            # Send ping
-            ping_socket.send_string(ping_message)
+            # Send ping as JSON request
+            ping_request = {"ping": True, "message": ping_message}
+            ping_socket.send_string(json.dumps(ping_request))
             
             # Wait for response with timeout
-            response = ping_socket.recv_string()
+            response_json = ping_socket.recv_string()
+            response = json.loads(response_json)
             
             # Clean up
             ping_socket.close()
             ping_context.term()
             
-            return response == "pong"
+            return response.get("pong", False) or "pong" in response
         except Exception as e:
             print(f"Ping error: {str(e)}")
             try:

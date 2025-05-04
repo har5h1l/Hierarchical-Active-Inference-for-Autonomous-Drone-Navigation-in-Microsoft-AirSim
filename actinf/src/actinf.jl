@@ -1,7 +1,6 @@
 module actinf
 
 using LinearAlgebra
-using RxInfer
 using StaticArrays
 using JSON
 

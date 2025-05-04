@@ -1,170 +1,150 @@
 #!/usr/bin/env julia
 
-# Precompilation script for Julia packages
-# This ensures all required packages are properly compiled before running the ZMQ server
+# Precompilation script for Active Inference components
+# This script ensures all components are precompiled before any navigation operations start
 
-println("\n=== Starting Julia Precompilation ===")
+println("\n=== Starting Active Inference Precompilation ===")
+start_time = time()
 
-# Get the current directory
-current_dir = @__DIR__
+# Set environment variable to indicate precompilation has been done
+ENV["JULIA_ACTINF_PRECOMPILED"] = "true"
 
-# Activate the project environment
+# Activate the project - essential for package environment
 try
     import Pkg
-    Pkg.activate(current_dir)
-    println("✓ Project activated")
+    
+    # Only activate if not already active
+    if Base.active_project() != abspath(joinpath(@__DIR__, "Project.toml"))
+        Pkg.activate(@__DIR__)
+        println("✅ Project activated")
+    else
+        println("✅ Project already active")
+    end
+    
+    # Develop the actinf package in place
+    try
+        Pkg.develop(path=joinpath(@__DIR__, "actinf"))
+        println("✅ actinf package developed")
+    catch e
+        println("⚠️ Could not develop actinf package: $e")
+        println("Will continue with existing package")
+    end
+    
+    # Instantiate to ensure all packages are installed
+    println("Ensuring all dependencies are installed...")
+    Pkg.instantiate()
+    println("✅ Package dependencies instantiated")
+    
+    # Status for verification
+    println("\nVerifying package status:")
+    Pkg.status()
 catch e
-    println("❌ Error activating project: $e")
+    println("❌ Error activating or setting up project: $e")
     exit(1)
 end
 
-# Add and precompile required packages
-required_packages = [
-    "ZMQ",
-    "JSON",
-    "LinearAlgebra",
-    "StaticArrays",
-    "RxInfer",
-    "Distributions",
-    "Random",
-    "Statistics"
-]
+# Import packages to precompile them
+println("\nPrecompiling core packages...")
+using_packages = ["JSON", "LinearAlgebra", "StaticArrays", "ZMQ"]
 
-# Function to check if a package is installed
-function is_package_installed(pkg_name)
-    try
-        Pkg.status(pkg_name)
-        return true
-    catch
-        return false
-    end
-end
-
-# Function to install a package
-function install_package(pkg_name)
-    try
-        println("\nInstalling package: $pkg_name")
-        Pkg.add(pkg_name)
-        println("✓ Successfully installed $pkg_name")
-        return true
-    catch e
-        println("❌ Failed to install $pkg_name: $e")
-        return false
-    end
-end
-
-# Function to precompile a package
 function precompile_package(pkg_name)
+    print("   $pkg_name... ")
     try
-        println("\nPrecompiling package: $pkg_name")
-        Pkg.precompile(pkg_name)
-        println("✓ Successfully precompiled $pkg_name")
+        @eval using $(Symbol(pkg_name))
+        println("✅")
         return true
     catch e
-        println("❌ Failed to precompile $pkg_name: $e")
+        println("❌ ($e)")
         return false
     end
 end
 
-# Install and precompile all required packages
-println("\nInstalling and precompiling packages...")
-for pkg in required_packages
-    if !is_package_installed(pkg)
-        if !install_package(pkg)
-            println("⚠️ Skipping $pkg due to installation failure")
-            continue
-        end
-    end
-    
-    if !precompile_package(pkg)
-        println("⚠️ Precompilation failed for $pkg, but continuing")
-    end
+all_packages_loaded = true
+for pkg in using_packages
+    all_packages_loaded &= precompile_package(pkg)
 end
 
-# Special handling for the actinf package
-println("\nProcessing actinf package...")
+# Only continue if core packages loaded successfully
+if !all_packages_loaded
+    println("\n❌ Failed to load some core packages. Precompilation cannot complete.")
+    exit(1)
+end
+
+# Precompile actinf package
+println("\nPrecompiling actinf package...")
 try
-    # Get the path to the actinf package
-    actinf_path = joinpath(current_dir, "actinf")
+    @eval using actinf
+    println("✅ actinf package loaded")
     
-    # First, ensure the package is properly set up
-    if !isfile(joinpath(actinf_path, "Project.toml"))
-        println("❌ actinf package is not properly set up - missing Project.toml")
-        exit(1)
-    end
+    # Precompile key functions by importing and executing
+    @eval using actinf.StateSpace
+    @eval using actinf.Inference
+    @eval using actinf.Planning
     
-    # Add the local package
+    println("✅ Successfully imported actinf modules")
+    
+    # Create sample data to exercise functions
+    println("\nExecuting core functions to ensure precompilation...")
+    
+    # Sample data for testing
+    using StaticArrays
+    
+    # Create sample drone state
+    sample_drone_position = SVector{3, Float64}(0.0, 0.0, 0.0)
+    sample_target_position = SVector{3, Float64}(10.0, 0.0, -3.0)
+    sample_orientation = SVector{4, Float64}(1.0, 0.0, 0.0, 0.0)
+    obstacle_distances = [100.0, 100.0]
+    
+    # Exercise the StateSpace module
+    println("   Testing StateSpace module... ")
+    observation = actinf.StateSpace.DroneObservation(
+        drone_position = sample_drone_position,
+        drone_orientation = sample_orientation,
+        target_position = sample_target_position,
+        nearest_obstacle_distances = obstacle_distances,
+        voxel_grid = Vector{SVector{3, Float64}}(),
+        obstacle_density = 0.0
+    )
+    state = actinf.StateSpace.create_state_from_observation(observation)
+    println("✅ StateSpace functions precompiled")
+    
+    # Exercise the Inference module
+    println("   Testing Inference module... ")
+    beliefs = actinf.Inference.initialize_beliefs(state)
+    actinf.Inference.update_beliefs!(beliefs, state)
+    expected = actinf.Inference.expected_state(beliefs)
+    println("✅ Inference functions precompiled")
+    
+    # Exercise the Planning module
+    println("   Testing Planning module... ")
+    planner = actinf.Planning.ActionPlanner(
+        actinf.Planning.PreferenceModel(
+            distance_preference = 0.0,
+            path_preference = 0.9
+        )
+    )
+    action = actinf.Planning.select_action(planner, beliefs)
+    println("✅ Planning functions precompiled")
+    
+    # Don't precompile ZMQ server as that would start the server
+    println("\n✅ Core functions precompiled successfully")
+catch e
+    println("\n❌ Error precompiling actinf package: $e")
+    
+    # Try to include files directly if package loading fails
+    println("\nAttempting to directly include actinf module files...")
     try
-        println("Adding local actinf package...")
-        Pkg.develop(path=actinf_path)
-        println("✓ Successfully added local actinf package")
-    catch e
-        println("❌ Failed to add local actinf package: $e")
-        exit(1)
-    end
-    
-    # Try to precompile
-    if !precompile_package("actinf")
-        println("⚠️ Initial precompilation failed, trying to build...")
-        try
-            println("Building actinf package...")
-            Pkg.build("actinf")
-            println("✓ Successfully built actinf package")
-            
-            # Try precompiling again after build
-            if !precompile_package("actinf")
-                println("❌ Precompilation still failed after build")
-                exit(1)
-            end
-        catch e
-            println("❌ Failed to build actinf package: $e")
-            exit(1)
-        end
-    end
-catch e
-    println("❌ Error processing actinf package: $e")
-    exit(1)
-end
-
-# Final status check
-println("\n=== Precompilation Status ===")
-
-# Check if all packages are installed
-missing_packages = String[]
-for pkg in required_packages
-    if !is_package_installed(pkg)
-        push!(missing_packages, pkg)
+        include(joinpath(@__DIR__, "actinf", "src", "StateSpace.jl"))
+        include(joinpath(@__DIR__, "actinf", "src", "Inference.jl"))
+        include(joinpath(@__DIR__, "actinf", "src", "Planning.jl"))
+        println("✅ Successfully included actinf module files")
+    catch e2
+        println("❌ Failed to include actinf module files: $e2")
+        println("Precompilation incomplete. Some functions may be slower on first use.")
     end
 end
 
-if isempty(missing_packages)
-    println("✓ All required packages are installed")
-else
-    println("⚠️ Missing packages: $(join(missing_packages, ", "))")
-    println("Attempting to install missing packages...")
-    for pkg in missing_packages
-        install_package(pkg)
-    end
-end
-
-# Verify actinf package specifically
-try
-    println("\nVerifying actinf package...")
-    using actinf
-    println("✓ actinf package loaded successfully")
-catch e
-    println("❌ actinf package failed to load: $e")
-    exit(1)
-end
-
-# Final precompilation attempt
-println("\nRunning final precompilation...")
-try
-    Pkg.precompile()
-    println("✓ Final precompilation completed")
-catch e
-    println("⚠️ Final precompilation had some issues: $e")
-    println("Continuing anyway as core functionality may still work")
-end
-
-println("\nPrecompilation process completed")
+# Report completion
+elapsed = round(time() - start_time, digits=1)
+println("\n=== Active Inference Precompilation Completed in $elapsed seconds ===")
+println("The system should now run with minimal compilation delays.")

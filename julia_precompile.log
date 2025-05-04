@@ -1,18 +1,34 @@
   Activating project at `c:\Users\Satya\Autonomous-Drone-Navigation-in-AirSim-With-Active-Inference`
    Resolving package versions...
-  No Changes to `C:\Users\Satya\Autonomous-Drone-Navigation-in-AirSim-With-Active-Inference\Project.toml`
-  No Changes to `C:\Users\Satya\Autonomous-Drone-Navigation-in-AirSim-With-Active-Inference\Manifest.toml`
-Starting comprehensive precompilation for Julia components...
-Importing and precompiling packages...
- 55.543611 seconds (5.66 M allocations: 323.589 MiB, 0.94% gc time, 6.22% compilation time: 77% of which was recompilation)
-Precompiling specific functionality...
-Generated 22 candidate waypoints
-22 waypoints passed suitability threshold (0.5)
-Best EFE: -24.43717567877885, Action: [3.0, 0.0, 0.0], Suitability: 0.9642391232749319
-Current distance to target: 10.44030650891055, Next distance: 7.615773105863909
-Precompiling ZMQ functionality...
-✓ Using newer ZMQ API (direct socket methods)
-✓ Context closed with newer API
-  1.216502 seconds (788.05 k allocations: 39.926 MiB, 96.21% compilation time: 3% of which was recompilation)
-Precompilation complete! All Julia components are ready for execution.
-This will significantly reduce runtime overhead during navigation.
+    Updating `C:\Users\Satya\Autonomous-Drone-Navigation-in-AirSim-With-Active-Inference\Project.toml`
+  [d0498c39] ~ actinf v0.1.0 `actinf` ⇒ v0.1.0 `c:\Users\Satya\Autonomous-Drone-Navigation-in-AirSim-With-Active-Inference\actinf`
+    Updating `C:\Users\Satya\Autonomous-Drone-Navigation-in-AirSim-With-Active-Inference\Manifest.toml`
+  [d0498c39] ~ actinf v0.1.0 `actinf` ⇒ v0.1.0 `c:\Users\Satya\Autonomous-Drone-Navigation-in-AirSim-With-Active-Inference\actinf`
+┌ Warning: Assignment to `all_packages_loaded` in soft scope is ambiguous because a global variable by the same name exists: `all_packages_loaded` will be treated as a new local. Disambiguate by using `local all_packages_loaded` to suppress this warning or `global all_packages_loaded` to assign to the existing global variable.
+└ @ c:\Users\Satya\Autonomous-Drone-Navigation-in-AirSim-With-Active-Inference\precompile.jl:64
+ERROR: LoadError: UndefVarError: `all_packages_loaded` not defined in local scope
+Stacktrace:
+ [1] top-level scope
+   @ c:\Users\Satya\Autonomous-Drone-Navigation-in-AirSim-With-Active-Inference\precompile.jl:64
+in expression starting at c:\Users\Satya\Autonomous-Drone-Navigation-in-AirSim-With-Active-Inference\precompile.jl:63
+
+=== Starting Active Inference Precompilation ===
+✅ Project activated
+✅ actinf package developed
+Ensuring all dependencies are installed...
+✅ Package dependencies instantiated
+
+Verifying package status:
+Status `C:\Users\Satya\Autonomous-Drone-Navigation-in-AirSim-With-Active-Inference\Project.toml`
+  [5789e2e9] FileIO v1.17.0
+⌅ [916415d5] Images v0.25.3
+  [682c06a0] JSON v0.21.4
+  [438e738f] PyCall v1.96.4
+⌅ [86711068] RxInfer v3.10.1
+  [90137ffa] StaticArrays v1.9.13
+  [c2297ded] ZMQ v1.4.0
+  [d0498c39] actinf v0.1.0 `c:\Users\Satya\Autonomous-Drone-Navigation-in-AirSim-With-Active-Inference\actinf`
+  [37e2e46d] LinearAlgebra v1.11.0
+Info Packages marked with ⌅ have new versions available but compatibility constraints restrict them from upgrading. To see why use `status --outdated`
+
+Precompiling core packages...
