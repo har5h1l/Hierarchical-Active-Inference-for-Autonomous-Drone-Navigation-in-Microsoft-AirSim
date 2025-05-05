@@ -2,75 +2,56 @@
 
 println("Starting drone navigation inference script...")
 
-# Only activate if environment is not already active
-if Base.active_project() != abspath(joinpath(@__DIR__, "Project.toml"))
-    println("Activating project environment...")
+# Check if we have been precompiled already
+const IS_PRECOMPILED = haskey(ENV, "JULIA_ACTINF_PRECOMPILED")
+
+# Only activate project if it's not already active
+# This avoids redundant activation during navigation
+if !IS_PRECOMPILED
+    println("Not precompiled. Activating project environment...")
     import Pkg
     Pkg.activate(@__DIR__)
     println("Project activated")
 else
-    println("Project environment already active")
+    println("Using precompiled environment")
 end
 
-# Import StaticArrays early in the script to ensure SVector is available
-import StaticArrays
-import StaticArrays: SVector
-
-# Load required packages with explicit error handling
-println("Loading required packages...")
-function load_package(pkgname)
-    try
-        println("Loading $pkgname...")
-        @eval import $pkgname
-        println("Successfully loaded $pkgname")
-        return true
-    catch e
-        println("Error loading $pkgname: $e")
-        return false
+# Import packages without reloading if already loaded
+function use_package(pkg_name, force_load=false)
+    if !isdefined(Main, Symbol(pkg_name)) || force_load
+        println("Loading $pkg_name...")
+        @eval import $pkg_name
+        println("Successfully loaded $pkg_name")
+    else
+        println("Using already loaded package: $pkg_name")
     end
 end
 
-# Load standard libraries first
-load_package(:JSON)
-load_package(:LinearAlgebra)
-load_package(:StaticArrays)
+# Core packages - only load if not already loaded
+use_package(:JSON)
+use_package(:LinearAlgebra)
+use_package(:StaticArrays)
 
-# Make StaticArrays available in main scope
-using StaticArrays  # This explicitly brings SVector into scope
-using StaticArrays: SVector  # Explicitly import SVector type
-
-# For StaticArrays version compatibility, alias SVector if not defined
+# Make StaticArrays available in main scope if needed
 if !isdefined(Main, :SVector)
-    const SVector = StaticArrays.SVector
-    println("Defined SVector alias for compatibility")
+    @eval using StaticArrays: SVector
+    println("Imported SVector into scope")
+else
+    println("SVector already in scope")
 end
 
-# Load actinf with special handling - using include if necessary
-println("Loading actinf package...")
-try
-    # Try direct loading first
-    @eval using actinf
-    println("Successfully loaded actinf package")
-catch e
-    println("Could not load actinf directly: $e")
-    
-    # Try to include the module files manually
+# Load actinf package if not already loaded
+if !isdefined(Main, :actinf) 
+    println("Loading actinf package...")
     try
-        println("Attempting to manually include actinf module files...")
-        
-        # Include StateSpace.jl directly
-        include(joinpath(@__DIR__, "actinf", "src", "StateSpace.jl"))
-        include(joinpath(@__DIR__, "actinf", "src", "Inference.jl"))
-        include(joinpath(@__DIR__, "actinf", "src", "Planning.jl"))
-        include(joinpath(@__DIR__, "actinf", "src", "actinf.jl"))
-        
-        # Import the manually included module
-        using .actinf
-        println("Successfully loaded actinf via manual inclusion")
-    catch e2
-        println("Failed to manually include actinf: $e2")
+        @eval using actinf
+        println("Successfully loaded actinf package")
+    catch e
+        println("Error loading actinf package: $e")
         error("Cannot continue without actinf package")
     end
+else
+    println("Using already loaded actinf package")
 end
 
 # Import specific components from actinf to make them available in Main scope
@@ -90,7 +71,7 @@ try
         println("Created interface directory: $INTERFACE_DIR")
     end
     
-    # Test write access by touching the file - safer approach
+    # Test write access by touching the file
     temp_file = joinpath(INTERFACE_DIR, "test_write_access.tmp")
     touch(temp_file)
     if isfile(temp_file)
@@ -248,102 +229,43 @@ function main()
     println("Current elevation to target: $(round(rad2deg(current_state.elevation), digits=2))°")
     println("Path suitability: $(round(current_state.suitability, digits=2))")
     println("Obstacle density: $(round(obstacle_density, digits=2))")
+    println("Nearest obstacle: $(isempty(nearest_obstacle_distances) ? "None" : "$(round(minimum(nearest_obstacle_distances), digits=2)) meters")")
     
-    # Print target and drone positions in global coordinates
-    println("\nGlobal Coordinates:")
-    println("Target position: [$(round(target_location[1], digits=2)), $(round(target_location[2], digits=2)), $(round(target_location[3], digits=2))]")
-    println("Drone position: [$(round(drone_position[1], digits=2)), $(round(drone_position[2], digits=2)), $(round(drone_position[3], digits=2))]")
-    println("Distance to target: $(round(current_state.distance, digits=2))")
-    println("Azimuth to target: $(round(rad2deg(current_state.azimuth), digits=2))°")
-    println("Elevation to target: $(round(rad2deg(current_state.elevation), digits=2))°")
-    println("Path suitability: $(round(current_state.suitability, digits=2))\n")
-    
-    # Serialize the current state and beliefs to JSON
-    output_data = Dict(
-        "state" => Dict(
-            "distance" => current_state.distance,
-            "azimuth" => current_state.azimuth,
-            "elevation" => current_state.elevation,
-            "suitability" => current_state.suitability
-        ),
-        "expected_state" => Dict(
-            "distance" => expected_drone_state.distance,
-            "azimuth" => expected_drone_state.azimuth,
-            "elevation" => expected_drone_state.elevation,
-            "suitability" => expected_drone_state.suitability
-        ),
-        "beliefs" => serialize_beliefs(beliefs),
-        "drone_position" => [drone_position[1], drone_position[2], drone_position[3]],
-        "target_position" => [target_location[1], target_location[2], target_location[3]],
-        "nearest_obstacle_distances" => nearest_obstacle_distances,
-        "obstacle_density" => obstacle_density,
-        "voxel_count" => length(voxel_grid)
-    )
-    
-    # Write to file with robust error handling
+    # Save updated beliefs to output file
+    println("\nSaving updated beliefs...")
     try
-        # Make sure the directory exists again right before writing
-        if !isdir(INTERFACE_DIR)
-            mkpath(INTERFACE_DIR)
-            println("Created interface directory before writing: $INTERFACE_DIR")
-        end
+        # Convert to JSON-compatible Dict
+        output_dict = Dict(
+            "state" => Dict(
+                "distance" => current_state.distance,
+                "azimuth" => current_state.azimuth,
+                "elevation" => current_state.elevation,
+                "suitability" => current_state.suitability
+            ),
+            "drone_position" => [drone_position[1], drone_position[2], drone_position[3]],
+            "target_position" => [target_location[1], target_location[2], target_location[3]],
+            "nearest_obstacle_distances" => nearest_obstacle_distances,
+            "obstacle_density" => obstacle_density,
+            "beliefs" => serialize_beliefs(beliefs)
+        )
         
-        println("Writing inferred state to: $INFERRED_STATE_PATH")
-        open(INFERRED_STATE_PATH, "w") do f
-            JSON.print(f, output_data)
+        # Write to output file
+        open(INFERRED_STATE_PATH, "w") do file
+            JSON.print(file, output_dict)
         end
-        
-        # Verify the file was written
-        if isfile(INFERRED_STATE_PATH)
-            println("Successfully wrote inferred state file")
-        else
-            println("Warning: File writing seemed to succeed but file doesn't exist")
-        end
+        println("Successfully saved inferred state")
     catch e
-        println("Error during first write attempt: $e")
-        try
-            # Try a different approach as fallback
-            mkpath(dirname(INFERRED_STATE_PATH))
-            println("Retrying write with alternative approach...")
-            
-            # Write directly without using a function
-            file = open(INFERRED_STATE_PATH, "w")
-            JSON.print(file, output_data)
-            close(file)
-            
-            println("Alternative write approach completed")
-        catch e2
-            println("Fatal error writing to file: $e2")
-            # Try one last approach with a different filename
-            fallback_path = joinpath(dirname(@__FILE__), "inferred_state_fallback.json")
-            println("Trying last resort to $fallback_path")
-            open(fallback_path, "w") do f
-                JSON.print(f, output_data)
-            end
-        end
+        println("Error saving inferred state: $e")
     end
+    
+    println("\nInference step completed successfully")
 end
 
-# Run the main function
+# Run main function and handle any unexpected errors
 try
     main()
-    println("\nInference script completed successfully")
 catch e
-    println("\n❌ Error in inference script main function: $e")
-    bt = backtrace()
-    println("Stack trace:")
-    for (i, frame) in enumerate(bt)
-        if i > 10  # Limit stack trace to first 10 frames
-            println("...")
-            break
-        end
-        try
-            frame_info = Base.StackTraces.lookup(frame)
-            println("  $(frame_info[1].func) at $(frame_info[1].file):$(frame_info[1].line)")
-        catch
-            println("  [Frame $i]")
-        end
-    end
-    # Re-throw for proper exit code
-    rethrow(e)
+    println("Error in main function: $e")
+    println(stacktrace())
+    rethrow(e)  # Ensure the error is visible to caller
 end

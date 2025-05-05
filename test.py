@@ -370,8 +370,6 @@ class ZMQInterface:
             
             # Path to the input/output files
             obs_input_path = os.path.join(interface_dir, "obs_input.json")
-            inferred_state_path = os.path.join(interface_dir, "inferred_state.json")
-            next_waypoint_path = os.path.join(interface_dir, "next_waypoint.json")
             
             # Write observation to JSON file
             try:
@@ -382,178 +380,83 @@ class ZMQInterface:
                 print(f"Error writing observation to file: {e}")
                 return None, None
             
-            # Determine which Julia execution mode to use - direct script or ZMQ
-            use_zmq = True
-            
-            try:
-                # First, try the ZMQ approach
-                if use_zmq and hasattr(self, 'socket') and self.socket:
-                    print("Using ZMQ for inference communication...")
-                    
-                    # Convert observation to JSON string
-                    obs_json = json.dumps(observation, cls=NumpyJSONEncoder)
-                    
-                    # Send request with retry mechanism
-                    max_retries = ZMQ_MAX_RETRIES
-                    request_successful = False
-                    
-                    for retry in range(max_retries):
-                        try:
-                            # Send observation data
-                            self.socket.send_string(obs_json)
-                            print(f"Sent observation data via ZMQ (retry {retry+1}/{max_retries})")
+            # Use ZMQ approach
+            if hasattr(self, 'socket') and self.socket:
+                print("Using ZMQ for inference communication...")
+                
+                # Convert observation to JSON string
+                obs_json = json.dumps(observation, cls=NumpyJSONEncoder)
+                
+                # Send request with retry mechanism
+                max_retries = ZMQ_MAX_RETRIES
+                request_successful = False
+                
+                for retry in range(max_retries):
+                    try:
+                        # Send observation data
+                        self.socket.send_string(obs_json)
+                        print(f"Sent observation data via ZMQ (retry {retry+1}/{max_retries})")
+                        
+                        # Set up poller for timeout
+                        poller = zmq.Poller()
+                        poller.register(self.socket, zmq.POLLIN)
+                        
+                        # Wait for response with timeout
+                        if poller.poll(ZMQ_TIMEOUT):
+                            # Receive response
+                            response = self.socket.recv_string()
+                            request_successful = True
+                            print("Received response from ZMQ server")
+                            break
+                        else:
+                            print(f"ZMQ response timeout (attempt {retry+1}/{max_retries})")
                             
-                            # Set up poller for timeout
-                            poller = zmq.Poller()
-                            poller.register(self.socket, zmq.POLLIN)
-                            
-                            # Wait for response with timeout
-                            if poller.poll(ZMQ_TIMEOUT):
-                                # Receive response
-                                response = self.socket.recv_string()
-                                request_successful = True
-                                print("Received response from ZMQ server")
-                                break
-                            else:
-                                print(f"ZMQ response timeout (attempt {retry+1}/{max_retries})")
-                                
-                                # Reset socket on timeout
-                                if retry < max_retries - 1:  # Don't reset on last attempt
-                                    print("Resetting socket for next attempt...")
-                                    self._reset_socket()
-                                    time.sleep(1)  # Brief pause before retry
-                        except zmq.ZMQError as e:
-                            print(f"ZMQ error during communication (attempt {retry+1}/{max_retries}): {e}")
-                            if retry < max_retries - 1:
+                            # Reset socket on timeout
+                            if retry < max_retries - 1:  # Don't reset on last attempt
                                 print("Resetting socket for next attempt...")
                                 self._reset_socket()
-                                time.sleep(1)
-                    
-                    # Process the response from ZMQ if successful
-                    if request_successful:
-                        try:
-                            result = json.loads(response)
-                            waypoint = result.get("next_waypoint")
-                            policy = result.get("policy", [])
-                            
-                            if waypoint:
-                                print(f"Next waypoint from ZMQ: {[round(p, 2) for p in waypoint]}")
-                                return waypoint, policy
-                            else:
-                                print("Error: No waypoint in ZMQ response")
-                        except json.JSONDecodeError:
-                            print(f"Error decoding ZMQ JSON response")
-                        except Exception as e:
-                            print(f"Error processing ZMQ response: {str(e)}")
-                            
-                    # If ZMQ approach failed, fall back to script execution
-                    print("ZMQ communication failed, falling back to script execution")
+                                time.sleep(1)  # Brief pause before retry
+                    except zmq.ZMQError as e:
+                        print(f"ZMQ error during communication (attempt {retry+1}/{max_retries}): {e}")
+                        if retry < max_retries - 1:
+                            print("Resetting socket for next attempt...")
+                            self._reset_socket()
+                            time.sleep(1)
                 
-                # If ZMQ failed or wasn't used, run the Julia scripts directly
-                print("Running Julia scripts for inference and planning...")
-                
-                # Get Julia path
-                julia_path = "julia"
-                
-                # For Windows, search in common Julia installation paths
-                if platform.system() == "Windows":
-                    possible_julia_paths = [
-                        r"C:\Julia-1.9.3\bin\julia.exe",
-                        r"C:\Julia-1.9.2\bin\julia.exe",
-                        r"C:\Julia-1.9.1\bin\julia.exe",
-                        r"C:\Julia-1.9.0\bin\julia.exe",
-                        r"C:\Julia-1.8.5\bin\julia.exe",
-                        r"C:\Users\%USERNAME%\AppData\Local\Programs\Julia-1.9.3\bin\julia.exe",
-                        r"C:\Users\%USERNAME%\AppData\Local\Programs\Julia-1.9.2\bin\julia.exe",
-                        r"C:\Users\%USERNAME%\AppData\Local\Programs\Julia-1.9.1\bin\julia.exe",
-                        r"C:\Users\%USERNAME%\AppData\Local\Programs\Julia-1.9.0\bin\julia.exe",
-                        r"C:\Users\%USERNAME%\AppData\Local\Programs\Julia-1.8.5\bin\julia.exe"
-                    ]
-                    
-                    # Expand %USERNAME% environment variable in Windows paths
-                    username = os.environ.get('USERNAME', '')
-                    possible_julia_paths = [path.replace('%USERNAME%', username) for path in possible_julia_paths]
-                    
-                    # Try each path
-                    for path in possible_julia_paths:
-                        if os.path.exists(path):
-                            julia_path = path
-                            break
-                
-                # Get current directory for script paths
-                current_dir = os.path.dirname(os.path.abspath(__file__))
-                inference_script = os.path.join(current_dir, "run_inference.jl")
-                planning_script = os.path.join(current_dir, "run_planning.jl")
-                
-                # Verify scripts exist
-                if not os.path.exists(inference_script):
-                    print(f"❌ Error: Inference script not found at {inference_script}")
-                    return None, None
-                
-                if not os.path.exists(planning_script):
-                    print(f"❌ Error: Planning script not found at {planning_script}")
-                    return None, None
-                
-                # Run inference script first to update the belief state - with explicit project activation
-                try:
-                    print(f"Running inference script: {inference_script}")
-                    # Use --project=. to ensure the project environment is activated
-                    subprocess.run([julia_path, "--project=.", inference_script], check=True)
-                except subprocess.CalledProcessError as e:
-                    print(f"❌ Error running Julia scripts: {e}")
-                    return None, None
-                except Exception as e:
-                    print(f"❌ Unexpected error in inference script: {e}")
-                    traceback.print_exc()
-                    return None, None
-                
-                # Run planning script to get next waypoint - with explicit project activation
-                try:
-                    print(f"Running planning script: {planning_script}")
-                    # Use --project=. to ensure the project environment is activated
-                    subprocess.run([julia_path, "--project=.", planning_script], check=True)
-                except subprocess.CalledProcessError as e:
-                    print(f"❌ Error running planning script: {e}")
-                    return None, None
-                except Exception as e:
-                    print(f"❌ Unexpected error in planning script: {e}")
-                    traceback.print_exc()
-                    return None, None
-                
-                # Check if the waypoint file was created
-                if not os.path.exists(next_waypoint_path):
-                    print(f"❌ Waypoint file not found at {next_waypoint_path}")
-                    return None, None
-                
-                # Read the next waypoint
-                try:
-                    with open(next_waypoint_path, 'r') as f:
-                        waypoint_data = json.load(f)
+                # Process the response from ZMQ if successful
+                if request_successful:
+                    try:
+                        result = json.loads(response)
+                        waypoint = result.get("next_waypoint")
+                        policy = result.get("policy", [])
                         
-                    waypoint = waypoint_data.get("next_waypoint")
-                    policy = waypoint_data.get("policy", [])
-                    
-                    if waypoint:
-                        print(f"Next waypoint from direct scripts: {[round(p, 2) for p in waypoint]}")
-                        return waypoint, policy
-                    else:
-                        print("❌ No waypoint in response file")
+                        if waypoint:
+                            print(f"Next waypoint from ZMQ: {[round(p, 2) for p in waypoint]}")
+                            return waypoint, policy
+                        else:
+                            print("Error: No waypoint in ZMQ response")
+                            return None, None
+                    except json.JSONDecodeError:
+                        print(f"Error decoding ZMQ JSON response")
                         return None, None
-                except json.JSONDecodeError:
-                    print(f"❌ Error decoding waypoint JSON")
-                    return None, None
-                except Exception as e:
-                    print(f"❌ Error reading waypoint file: {e}")
-                    return None, None
+                    except Exception as e:
+                        print(f"Error processing ZMQ response: {str(e)}")
+                        return None, None
                 
-            except Exception as e:
-                print(f"❌ Error in script execution: {e}")
-                traceback.print_exc()
+                # ZMQ communication failed
+                print("❌ ZMQ communication failed and no fallback available")
+                print("Terminating navigation.")
+                return None, None
+            else:
+                # No ZMQ socket available
+                print("❌ ZMQ socket not available for communication")
+                print("Terminating navigation.")
                 return None, None
                 
         except Exception as e:
             print(f"❌ Unhandled error in active inference processing: {e}")
             traceback.print_exc()
+            print("Terminating navigation.")
             return None, None
 
 # Connect to AirSim
@@ -1129,6 +1032,17 @@ def main():
     
     print(f"Initial distance to target: {distance_to_target:.2f} meters")
     print(f"Starting navigation with Active Inference...")
+    
+    # Check if ZMQ interface is properly connected
+    if not hasattr(zmq_interface, 'socket') or zmq_interface.socket is None:
+        print("❌ ZMQ connection is not available. Navigation requires ZMQ server connection.")
+        print("Terminating navigation.")
+        
+        # Land the drone and return
+        print("Landing the drone...")
+        client.landAsync().join()
+        client.armDisarm(False)
+        return
     
     # Main navigation loop
     while distance_to_target > ARRIVAL_THRESHOLD and iteration < MAX_ITERATIONS:
