@@ -206,11 +206,25 @@ class ZMQInterface:
                     print(f"Found Julia at: {julia_path}")
                     break
         
-        # Look for zmq_server.jl
-        server_script = os.path.join(cwd, "zmq_server.jl")
+        # Look for zmq_server.jl in the actinf directory
+        server_script = os.path.join(cwd, "actinf", "zmq_server.jl")
         if not os.path.exists(server_script):
             print(f"❌ Server script not found at {server_script}")
-            return False
+            # Try alternative locations
+            alt_script_paths = [
+                os.path.join(cwd, "zmq_server.jl"),
+                os.path.join(cwd, "actinf", "src", "zmq_server.jl")
+            ]
+            for alt_path in alt_script_paths:
+                if os.path.exists(alt_path):
+                    server_script = alt_path
+                    print(f"✅ Found server script at alternative location: {server_script}")
+                    break
+            else:
+                print("❌ Could not find zmq_server.jl in any expected location")
+                return False
+        else:
+            print(f"✅ Found server script at: {server_script}")
         
         try:
             # Start Julia ZMQ server with project activation
@@ -1179,6 +1193,7 @@ def main():
     client.armDisarm(False)
 
 main()
+
 
 
 

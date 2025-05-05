@@ -6,6 +6,16 @@
 println("\n=== Starting Active Inference Precompilation ===")
 start_time = time()
 
+# Import basic packages early to ensure they're available for error handling
+using Pkg
+try
+    using Dates, JSON
+catch e
+    # Handle case where JSON might not be installed yet
+    Pkg.add("JSON")
+    using Dates, JSON
+end
+
 # Set environment variable to indicate precompilation has been done
 ENV["JULIA_ACTINF_PRECOMPILED"] = "true"
 
@@ -43,11 +53,13 @@ end
 # Track overall success to avoid early exit on non-critical failures
 precompilation_success = true
 
-try
-    # Activate the project - essential for package environment
-    import Pkg
-    import Dates
-    import JSON
+# Step 1: Activate the project and develop the actinf package
+try    
+    # Show the current directory
+    println("Current directory: $(pwd())")
+    
+    # Show active project
+    println("Current active project: $(Base.active_project())")
     
     # Only activate if not already active
     if Base.active_project() != abspath(joinpath(@__DIR__, "Project.toml"))
@@ -58,18 +70,49 @@ try
     end
     
     # Develop the actinf package in place
-    try
-        Pkg.develop(path=joinpath(@__DIR__, "actinf"))
-        println("✅ actinf package developed")
-    catch e
-        println("⚠️ Could not develop actinf package: $e")
-        println("Will continue with existing package")
+    println("\nDeveloping actinf package...")
+    actinf_path = joinpath(@__DIR__, "actinf")
+    if !isdir(actinf_path)
+        println("❌ actinf directory not found at: $actinf_path")
+        # Show available directories to help debugging
+        println("Available content in current directory:")
+        foreach(println, readdir(@__DIR__))
+        precompilation_success = false
+    else
+        try
+            Pkg.develop(path=actinf_path)
+            println("✅ actinf package developed")
+        catch e
+            println("⚠️ Could not develop actinf package: $e")
+            println("Will continue with existing package")
+        end
+    end
+    
+    # Add core dependencies explicitly
+    println("\nAdding required dependencies...")
+    for pkg in ["JSON", "ZMQ", "StaticArrays"]
+        try
+            Pkg.add(pkg)
+            println("✅ Added $pkg package")
+        catch e
+            println("⚠️ Error adding $pkg: $e")
+        end
     end
     
     # Instantiate to ensure all packages are installed
-    println("Ensuring all dependencies are installed...")
+    println("\nInstantiating dependencies...")
     Pkg.instantiate()
     println("✅ Package dependencies instantiated")
+    
+    # Resolve to fix version conflicts
+    println("\nResolving dependencies...")
+    Pkg.resolve()
+    println("✅ Dependencies resolved")
+    
+    # Precompile all
+    println("\nPrecompiling all packages...")
+    Pkg.precompile()
+    println("✅ Packages precompiled")
     
     # Status for verification
     println("\nVerifying package status:")
@@ -82,7 +125,7 @@ catch e
     println("Will attempt to continue...")
 end
 
-# Import packages to precompile them
+# Step 2: Import packages to precompile them
 println("\nPrecompiling core packages...")
 using_packages = ["JSON", "LinearAlgebra", "StaticArrays", "ZMQ"]
 
@@ -110,10 +153,29 @@ if !all_packages_loaded
     println("⚠️ Continue with what we can load...")
 end
 
-# Precompile actinf package
+# Step 3: Precompile actinf package
 println("\nPrecompiling actinf package...")
 actinf_loaded = false
 try
+    # First check if actinf module path exists 
+    actinf_module_file = joinpath(@__DIR__, "actinf", "src", "actinf.jl")
+    if !isfile(actinf_module_file)
+        println("⚠️ actinf module file not found at: $actinf_module_file")
+        # Try to locate it
+        possible_paths = [
+            joinpath(@__DIR__, "actinf", "src", "actinf.jl"),
+            joinpath(@__DIR__, "actinf", "actinf.jl")
+        ]
+        for path in possible_paths
+            if isfile(path)
+                actinf_module_file = path
+                println("✅ Found actinf module at alternative location: $path")
+                break
+            end
+        end
+    end
+    
+    # Try using the module
     @eval using actinf
     actinf_loaded = true
     println("✅ actinf package loaded")
@@ -194,10 +256,33 @@ catch e
     # Try to include files directly if package loading fails
     println("\nAttempting to directly include actinf module files...")
     try
-        include(joinpath(@__DIR__, "actinf", "src", "StateSpace.jl"))
-        include(joinpath(@__DIR__, "actinf", "src", "Inference.jl"))
-        include(joinpath(@__DIR__, "actinf", "src", "Planning.jl"))
-        println("✅ Successfully included actinf module files")
+        # Look for module files
+        module_files = Dict{String, String}()
+        module_files["StateSpace"] = ""
+        module_files["Inference"] = ""
+        module_files["Planning"] = ""
+        
+        # Find module files
+        for (module_name, _) in module_files
+            file_path = joinpath(@__DIR__, "actinf", "src", "$(module_name).jl")
+            if isfile(file_path)
+                module_files[module_name] = file_path
+                println("✅ Found $module_name module at: $file_path")
+            else
+                println("❌ Could not find $module_name module")
+            end
+        end
+        
+        # Try to include each file
+        for (module_name, file_path) in module_files
+            if !isempty(file_path)
+                println("Including $module_name from $file_path...")
+                include(file_path)
+                println("✅ Included $module_name")
+            end
+        end
+        
+        println("✅ Successfully included available actinf module files")
         
         # Create partial success flag
         update_status("partial", "⚠️ Partial precompilation completed via direct inclusion")
