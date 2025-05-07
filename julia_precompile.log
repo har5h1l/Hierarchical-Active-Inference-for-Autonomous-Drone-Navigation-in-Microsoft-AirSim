@@ -1,7 +1,3 @@
-┌ Warning: Assignment to `precompilation_success` in soft scope is ambiguous because a global variable by the same name exists: `precompilation_success` will be treated as a new local. Disambiguate by using `local precompilation_success` to suppress this warning or `global precompilation_success` to assign to the existing global variable.
-└ @ c:\Users\Satya\Autonomous-Drone-Navigation-in-AirSim-With-Active-Inference\precompile.jl:80
-┌ Warning: Assignment to `precompilation_success` in soft scope is ambiguous because a global variable by the same name exists: `precompilation_success` will be treated as a new local. Disambiguate by using `local precompilation_success` to suppress this warning or `global precompilation_success` to assign to the existing global variable.
-└ @ c:\Users\Satya\Autonomous-Drone-Navigation-in-AirSim-With-Active-Inference\precompile.jl:122
   Activating project at `c:\Users\Satya\Autonomous-Drone-Navigation-in-AirSim-With-Active-Inference`
    Resolving package versions...
   No Changes to `C:\Users\Satya\Autonomous-Drone-Navigation-in-AirSim-With-Active-Inference\Project.toml`
@@ -15,49 +11,52 @@
    Resolving package versions...
   No Changes to `C:\Users\Satya\Autonomous-Drone-Navigation-in-AirSim-With-Active-Inference\Project.toml`
   No Changes to `C:\Users\Satya\Autonomous-Drone-Navigation-in-AirSim-With-Active-Inference\Manifest.toml`
+┌ Warning: Assignment to `all_packages_loaded` in soft scope is ambiguous because a global variable by the same name exists: `all_packages_loaded` will be treated as a new local. Disambiguate by using `local all_packages_loaded` to suppress this warning or `global all_packages_loaded` to assign to the existing global variable.
+└ @ c:\Users\Satya\Autonomous-Drone-Navigation-in-AirSim-With-Active-Inference\precompile.jl:132
+┌ Warning: Assignment to `actinf_loaded` in soft scope is ambiguous because a global variable by the same name exists: `actinf_loaded` will be treated as a new local. Disambiguate by using `local actinf_loaded` to suppress this warning or `global actinf_loaded` to assign to the existing global variable.
+└ @ c:\Users\Satya\Autonomous-Drone-Navigation-in-AirSim-With-Active-Inference\precompile.jl:161
+   Resolving package versions...
   No Changes to `C:\Users\Satya\Autonomous-Drone-Navigation-in-AirSim-With-Active-Inference\Project.toml`
   No Changes to `C:\Users\Satya\Autonomous-Drone-Navigation-in-AirSim-With-Active-Inference\Manifest.toml`
-┌ Warning: Assignment to `all_packages_loaded` in soft scope is ambiguous because a global variable by the same name exists: `all_packages_loaded` will be treated as a new local. Disambiguate by using `local all_packages_loaded` to suppress this warning or `global all_packages_loaded` to assign to the existing global variable.
-└ @ c:\Users\Satya\Autonomous-Drone-Navigation-in-AirSim-With-Active-Inference\precompile.jl:146
-ERROR: LoadError: UndefVarError: `all_packages_loaded` not defined in local scope
-Stacktrace:
- [1] top-level scope
-   @ c:\Users\Satya\Autonomous-Drone-Navigation-in-AirSim-With-Active-Inference\precompile.jl:146
-in expression starting at c:\Users\Satya\Autonomous-Drone-Navigation-in-AirSim-With-Active-Inference\precompile.jl:145
 
 === Starting Active Inference Precompilation ===
+✓ Basic packages loaded
+✓ JSON package loaded
 Current directory: c:\Users\Satya\Autonomous-Drone-Navigation-in-AirSim-With-Active-Inference
-Current active project: C:\Users\Satya\.julia\environments\v1.11\Project.toml
-✅ Project activated
+Current project: C:\Users\Satya\.julia\environments\v1.11\Project.toml
+✓ Project activated: c:\Users\Satya\Autonomous-Drone-Navigation-in-AirSim-With-Active-Inference\Project.toml
+
+Installing required packages...
+✓ Added JSON package
+✓ Added ZMQ package
+✓ Added StaticArrays package
 
 Developing actinf package...
-✅ actinf package developed
+✓ actinf package developed
 
-Adding required dependencies...
-✅ Added JSON package
-✅ Added ZMQ package
-✅ Added StaticArrays package
+Instantiating project...
+✓ Project instantiated
 
-Instantiating dependencies...
-✅ Package dependencies instantiated
+Precompiling packages...
+✓ Packages precompiled
 
-Resolving dependencies...
-✅ Dependencies resolved
+Verifying package loading...
+  Testing JSON... ✓
+  Testing ZMQ... ✓
+  Testing StaticArrays... ✓
+  Testing LinearAlgebra... ✓
 
-Precompiling all packages...
-✅ Packages precompiled
+Testing actinf package loading...
+✓ actinf package and modules loaded successfully
 
-Verifying package status:
-Status `C:\Users\Satya\Autonomous-Drone-Navigation-in-AirSim-With-Active-Inference\Project.toml`
-  [5789e2e9] FileIO v1.17.0
-⌅ [916415d5] Images v0.25.3
-  [682c06a0] JSON v0.21.4
-  [438e738f] PyCall v1.96.4
-⌅ [86711068] RxInfer v3.10.1
-  [90137ffa] StaticArrays v1.9.13
-  [c2297ded] ZMQ v1.4.0
-  [d0498c39] actinf v0.1.0 `c:\Users\Satya\Autonomous-Drone-Navigation-in-AirSim-With-Active-Inference\actinf`
-  [37e2e46d] LinearAlgebra v1.11.0
-Info Packages marked with ⌅ have new versions available but compatibility constraints restrict them from upgrading. To see why use `status --outdated`
+Verifying core functionality...
+  StateSpace module test: ✓
+  Inference module test: ✓
+  Planning module test: ✓
 
-Precompiling core packages...
+Testing ZMQ functionality...
+  ZMQ functionality: ✓
+✓ All components successfully precompiled
+
+=== Active Inference Precompilation Completed in 43.0 seconds ===
+The system is now ready for efficient navigation
