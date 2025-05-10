@@ -4,6 +4,7 @@ This project implements autonomous drone navigation in the AirSim simulator usin
 
 ## Project Structure
 
+### Code Organization
 - `actinf/` - Julia package implementing the active inference framework
   - `src/actinf.jl` - Main module definition
   - `src/StateSpace.jl` - State space representation for drone navigation
@@ -19,109 +20,205 @@ This project implements autonomous drone navigation in the AirSim simulator usin
 - `rebuild.jl` - Script to rebuild the Julia package
 - `test.py` - Python controller for simulation execution
 
-## Communication Architecture
+### System Components
 
-The system uses ZeroMQ (0MQ) for efficient inter-process communication:
-
-1. **ZeroMQ Server** (`zmq_server.jl`):
-   - Runs as a persistent Julia process
-   - Maintains loaded Julia modules and compiled state between calls
-   - Significantly reduces latency compared to the previous approach
-
-2. **Communication Protocol**:
-   - Request/Reply pattern for synchronous operations
-   - Serialized data transfer using JSON
-   - Status tracking with `zmq_server_running.status`
-
-## Active Inference Framework
-
-### State Space Representation
-
+#### 1. State Space Representation (StateSpace.jl)
 The drone's state is represented by the `DroneState` structure with four key dimensions:
-
 - **Distance**: Distance to target (meters)
 - **Azimuth**: Horizontal angle to target (radians)
 - **Elevation**: Vertical angle to target (radians)
 - **Suitability**: Environmental safety measure (0-1)
 
-States are computed from `DroneObservation` objects that contain raw sensory data including drone position, orientation, target position, obstacle distances, and obstacle density.
+Raw sensory data is encapsulated in `DroneObservation` objects that contain:
+- Drone position (x, y, z)
+- Drone orientation (quaternion)
+- Target position (x, y, z)
+- Nearest obstacle distances
+- Voxel grid representation of obstacles
+- Obstacle density
 
-### Suitability Calculation
+The system handles coordinate transformations between global and egocentric reference frames using quaternion-based rotations.
 
-The suitability metric is a crucial safety measure that indicates how navigable a location is:
-
-- Higher values (closer to 1.0) indicate safer navigation conditions
-- Calculated using two main components with sigmoid-like scaling for predictable behavior:
-  - **Obstacle Distance**: Using sigmoid function `1.0 / (1.0 + exp(-steepness_distance * (obstacle_distance - cutoff_distance)))`
-  - **Obstacle Density**: Using inverted sigmoid function `1.0 / (1.0 + exp(steepness_density * (obstacle_density - cutoff_density)))`
-- Configurable parameters control transition sharpness and cutoff points:
-  ```
-  OBSTACLE_WEIGHT = 0.7
-  DENSITY_WEIGHT = 0.3
-  CUTOFF_DISTANCE = 2.5  # Meters
-  STEEPNESS_DISTANCE = 3.0
-  CUTOFF_DENSITY = 0.2
-  STEEPNESS_DENSITY = 10.0
-  ```
-
-### Belief Updating
-
-The `Inference` module maintains probabilistic beliefs about each state dimension:
-
+#### 2. Belief Updating and Inference (Inference.jl)
+The system maintains probabilistic beliefs about each state dimension:
 - Beliefs are represented as discretized probability distributions
-- Updates incorporate new observations using Bayesian inference
+- `DroneBeliefs` structure maintains distributions and discretization ranges
+- Temporal smoothing is applied for stable belief evolution
 - Circular quantities (angles) are handled with appropriate distance metrics
-- `DroneBeliefs` structure maintains both the distributions and their discretization ranges
-- Temporal smoothing is applied to ensure stable belief evolution
 
-### Two-Stage Action Selection
+The belief updating process:
+1. Initialize uniform distributions across state dimensions
+2. Update with Gaussian kernels centered on observations
+3. Apply Bayesian updates with adaptive kernel widths
+4. Calculate expected state from current beliefs
 
-Action selection now uses a two-stage process that separates safety from optimization:
+#### 3. Action Planning (Planning.jl)
+The planning module selects optimal actions using a two-stage process:
 
-1. **Coarse Elimination (Safety)**:
-   - Generate candidate waypoints around current position
-   - Predict next state for each candidate waypoint
-   - Calculate suitability score for each waypoint
-   - **Immediately discard** waypoints with suitability below `SUITABILITY_THRESHOLD` (default: 0.5)
-   - Only waypoints with acceptable suitability proceed to EFE evaluation
+**Stage 1: Safety Filtering**
+- Generate candidate waypoints in a sphere around current position
+- Direct-to-target waypoints are included with various step sizes
+- Predict next state for each waypoint
+- Calculate suitability score using sigmoid-based functions
+- Discard unsafe waypoints (suitability < threshold)
 
-2. **Fine-Grained Selection (Optimization)**:
-   - For remaining safe waypoints, calculate Expected Free Energy (EFE)
-   - EFE now only balances two components (no risk penalty):
-     - **Pragmatic Value**: Progress toward goal (distance reduction)
-     - **Epistemic Value**: Uncertainty reduction (information gain)
-   - Select waypoints with lowest EFE scores
+**Stage 2: EFE Optimization**
+- For remaining safe waypoints, calculate Expected Free Energy (EFE)
+- EFE balances pragmatic value (progress toward goal) and epistemic value (uncertainty reduction)
+- Select waypoints with lowest EFE scores
 
-This approach ensures:
-- Dangerous paths are never considered during final planning
-- EFE correctly focuses on optimal goal-seeking and exploration among safe options
-- Risk avoidance is handled structurally in the planning process
+#### 4. Environmental Perception (Sensory_Input_Processing.py)
+The `EnvironmentScanner` class processes raw sensor data from AirSim:
+- Lidar point cloud processing
+- Obstacle detection and clustering
+- Density calculation in local regions
+- Voxel grid representation of the environment
 
-### Adaptive Planning Parameters
+#### 5. Communication Architecture
+The system uses ZeroMQ for efficient inter-process communication:
+- **ZMQ Server** (zmq_server.jl): Persistent Julia process that maintains compiled state
+- **ZMQ Interface** (Python): Handles communication with the Julia server
+- Health monitoring with heartbeats
+- Automatic server recovery if communication fails
 
-Planning parameters dynamically adjust based on the environment's safety (suitability):
+## Detailed Algorithms and Formulas
 
-1. **Waypoint Radius (Step Size)**
-   - Range: 0.5m (MIN_RADIUS) to 3.0m (MAX_RADIUS)
-   - Low suitability → smaller radius (safer, shorter steps)
-   - High suitability → larger radius (faster progress)
+### 1. Suitability Calculation
+Suitability is a safety metric that combines obstacle distance and density information:
 
-2. **Policy Length**
-   - Range: 2 (MIN_POLICY_LEN) to 5 (MAX_POLICY_LEN) steps
-   - Low suitability → longer policy (more careful planning)
-   - High suitability → shorter policy (less planning needed)
+```
+suitability = obstacle_weight * safety_factor + density_weight * density_factor
+```
 
-3. **Waypoint Sampling**
-   - Range: 15 (MIN_WAYPOINTS) to 75 (MAX_WAYPOINTS)
-   - Low suitability → more waypoints (greater exploration)
-   - High suitability → fewer waypoints (more direct paths)
+Where:
+- `safety_factor = 1.0 / (1.0 + exp(-steepness_distance * (obstacle_distance - cutoff_distance)))`
+- `density_factor = 1.0 / (1.0 + exp(steepness_density * (obstacle_density - cutoff_density)))`
 
-### Real-time Obstacle Avoidance
+Parameters:
+- `obstacle_weight = 0.7` (Default weight for obstacle distance)
+- `density_weight = 0.3` (Default weight for obstacle density)
+- `cutoff_distance = 2.5` (Meters - threshold for rapid safety decrease)
+- `steepness_distance = 3.0` (Controls transition sharpness)
+- `cutoff_density = 0.2` (Density threshold)
+- `steepness_density = 10.0` (Controls density transition sharpness)
+
+### 2. Belief Updating
+Beliefs are updated using a Bayesian approach with Gaussian kernels:
+
+```
+belief = 0.8 * prior_belief + 0.2 * new_likelihood
+```
+
+Where:
+- `new_likelihood` is a Gaussian kernel centered on the observation
+- Circular quantities (angles) use special distance calculations
+- Kernel width adapts based on distance and state variables
+- Target preference is incorporated to bias toward goal
+
+### 3. Preference Calculation
+The system evaluates states using a preference model with multiple components:
+
+**Distance Preference:**
+```
+preference = (1.0 - normalized_dist)^2 * exp(-distance_scaling * distance)
+```
+
+**Angle Preference:**
+```
+preference = baseline + (1.0 - baseline) * (cos(abs_angle) + 1)^sharpness / 2
+```
+
+**Suitability Preference:**
+```
+if suitability < threshold:
+    preference = suitability * (suitability / threshold) * 0.5
+else:
+    preference = 0.5 + 0.5 * (suitability - threshold) / (1.0 - threshold)
+```
+
+### 4. Expected Free Energy Calculation
+EFE combines pragmatic and epistemic components:
+
+```
+EFE = pragmatic_value + epistemic_value
+```
+
+Where:
+- `pragmatic_value = -pragmatic_weight * (preference_score + distance_bonus) * action_magnitude`
+- `epistemic_value = -epistemic_weight * 0.5 * total_entropy * action_magnitude`
+- `total_entropy` is calculated from belief distributions
+- Lower EFE values are better
+
+### 5. Adaptive Planning Parameters
+The system dynamically adjusts planning parameters based on environmental suitability:
+
+**Waypoint Radius (Step Size):**
+```
+adaptive_radius = MIN_RADIUS + suitability_factor * (MAX_RADIUS - MIN_RADIUS)
+```
+- Range: 0.5m (MIN_RADIUS) to 3.0m (MAX_RADIUS)
+- Low suitability → smaller radius (safer, shorter steps)
+- High suitability → larger radius (faster progress)
+
+**Policy Length:**
+```
+adaptive_policy_length = MAX_POLICY_LEN - suitability_factor * (MAX_POLICY_LEN - MIN_POLICY_LEN)
+```
+- Range: 2 (MIN_POLICY_LEN) to 5 (MAX_POLICY_LEN) steps
+- Low suitability → longer policy (more careful planning)
+- High suitability → shorter policy (less planning needed)
+
+**Waypoint Sampling:**
+```
+adaptive_waypoint_count = MAX_WAYPOINTS - suitability_factor * (MAX_WAYPOINTS - MIN_WAYPOINTS)
+```
+- Range: 15 (MIN_WAYPOINTS) to 75 (MAX_WAYPOINTS)
+- Low suitability → more waypoints (greater exploration)
+- High suitability → fewer waypoints (more direct paths)
+
+## Navigation Process Flow
+
+### 1. Initialization
+- Start AirSim simulator
+- Launch ZeroMQ server for Julia-Python communication
+- Connect to the drone and take off
+- Define target location
+
+### 2. Main Navigation Loop
+For each iteration:
+
+1. **Sensory Processing**
+   - Get current drone position and orientation
+   - Scan environment for obstacles using LiDAR
+   - Calculate obstacle distances and density
+
+2. **Belief Inference**
+   - Create DroneObservation from sensory data
+   - Convert to egocentric DroneState
+   - Update belief distributions
+   - Calculate expected state
+
+3. **Action Planning**
+   - Generate candidate waypoints with adaptive radius
+   - Filter out unsafe waypoints based on suitability
+   - Calculate EFE for remaining waypoints
+   - Select optimal next waypoint
+
+4. **Execution**
+   - Move drone to selected waypoint
+   - Monitor for obstacles during movement
+   - Abort and replan if unexpected obstacles appear
+
+5. **Termination Check**
+   - Check if target has been reached
+   - Update trajectory visualization
+
+## Real-time Obstacle Avoidance
 
 During movement execution, the system continuously monitors for obstacles:
 
 1. **Obstacle Detection**
-   - Continuously scans surroundings using LiDAR and depth sensors
+   - Continuously scans surroundings using LiDAR
    - Detects obstacles within configurable safety threshold (2.0-2.5m)
 
 2. **Emergency Protocol** when obstacles are detected:
@@ -129,37 +226,45 @@ During movement execution, the system continuously monitors for obstacles:
    - Hover safely in place
    - Trigger new inference and planning cycle
 
-### Planning Process Flow
+## Special Handling for Goal Approach
 
-The complete planning process now follows this flow:
+When the drone is close to the target:
 
-1. **Waypoint Generation** (no change)
-   - Generate spherical distribution of waypoints based on adaptive radius
-   - Include target-directed waypoints at various step sizes
-   - Include "stay-in-place" option
+1. **Direct Path Prioritization**
+   - When distance < 10m, the system adds more direct target waypoints
+   - Suitability boost for direct paths when clear of obstacles
+   - Finer step size gradations for precise target approach
 
-2. **Predict Next State** for each candidate
-   - Calculate updated distance, azimuth and elevation to target
-   - Compute suitability score using sigmoid-like scaling
+2. **Enhanced Target Preference**
+   - When distance < 5m, target preference weight increases
+   - Direct routes to target receive stronger suitability bonuses
+   - Shorter steps for final positioning accuracy
 
-3. **Early Elimination Based on Suitability**
-   - Discard waypoints with suitability < SUITABILITY_THRESHOLD
-   - Report number of waypoints passing safety filter
+## Error Handling and Robustness
 
-4. **EFE Evaluation on Filtered Waypoints**
-   - Calculate EFE based on pragmatic and epistemic values only
-   - No risk penalty (handled by filtering)
+The system implements several mechanisms for robust operation:
 
-5. **Policy Selection**
-   - Select top-k actions with lowest EFE (k = adaptive_policy_length)
-   - Return policy as sequence of actions
+1. **ZMQ Communication Resilience**
+   - Automatic socket reset on communication failures
+   - Server health monitoring with heartbeats
+   - Automatic restart if server becomes unresponsive
+
+2. **Precompilation**
+   - Julia code is precompiled to minimize startup latency
+   - Package dependencies are pre-loaded
+   - Status monitoring during precompilation
+
+3. **Fallback Mechanisms**
+   - If no safe waypoints are found, select best available option
+   - When close to target, balance safety with goal progress
+   - Emergency hover in place if all options are unsafe
 
 ## Requirements
 
 - Julia 1.7+
 - Python 3.7+
 - AirSim simulator
-- RxInfer.jl, PyCall.jl, ZMQ.jl, and other dependencies
+- ZMQ, RxInfer.jl, PyCall.jl, and other dependencies
 
 ## Setup
 
@@ -167,34 +272,43 @@ The complete planning process now follows this flow:
 2. Install Julia dependencies:
 ```julia
 using Pkg
-Pkg.add(["ZMQ", "PyCall", "RxInfer", "Images", "StaticArrays", "LinearAlgebra", "JSON"])
+Pkg.add(["ZMQ", "PyCall", "RxInfer", "StaticArrays", "LinearAlgebra", "JSON"])
 ```
-3. Configure AirSim settings.json for your simulation environment
+3. Install Python dependencies:
+```python
+pip install airsim numpy zmq matplotlib sklearn
+```
+4. Configure AirSim settings.json for your simulation environment
 
 ## Running the System
 
 1. Start AirSim simulator
-2. Start the ZeroMQ server:
-```
-julia actinf/zmq_server.jl
-```
-3. Run the Python controller:
+2. Run the Python controller:
 ```
 python test.py
 ```
 
 This will:
+- Precompile Julia dependencies
+- Start the ZeroMQ server
 - Initialize the drone in AirSim
-- Start the ZeroMQ communication channel
-- Process sensory observations
-- Call Julia for inference and planning through ZeroMQ
-- Execute actions with real-time obstacle avoidance
+- Execute the navigation sequence with real-time visualization
 
-## Preference Model
+## Advanced Configuration
 
-The system uses a configurable preference model to evaluate states:
-- Distance preference: Favors states closer to target
-- Angle preference: Favors alignment with target (with constant baseline preference)
-- Suitability preference: Favors safe regions away from obstacles
+The system can be fine-tuned via several key parameters:
 
-Weights between these preferences can be adjusted in the `PreferenceModel` configuration.
+1. **Safety Parameters**
+   - `SUITABILITY_THRESHOLD`: Minimum acceptable waypoint suitability (default: 0.5)
+   - `MARGIN`: Safety margin for obstacle avoidance (default: 1.5m)
+   - `CUTOFF_DISTANCE`: Distance threshold for safety calculations (default: 2.5m)
+
+2. **Planning Parameters**
+   - `WAYPOINT_SAMPLE_COUNT`: Number of waypoints to generate (default: 75)
+   - `POLICY_LENGTH`: Number of steps to plan ahead (default: 3)
+   - `DENSITY_RADIUS`: Radius for density evaluation (default: 5.0m)
+
+3. **Navigation Parameters**
+   - `TARGET_LOCATION`: Destination coordinates [x, y, z] (default: [-20.0, -20.0, -30.0])
+   - `ARRIVAL_THRESHOLD`: Distance to consider target reached (default: 1.2m)
+   - `MAX_ITERATIONS`: Maximum navigation steps (default: 100)
