@@ -58,7 +58,19 @@ DEFAULT_CONFIG = {
     "target_distance_range": (15.0, 50.0),  # min, max in meters
     "random_seed": 42,
     "max_steps_per_episode": 100,
-    "output_dir": "experiment_results"
+    "output_dir": "experiment_results",
+    "stuck_timeout": 15.0,  # seconds to consider the drone stuck
+    "stuck_check_interval": 3.0,  # seconds between stuck checks
+    "episode_timeout": 120,  # maximum episode duration in seconds
+    "precompile_julia": True,  # whether to precompile Julia packages
+    "zmq_port": DEFAULT_ZMQ_PORT,  # ZMQ server port
+    
+    # Raycasting debug configuration
+    "debug_raycasting": False,  # Enable debug mode for raycasts
+    "min_ray_checks": 3,  # Minimum number of rays for target validation
+    "max_ray_checks": 7,  # Maximum number of rays for target validation 
+    "visualize_raycasts": False,  # Visualize raycasts in AirSim
+    "visualization_duration": 60.0  # Duration of visualization markers in seconds
 }
 
 # Add the airsim directory to the Python path
@@ -254,7 +266,7 @@ class JuliaServer:
                 
             return False
     
-    def start_server(self):
+    def start_server(self, port=DEFAULT_ZMQ_PORT):
         """Start the ZMQ server"""
         print("\n==== Starting ZMQ Server ====")
         
@@ -764,7 +776,8 @@ def move_to_waypoint(client, current_pos, waypoint, velocity=2):
 
 def sample_visible_target(current_pos: List[float], distance_range: Tuple[float, float], 
                           client: airsim.MultirotorClient, max_attempts: int = 100,
-                          episode_id: int = 0, seed: int = None) -> List[float]:
+                          episode_id: int = 0, seed: int = None, 
+                          ray_checks: int = 5) -> List[float]:
     """Sample a random target position within distance bounds that is visible to the drone
     
     Args:
@@ -774,6 +787,7 @@ def sample_visible_target(current_pos: List[float], distance_range: Tuple[float,
         max_attempts: Maximum sampling attempts before giving up
         episode_id: Current episode ID to influence randomization
         seed: Random seed for deterministic behavior
+        ray_checks: Number of rays to use for validating each target
         
     Returns:
         List[float]: Target position [x, y, z] in NED coordinates
@@ -809,6 +823,21 @@ def sample_visible_target(current_pos: List[float], distance_range: Tuple[float,
     valid_targets = []  # Track all valid targets for potential selection
     best_target = None  # Best target based on obstacle clearance
     best_obstacle_clearance = 0.0  # Track the best clearance found
+    los_failures = []   # Track target positions with failed line of sight checks for logging
+    ray_test_results = []  # Track detailed ray test results for debugging
+    
+    # Get current drone state once for reference
+    try:
+        drone_state = client.getMultirotorState().kinematics_estimated
+        drone_orientation = [
+            drone_state.orientation.w_val,
+            drone_state.orientation.x_val,
+            drone_state.orientation.y_val,
+            drone_state.orientation.z_val
+        ]
+    except Exception as e:
+        logging.error(f"Failed to get drone state: {e}")
+        drone_orientation = [1.0, 0.0, 0.0, 0.0]  # Default orientation (no rotation)
     
     for attempt in range(max_attempts):
         # Sample random direction (uniform on sphere)
@@ -834,68 +863,159 @@ def sample_visible_target(current_pos: List[float], distance_range: Tuple[float,
         
         # Convert to Vector3r for line of sight test
         target_vector = airsim.Vector3r(target_pos[0], target_pos[1], target_pos[2])
+        start_vector = airsim.Vector3r(current_pos[0], current_pos[1], current_pos[2])
         
-        # Try to get obstacle clearance info for better target selection
-        try:
-            # Test line of sight with the appropriate API call
-            los_result = client.simTestLineOfSightToPoint(target_vector)
-            
-            if los_result:
-                # Target is visible - get additional information about clearance if possible
-                valid_targets.append(target_pos.tolist())
-                
-                # Check obstacle density in target area
-                try:
-                    obstacle_positions, obstacle_distances = scanner.fetch_density_distances()
-                    if obstacle_distances:
-                        # Calculate distances from potential target to nearby obstacles
-                        target_obstacle_distances = [
-                            np.linalg.norm(np.array(target_pos) - np.array(obs_pos))
-                            for obs_pos in obstacle_positions
-                        ]
-                        
-                        # Find the minimum distance to any obstacle
-                        if target_obstacle_distances:
-                            min_obstacle_distance = min(target_obstacle_distances)
-                            
-                            # If this target has better clearance than our previous best, update it
-                            if min_obstacle_distance > best_obstacle_clearance:
-                                best_obstacle_clearance = min_obstacle_distance
-                                best_target = target_pos.tolist()
-                                logging.debug(f"Better target found with {min_obstacle_distance:.2f}m obstacle clearance")
+        # Flag to track if this target is valid across all ray checks
+        target_valid = True
+        current_ray_results = []
+        
+        # Use multiple rays with slight perturbations to verify line of sight
+        for ray_idx in range(ray_checks):
+            try:
+                # For the first ray, test direct line of sight
+                if ray_idx == 0:
+                    los_result = client.simTestLineOfSightToPoint(target_vector)
+                    ray_origin = start_vector
+                    ray_end = target_vector
+                else:
+                    # For additional rays, add small perturbation (±10cm) to ensure robust detection
+                    perturb = 0.1  # 10cm perturbation
+                    offset = np.array([
+                        target_rng.uniform(-perturb, perturb),
+                        target_rng.uniform(-perturb, perturb),
+                        target_rng.uniform(-perturb, perturb)
+                    ])
                     
-                    # If we found a really good target (>5m clearance), stop early
-                    if best_obstacle_clearance > 5.0:
-                        logging.info(f"Found excellent target with {best_obstacle_clearance:.2f}m obstacle clearance")
-                        return best_target
-                except Exception as e:
-                    logging.debug(f"Error checking obstacle density near target: {e}")
+                    # Create slightly perturbed start and end points
+                    perturbed_start = airsim.Vector3r(
+                        current_pos[0] + offset[0], 
+                        current_pos[1] + offset[1], 
+                        current_pos[2] + offset[2]
+                    )
+                    perturbed_target = airsim.Vector3r(
+                        target_pos[0] + offset[0], 
+                        target_pos[1] + offset[1], 
+                        target_pos[2] + offset[2]
+                    )
+                    
+                    # Check line of sight with perturbed rays
+                    los_result = client.simTestLineOfSightBetweenPoints(perturbed_start, perturbed_target)
+                    ray_origin = perturbed_start
+                    ray_end = perturbed_target
                 
-                # Log that we found a valid target
-                logging.debug(f"Found valid target at {target_pos.tolist()} (attempt {attempt+1})")
+                # Store ray test result for debugging
+                current_ray_results.append({
+                    "ray_idx": ray_idx,
+                    "origin": [ray_origin.x_val, ray_origin.y_val, ray_origin.z_val],
+                    "end": [ray_end.x_val, ray_end.y_val, ray_end.z_val],
+                    "result": los_result
+                })
                 
-                # If this is the first valid target, we'll use it as our initial best
-                if best_target is None:
-                    best_target = target_pos.tolist()
-                    logging.info(f"Found first valid target at {best_target}")
+                # If any ray test fails, mark the target as invalid
+                if not los_result:
+                    target_valid = False
+                    # For debugging, attempt to get more detailed collision information
+                    try:
+                        # Try to use the hit test API for more details
+                        hit_result = client.simGetCollisionInfo()
+                        if hit_result.has_collided:
+                            collision_point = [
+                                hit_result.impact_point.x_val,
+                                hit_result.impact_point.y_val,
+                                hit_result.impact_point.z_val
+                            ]
+                            logging.debug(f"Ray {ray_idx} hit obstacle at {collision_point}")
+                    except Exception as hit_error:
+                        logging.debug(f"Could not get collision details: {hit_error}")
+                    
+                    # Don't check additional rays if one already failed
+                    break
                 
-                # Every 10 valid targets, report progress
-                if len(valid_targets) % 10 == 0:
-                    logging.info(f"Found {len(valid_targets)} valid targets so far")
+            except Exception as e:
+                logging.warning(f"Error in line of sight test for ray {ray_idx}: {e}")
+                target_valid = False
+                break
                 
-                # If we've found at least 3 valid targets, we can start being selective
-                if len(valid_targets) >= 3:
-                    # Return the best target we've found so far
-                    if best_target:
-                        return best_target
-                    # Or just return the last valid target
-                    return valid_targets[-1]
-                
-            # If line of sight fails, continue to next attempt
-                
+        # Store all ray test results for debugging
+        ray_test_results.append({
+            "attempt": attempt,
+            "target": target_pos.tolist(),
+            "rays": current_ray_results,
+            "valid": target_valid
+        })
+        
+        # If target passed all ray checks, proceed with validation
+        if target_valid:
+            # Target is visible - get additional information about clearance if possible
+            valid_targets.append(target_pos.tolist())
+            
+            # Check obstacle density in target area
+            try:
+                obstacle_positions, obstacle_distances = scanner.fetch_density_distances()
+                if obstacle_distances:
+                    # Calculate distances from potential target to nearby obstacles
+                    target_obstacle_distances = [
+                        np.linalg.norm(np.array(target_pos) - np.array(obs_pos))
+                        for obs_pos in obstacle_positions
+                    ]
+                    
+                    # Find the minimum distance to any obstacle
+                    if target_obstacle_distances:
+                        min_obstacle_distance = min(target_obstacle_distances)
+                        
+                        # If this target has better clearance than our previous best, update it
+                        if min_obstacle_distance > best_obstacle_clearance:
+                            best_obstacle_clearance = min_obstacle_distance
+                            best_target = target_pos.tolist()
+                            logging.debug(f"Better target found with {min_obstacle_distance:.2f}m obstacle clearance")
+            
+                # If we found a really good target (>5m clearance), stop early
+                if best_obstacle_clearance > 5.0:
+                    logging.info(f"Found excellent target with {best_obstacle_clearance:.2f}m obstacle clearance")
+                    return best_target
+            except Exception as e:
+                logging.debug(f"Error checking obstacle density near target: {e}")
+            
+            # Log that we found a valid target
+            logging.debug(f"Found valid target at {target_pos.tolist()} (attempt {attempt+1})")
+            
+            # If this is the first valid target, we'll use it as our initial best
+            if best_target is None:
+                best_target = target_pos.tolist()
+                logging.info(f"Found first valid target at {best_target}")
+            
+            # Every 10 valid targets, report progress
+            if len(valid_targets) % 10 == 0:
+                logging.info(f"Found {len(valid_targets)} valid targets so far")
+            
+            # If we've found at least 3 valid targets, we can start being selective
+            if len(valid_targets) >= 3:
+                # Return the best target we've found so far
+                if best_target:
+                    return best_target
+                # Or just return the last valid target
+                return valid_targets[-1]
+        else:
+            # For failed targets, store position for visualization
+            los_failures.append(target_pos.tolist())
+            
+    # After all attempts, if we have debugging enabled, save visualizations of ray tests
+    if logging.getLogger().level <= logging.DEBUG and len(ray_test_results) > 0:
+        debug_dir = "debug_raycasts"
+        try:
+            os.makedirs(debug_dir, exist_ok=True)
+            debug_file = os.path.join(debug_dir, f"raycast_debug_ep{episode_id}.json")
+            with open(debug_file, "w") as f:
+                json.dump({
+                    "ray_tests": ray_test_results,
+                    "failures": los_failures,
+                    "valid_targets": valid_targets,
+                    "drone_pos": current_pos,
+                    "drone_orientation": drone_orientation
+                }, f, cls=NumpyJSONEncoder, indent=2)
+            logging.debug(f"Saved raycast debug information to {debug_file}")
         except Exception as e:
-            logging.warning(f"Error in line of sight test (attempt {attempt+1}): {e}")
-            # Don't return invalid targets on error - keep searching
+            logging.warning(f"Failed to save raycast debug information: {e}")
     
     # After exhausting all attempts, return the best target if found
     if best_target:
@@ -907,8 +1027,124 @@ def sample_visible_target(current_pos: List[float], distance_range: Tuple[float,
         logging.info(f"No ideal target found, using one of {len(valid_targets)} valid targets")
         return target_rng.choice(valid_targets)  # Random choice from valid targets
     
+    # If we couldn't find ANY valid target, try one last direct check with a fixed target
+    # This helps in environments where random sampling might be challenging
+    try:
+        logging.warning("No valid targets found with random sampling, trying a fixed fallback target")
+        # Try a target directly ahead of the drone at min distance
+        forward_vector = np.array([1.0, 0.0, 0.0])  # Forward in NED
+        forward_target_pos = np.array(current_pos) + (forward_vector * min_dist)
+        forward_target_pos[2] = min(forward_target_pos[2], -2.0)  # Keep below ground level
+        
+        # Check if this forward target is valid
+        forward_vector3r = airsim.Vector3r(forward_target_pos[0], forward_target_pos[1], forward_target_pos[2])
+        forward_los_result = client.simTestLineOfSightToPoint(forward_vector3r)
+        
+        if forward_los_result:
+            logging.info(f"Using fallback forward target at {forward_target_pos.tolist()}")
+            return forward_target_pos.tolist()
+    except Exception as e:
+        logging.warning(f"Error checking fallback target: {e}")
+    
     # If we couldn't find ANY valid target, raise an error
     raise ValueError(f"No unobstructed target found after {max_attempts} attempts")
+
+def visualize_raycasts(client, raycast_data_file, duration=60.0):
+    """Visualize the results of raycasting tests by drawing lines in the AirSim environment
+    
+    Args:
+        client: AirSim client instance
+        raycast_data_file: Path to a JSON file containing raycast debug information
+        duration: Duration in seconds for visualization markers to remain visible
+    """
+    try:
+        # Load raycast debug data
+        with open(raycast_data_file, 'r') as f:
+            raycast_data = json.load(f)
+        
+        # Clear previous visualizations
+        client.simFlushPersistentMarkers()
+        
+        # Draw drone position
+        drone_pos = raycast_data.get("drone_pos", [0, 0, 0])
+        client.simAddMarker(
+            airsim.Vector3r(drone_pos[0], drone_pos[1], drone_pos[2]),
+            1.0,  # size
+            [0, 0, 255, 255],  # blue
+            "drone_position",
+            duration  # duration in seconds
+        )
+        
+        # Draw successful rays in green
+        for test_result in raycast_data.get("ray_tests", []):
+            if test_result.get("valid", False):
+                target = test_result.get("target", [0, 0, 0])
+                # Draw successful target
+                client.simAddMarker(
+                    airsim.Vector3r(target[0], target[1], target[2]),
+                    0.5,  # size
+                    [0, 255, 0, 255],  # green
+                    f"valid_target_{target[0]}_{target[1]}_{target[2]}",
+                    duration  # duration
+                )
+                
+                # Draw rays for this target
+                for ray in test_result.get("rays", []):
+                    if ray.get("result", False):
+                        origin = ray.get("origin", [0, 0, 0])
+                        end = ray.get("end", [0, 0, 0])
+                        # Draw successful ray
+                        client.simDrawLine(
+                            airsim.Vector3r(origin[0], origin[1], origin[2]),
+                            airsim.Vector3r(end[0], end[1], end[2]),
+                            0.05,  # thickness
+                            [0, 255, 0, 255],  # green
+                            duration  # duration
+                        )
+        
+        # Draw failed rays in red
+        for test_result in raycast_data.get("ray_tests", []):
+            if not test_result.get("valid", True):
+                target = test_result.get("target", [0, 0, 0])
+                # Draw failed target
+                client.simAddMarker(
+                    airsim.Vector3r(target[0], target[1], target[2]),
+                    0.5,  # size
+                    [255, 0, 0, 255],  # red
+                    f"invalid_target_{target[0]}_{target[1]}_{target[2]}",
+                    duration  # duration
+                )
+                
+                # Draw rays for this target
+                for ray in test_result.get("rays", []):
+                    origin = ray.get("origin", [0, 0, 0])
+                    end = ray.get("end", [0, 0, 0])
+                    color = [255, 0, 0, 255] if not ray.get("result", True) else [0, 255, 0, 255]
+                    # Draw ray
+                    client.simDrawLine(
+                        airsim.Vector3r(origin[0], origin[1], origin[2]),
+                        airsim.Vector3r(end[0], end[1], end[2]),
+                        0.05,  # thickness
+                        color,
+                        duration  # duration
+                    )
+        
+        # Draw all failed targets
+        for failed_target in raycast_data.get("failures", []):
+            client.simAddMarker(
+                airsim.Vector3r(failed_target[0], failed_target[1], failed_target[2]),
+                0.3,  # size
+                [255, 0, 0, 128],  # red with some transparency
+                f"failed_{failed_target[0]}_{failed_target[1]}_{failed_target[2]}",
+                duration  # duration
+            )
+        
+        logging.info(f"Visualized raycast debug data from {raycast_data_file} (visible for {duration}s)")
+        return True
+    except Exception as e:
+        logging.error(f"Failed to visualize raycasts: {e}")
+        traceback.print_exc()
+        return False
 
 def run_episode(episode_id: int, client: airsim.MultirotorClient, 
                 zmq_interface: ZMQInterface, scanner: Scanner, 
@@ -956,22 +1192,48 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
         drone_pos = [drone_state.position.x_val, drone_state.position.y_val, drone_state.position.z_val]
         logging.info(f"Episode {episode_id}: Adjusted drone height to {drone_pos[2]:.2f}m")
     
+    # Configure number of rays for target validation based on environment complexity
+    # Use more rays for later episodes which might be more challenging
+    min_rays = config.get("min_ray_checks", 3)
+    max_rays = config.get("max_ray_checks", 7)
+    ray_checks = min(max_rays, min_rays + (episode_id // 3))  # Start with min_rays, gradually increase
+    
+    # Enable debug log level temporarily for detailed raycast information if needed
+    original_log_level = logging.getLogger().level
+    if config.get("debug_raycasting", False) and episode_id % 5 == 0:  # Debug every 5th episode
+        logging.getLogger().setLevel(logging.DEBUG)
+        logging.debug(f"Episode {episode_id}: Enhanced logging enabled for raycast debugging")
+        logging.debug(f"Using {ray_checks} rays for target validation")
+    
     # Sample a random target - NOW we can safely check visibility
+    target_sampling_start = time.time()
     try:
         target_pos = sample_visible_target(
             drone_pos, 
             config["target_distance_range"], 
             client,
             episode_id=episode_id,
-            seed=config["random_seed"]
+            seed=config["random_seed"],
+            ray_checks=ray_checks
         )
+        target_sampling_time = time.time() - target_sampling_start
+        logging.info(f"Episode {episode_id}: Target sampling took {target_sampling_time:.2f}s with {ray_checks} rays")
     except ValueError as e:
         logging.warning(f"Episode {episode_id}: {str(e)}")
+        
+        # Restore original log level if it was changed
+        if config.get("debug_raycasting", False) and episode_id % 5 == 0:
+            logging.getLogger().setLevel(original_log_level)
+            
         return [], {
             "episode_id": episode_id,
             "status": "skipped",
             "reason": "No valid target found"
         }
+    
+    # Restore original log level if it was changed
+    if config.get("debug_raycasting", False) and episode_id % 5 == 0:
+        logging.getLogger().setLevel(original_log_level)
     
     # Initialize episode tracking
     step_metrics = []
@@ -995,6 +1257,46 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
     logging.info(f"Episode {episode_id}: Initial position: {[round(p, 2) for p in drone_pos]}")
     logging.info(f"Episode {episode_id}: Target position: {[round(p, 2) for p in target_pos]}")
     logging.info(f"Episode {episode_id}: Initial distance: {distance_to_target:.2f}m")
+    
+    # Additional validation: Double-check target visibility with multiple rays
+    verify_rays = 3  # Use a few rays for verification
+    verification_failures = 0
+    
+    for v_idx in range(verify_rays):
+        try:
+            # Slight perturbation for robustness
+            perturb = 0.05  # 5cm perturbation
+            offset = np.array([
+                random.uniform(-perturb, perturb),
+                random.uniform(-perturb, perturb),
+                random.uniform(-perturb, perturb)
+            ])
+            
+            # Create perturbed points
+            start_point = airsim.Vector3r(
+                drone_pos[0] + offset[0], 
+                drone_pos[1] + offset[1], 
+                drone_pos[2] + offset[2]
+            )
+            end_point = airsim.Vector3r(
+                target_pos[0] + offset[0], 
+                target_pos[1] + offset[1], 
+                target_pos[2] + offset[2]
+            )
+            
+            # Verify line of sight
+            los_result = client.simTestLineOfSightBetweenPoints(start_point, end_point)
+            if not los_result:
+                verification_failures += 1
+                logging.warning(f"Target verification ray {v_idx} failed")
+        except Exception as e:
+            logging.warning(f"Error during target verification: {e}")
+            verification_failures += 1
+    
+    if verification_failures > 0:
+        logging.warning(f"Episode {episode_id}: Target verification detected possible issues ({verification_failures}/{verify_rays} rays failed)")
+    else:
+        logging.info(f"Episode {episode_id}: Target verified with {verify_rays} rays")
     
     # Main navigation loop
     status = "timeout"  # Default status
@@ -1283,144 +1585,359 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
     return step_metrics, episode_summary
 
 def run_experiment(config: Dict[str, Any]) -> None:
-    """Run a complete experiment with multiple episodes
+    """Run a full navigation experiment with multiple episodes
     
     Args:
         config: Experiment configuration
     """
-    # Set random seed for reproducibility
-    random.seed(config["random_seed"])
-    np.random.seed(config["random_seed"])
+    # Merge with default config
+    full_config = {**DEFAULT_CONFIG, **config}
     
-    # Create output directory
+    # Set up logging for this experiment
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_dir = os.path.join(config["output_dir"], f"experiment_{timestamp}")
-    os.makedirs(output_dir, exist_ok=True)
-    config["output_dir"] = output_dir
+    output_dir = full_config.get("output_dir", "experiment_results")
+    experiment_dir = os.path.join(output_dir, f"experiment_{timestamp}")
+    os.makedirs(experiment_dir, exist_ok=True)
+    
+    # Configure log file
+    log_file = os.path.join(experiment_dir, "experiment.log")
+    file_handler = logging.FileHandler(log_file)
+    file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+    logging.getLogger().addHandler(file_handler)
+    
+    # Create debug directories if needed
+    if full_config.get("debug_raycasting", False):
+        debug_dir = os.path.join(experiment_dir, "debug_raycasts")
+        os.makedirs(debug_dir, exist_ok=True)
+    
+    # Set random seed
+    random_seed = full_config.get("random_seed")
+    if random_seed is not None:
+        logging.info(f"Using random seed: {random_seed}")
+        random.seed(random_seed)
+        np.random.seed(random_seed)
+    
+    # Log configuration
+    logging.info(f"Starting experiment with configuration:")
+    for key, value in full_config.items():
+        logging.info(f"  {key}: {value}")
     
     # Save configuration
-    with open(os.path.join(output_dir, "config.json"), 'w') as f:
-        json.dump(config, f, indent=2, cls=NumpyJSONEncoder)
+    config_file = os.path.join(experiment_dir, "config.json")
+    with open(config_file, 'w') as f:
+        json.dump(full_config, f, cls=NumpyJSONEncoder, indent=2)
     
-    # Initialize Julia server
-    julia_server = JuliaServer()
-    precompile_success = julia_server.precompile_packages()
-    
-    if not precompile_success:
-        logging.warning("Precompilation had issues but will continue")
-    
-    # Start ZMQ server
-    server_port = julia_server.start_server()
-    if not server_port:
-        logging.error("Failed to start ZMQ server. Cannot continue.")
-        return
-    
-    # Initialize ZMQ interface
-    zmq_interface = ZMQInterface(server_port=server_port)
-    
-    # Connect to AirSim
-    logging.info("Connecting to AirSim...")
+    # Initialize AirSim client
     client = airsim.MultirotorClient()
     client.confirmConnection()
+    client.enableApiControl(True)
+    client.armDisarm(True)
     
     # Initialize scanner
     scanner = Scanner(client)
     
-    # Storage for metrics
-    all_step_metrics = []
+    # Start the Julia server
+    julia_server = JuliaServer()
+    
+    # Precompile Julia packages (only if needed)
+    if full_config.get("precompile_julia", True):
+        julia_server.precompile_packages()
+    
+    # Start the server
+    server_port = full_config.get("zmq_port", DEFAULT_ZMQ_PORT)
+    julia_server.start_server(port=server_port)
+    
+    # Initialize ZMQ interface
+    zmq_interface = ZMQInterface(server_port=server_port)
+    
+    # Create all episode metrics lists
+    all_episodes_metrics = []
     episode_summaries = []
     
     # Run episodes
-    for episode in range(1, config["num_episodes"] + 1):
-        try:
-            step_metrics, episode_summary = run_episode(
-                episode, client, zmq_interface, scanner, config
-            )
-            
-            all_step_metrics.extend(step_metrics)
+    for episode_id in range(full_config["num_episodes"]):
+        # Run episode
+        step_metrics, episode_summary = run_episode(
+            episode_id, client, zmq_interface, scanner, full_config
+        )
+        
+        # Track metrics
+        if step_metrics:
+            all_episodes_metrics.extend(step_metrics)
             episode_summaries.append(episode_summary)
             
-            # Optionally save intermediate results
-            if episode % 10 == 0 or episode == config["num_episodes"]:
-                if all_step_metrics:
-                    pd.DataFrame(all_step_metrics).to_csv(
-                        os.path.join(output_dir, "per_step_metrics.csv"), index=False
-                    )
-                if episode_summaries:
-                    pd.DataFrame(episode_summaries).to_csv(
-                        os.path.join(output_dir, "episode_summaries.csv"), index=False
-                    )
+            # Visualize debug data if enabled and available
+            if full_config.get("debug_raycasting", False):
+                debug_file = os.path.join("debug_raycasts", f"raycast_debug_ep{episode_id}.json")
+                if os.path.exists(debug_file):
+                    # Move the debug file to the experiment directory
+                    experiment_debug_dir = os.path.join(experiment_dir, "debug_raycasts")
+                    os.makedirs(experiment_debug_dir, exist_ok=True)
+                    experiment_debug_file = os.path.join(experiment_debug_dir, f"raycast_debug_ep{episode_id}.json")
+                    try:
+                        os.rename(debug_file, experiment_debug_file)
+                    except Exception:
+                        pass
+                    
+                    # Visualize raycasts if requested
+                    if full_config.get("visualize_raycasts", False) and episode_id % 3 == 0:
+                        visualization_duration = full_config.get("visualization_duration", 60.0)
+                        visualize_raycasts(client, experiment_debug_file, duration=visualization_duration)
+        
+        # Export metrics after each episode (to avoid data loss in case of crash)
+        if all_episodes_metrics:
+            metrics_file = os.path.join(experiment_dir, "metrics.csv")
+            pd.DataFrame(all_episodes_metrics).to_csv(metrics_file, index=False)
+            
+            summary_file = os.path.join(experiment_dir, "episode_summaries.csv")
+            pd.DataFrame(episode_summaries).to_csv(summary_file, index=False)
+    
+    # Shut down Julia server
+    julia_server.shutdown()
+    
+    # Final export of all metrics
+    if all_episodes_metrics:
+        metrics_file = os.path.join(experiment_dir, "metrics.csv")
+        pd.DataFrame(all_episodes_metrics).to_csv(metrics_file, index=False)
+        
+        summary_file = os.path.join(experiment_dir, "episode_summaries.csv")
+        pd.DataFrame(episode_summaries).to_csv(summary_file, index=False)
+        
+        # Create plots
+        try:
+            plot_metrics(metrics_file, os.path.join(experiment_dir, "metrics_plots"))
+            logging.info(f"Metrics plots saved to {os.path.join(experiment_dir, 'metrics_plots')}")
         except Exception as e:
-            logging.error(f"Error in episode {episode}: {e}")
-            traceback.print_exc()
-            episode_summaries.append({
-                "episode_id": episode,
-                "status": "error",
-                "error_message": str(e)
-            })
+            logging.error(f"Failed to create plots: {e}")
     
-    # Save final results
-    if all_step_metrics:
-        pd.DataFrame(all_step_metrics).to_csv(
-            os.path.join(output_dir, "per_step_metrics.csv"), index=False
-        )
-    if episode_summaries:
-        pd.DataFrame(episode_summaries).to_csv(
-            os.path.join(output_dir, "episode_summaries.csv"), index=False
-        )
+    logging.info(f"Experiment completed. Results saved to {experiment_dir}")
+
+def plot_metrics(metrics_file, output_dir):
+    """Create plots for the experiment metrics
     
-    # Generate summary plots
+    Args:
+        metrics_file: Path to the CSV file with metrics
+        output_dir: Directory to save the plots
+    """
     try:
-        if episode_summaries:
-            summary_df = pd.DataFrame(episode_summaries)
+        # Create output directory
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # Load metrics data
+        df = pd.read_csv(metrics_file)
+        
+        # Load episode summaries if available
+        summary_file = metrics_file.replace("metrics.csv", "episode_summaries.csv")
+        if os.path.exists(summary_file):
+            summary_df = pd.read_csv(summary_file)
+        else:
+            # Generate summary from metrics if needed
+            episode_stats = df.groupby("episode_id").agg({
+                "distance_to_target": ["first", "last", "min"],
+                "step": "max",
+                "collision": "sum",
+                "inference_time_ms": "mean"
+            })
+            episode_stats.columns = ["initial_distance", "final_distance", "min_distance", 
+                                    "steps_taken", "collisions", "avg_inference_time_ms"]
             
-            # Successful episodes
-            successful = summary_df[summary_df["target_reached"] == True]
-            success_rate = len(successful) / len(summary_df) if len(summary_df) > 0 else 0
+            # Calculate if target was reached
+            target_threshold = 2.0  # Assume this is the arrival threshold
+            episode_stats["target_reached"] = episode_stats["min_distance"] < target_threshold
             
+            # Calculate normalized improvement
+            episode_stats["distance_improvement"] = episode_stats["initial_distance"] - episode_stats["final_distance"]
+            episode_stats["normalized_improvement"] = episode_stats["distance_improvement"] / episode_stats["initial_distance"]
+            
+            summary_df = episode_stats.reset_index()
+        
+        # Create output directory
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # 1. Plot trajectory for each episode (if position data available)
+        if "drone_x" in df.columns and "drone_y" in df.columns:
+            for episode_id in df["episode_id"].unique():
+                episode_data = df[df["episode_id"] == episode_id]
+                
+                fig, ax = plt.subplots(figsize=(8, 8))
+                ax.plot(episode_data["drone_x"], episode_data["drone_y"], 'b-', label="Trajectory")
+                ax.scatter(episode_data["drone_x"].iloc[0], episode_data["drone_y"].iloc[0], 
+                        c='green', s=100, marker='^', label="Start")
+                
+                # Plot target if available
+                if "target_x" in episode_data.columns and "target_y" in episode_data.columns:
+                    target_x = episode_data["target_x"].iloc[0]
+                    target_y = episode_data["target_y"].iloc[0]
+                    ax.scatter(target_x, target_y, c='red', s=100, marker='*', label="Target")
+                
+                # Plot end position
+                ax.scatter(episode_data["drone_x"].iloc[-1], episode_data["drone_y"].iloc[-1], 
+                        c='orange', s=100, marker='o', label="End")
+                
+                # Add grid, legend, and labels
+                ax.grid(True)
+                ax.legend()
+                ax.set_title(f"Episode {episode_id} Trajectory")
+                ax.set_xlabel("X Position (m)")
+                ax.set_ylabel("Y Position (m)")
+                ax.axis('equal')
+                
+                # Save figure
+                plt.savefig(os.path.join(output_dir, f"trajectory_episode_{episode_id}.png"))
+                plt.close(fig)
+        
+        # 2. Plot episode summaries and overall statistics
+        if not summary_df.empty:
             # Create summary figure
             fig, axes = plt.subplots(2, 2, figsize=(12, 10))
             
+            # Success rate calculation
+            successful = summary_df[summary_df["target_reached"] == True]
+            success_rate = len(successful) / len(summary_df) if len(summary_df) > 0 else 0
+            
             # Plot 1: Success rate over episodes
-            rolling_success = summary_df["target_reached"].rolling(
+            rolling_success = summary_df["target_reached"].astype(int).rolling(
                 window=min(5, len(summary_df)), min_periods=1
             ).mean()
-            axes[0, 0].plot(rolling_success.index, rolling_success.values)
+            axes[0, 0].plot(rolling_success.index, rolling_success)
             axes[0, 0].set_title(f"Success Rate: {success_rate:.1%}")
             axes[0, 0].set_xlabel("Episode")
             axes[0, 0].set_ylabel("Rolling Success Rate (5-ep window)")
+            axes[0, 0].set_ylim(0, 1.1)
             
-            # Plot 2: Step count distribution
-            axes[0, 1].hist(summary_df["steps_taken"], bins=10)
+            # Plot 2: Steps per episode
+            axes[0, 1].bar(summary_df["episode_id"], summary_df["steps_taken"])
             axes[0, 1].set_title("Steps per Episode")
-            axes[0, 1].set_xlabel("Step Count")
-            axes[0, 1].set_ylabel("Frequency")
+            axes[0, 1].set_xlabel("Episode")
+            axes[0, 1].set_ylabel("Step Count")
             
-            # Plot 3: Inference time
+            # Plot 3: Average inference time
             axes[1, 0].plot(summary_df["episode_id"], summary_df["avg_inference_time_ms"])
             axes[1, 0].set_title("Average Inference Time")
             axes[1, 0].set_xlabel("Episode")
             axes[1, 0].set_ylabel("Time (ms)")
             
-            # Plot 4: Distance improvement
-            axes[1, 1].scatter(
-                summary_df["initial_distance"], 
-                summary_df["normalized_improvement"],
-                c=summary_df["target_reached"].map({True: 'green', False: 'red'})
-            )
-            axes[1, 1].set_title("Performance by Distance")
-            axes[1, 1].set_xlabel("Initial Distance (m)")
-            axes[1, 1].set_ylabel("Normalized Improvement")
+            # Plot 4: Performance by distance
+            if "normalized_improvement" in summary_df.columns:
+                scatter = axes[1, 1].scatter(
+                    summary_df["initial_distance"], 
+                    summary_df["normalized_improvement"],
+                    c=summary_df["target_reached"].astype(bool).map({True: 'green', False: 'red'}),
+                    alpha=0.7
+                )
+                axes[1, 1].set_title("Performance by Initial Distance")
+                axes[1, 1].set_xlabel("Initial Distance (m)")
+                axes[1, 1].set_ylabel("Normalized Improvement")
+                
+                # Add legend for target reached status
+                from matplotlib.lines import Line2D
+                legend_elements = [
+                    Line2D([0], [0], marker='o', color='w', markerfacecolor='green', 
+                        markersize=10, label='Target Reached'),
+                    Line2D([0], [0], marker='o', color='w', markerfacecolor='red', 
+                        markersize=10, label='Target Not Reached')
+                ]
+                axes[1, 1].legend(handles=legend_elements)
             
             plt.tight_layout()
-            plt.savefig(os.path.join(output_dir, "experiment_summary.png"))
+            plt.savefig(os.path.join(output_dir, "episode_summary.png"))
             plt.close(fig)
+            
+            # Additional plot: Collision count per episode
+            if "collisions" in summary_df.columns:
+                plt.figure(figsize=(10, 5))
+                plt.bar(summary_df["episode_id"], summary_df["collisions"])
+                plt.title("Collisions per Episode")
+                plt.xlabel("Episode")
+                plt.ylabel("Collision Count")
+                plt.savefig(os.path.join(output_dir, "collision_count.png"))
+                plt.close()
+        
+        # 3. Plot metrics across all episodes
+        # Distance to target over time for all episodes
+        plt.figure(figsize=(12, 6))
+        for episode_id in df["episode_id"].unique():
+            episode_data = df[df["episode_id"] == episode_id]
+            plt.plot(episode_data["step"], episode_data["distance_to_target"], 
+                    label=f"Episode {episode_id}")
+        
+        plt.title("Distance to Target Over Time")
+        plt.xlabel("Step")
+        plt.ylabel("Distance (m)")
+        plt.grid(True)
+        
+        # Add custom legend or remove if too many episodes
+        if len(df["episode_id"].unique()) <= 10:
+            plt.legend()
+        
+        plt.savefig(os.path.join(output_dir, "distance_to_target.png"))
+        plt.close()
+        
+        # 4. Create raycast visualization summary if debug data exists
+        debug_dir = os.path.join(os.path.dirname(metrics_file), "debug_raycasts")
+        if os.path.exists(debug_dir):
+            raycast_files = [f for f in os.listdir(debug_dir) if f.endswith('.json')]
+            
+            if raycast_files:
+                # Create a summary of raycast success rates
+                raycast_stats = []
+                
+                for raycast_file in raycast_files:
+                    try:
+                        with open(os.path.join(debug_dir, raycast_file), 'r') as f:
+                            data = json.load(f)
+                            
+                            # Extract episode number
+                            episode_id = int(raycast_file.split('_')[-1].split('.')[0].replace('ep', ''))
+                            
+                            # Calculate success rate
+                            valid_tests = sum(1 for test in data.get("ray_tests", []) if test.get("valid", False))
+                            total_tests = len(data.get("ray_tests", []))
+                            
+                            if total_tests > 0:
+                                raycast_stats.append({
+                                    "episode_id": episode_id,
+                                    "valid_tests": valid_tests,
+                                    "total_tests": total_tests,
+                                    "success_rate": valid_tests / total_tests,
+                                    "failures": len(data.get("failures", [])),
+                                    "valid_targets": len(data.get("valid_targets", []))
+                                })
+                    except Exception as e:
+                        logging.warning(f"Failed to process raycast file {raycast_file}: {e}")
+                
+                if raycast_stats:
+                    # Create a DataFrame from the stats
+                    raycast_df = pd.DataFrame(raycast_stats)
+                    
+                    # Plot raycast success rate by episode
+                    plt.figure(figsize=(10, 6))
+                    plt.bar(raycast_df["episode_id"], raycast_df["success_rate"] * 100)
+                    plt.title("Raycast Success Rate by Episode")
+                    plt.xlabel("Episode ID")
+                    plt.ylabel("Success Rate (%)")
+                    plt.ylim(0, 100)
+                    plt.grid(True, axis='y')
+                    plt.savefig(os.path.join(output_dir, "raycast_success_rate.png"))
+                    plt.close()
+                    
+                    # Plot valid targets found by episode
+                    plt.figure(figsize=(10, 6))
+                    plt.bar(raycast_df["episode_id"], raycast_df["valid_targets"], color='green')
+                    plt.title("Valid Targets Found by Episode")
+                    plt.xlabel("Episode ID")
+                    plt.ylabel("Valid Target Count")
+                    plt.grid(True, axis='y')
+                    plt.savefig(os.path.join(output_dir, "valid_targets_count.png"))
+                    plt.close()
+        
+        logging.info(f"Created metrics plots in {output_dir}")
+        return True
+        
     except Exception as e:
-        logging.error(f"Error generating summary plots: {e}")
-    
-    # Shutdown server
-    julia_server.shutdown()
-    logging.info(f"Experiment completed. Results saved to {output_dir}")
+        logging.error(f"Error creating plots: {e}")
+        traceback.print_exc()
+        return False
 
 def main():
     """Main entry point with experiment configuration"""
