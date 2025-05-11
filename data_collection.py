@@ -763,7 +763,8 @@ def move_to_waypoint(client, current_pos, waypoint, velocity=2):
         client.hoverAsync().join()
 
 def sample_visible_target(current_pos: List[float], distance_range: Tuple[float, float], 
-                          client: airsim.MultirotorClient, max_attempts: int = 100) -> List[float]:
+                          client: airsim.MultirotorClient, max_attempts: int = 100,
+                          episode_id: int = 0, seed: int = None) -> List[float]:
     """Sample a random target position within distance bounds that is visible to the drone
     
     Args:
@@ -771,6 +772,8 @@ def sample_visible_target(current_pos: List[float], distance_range: Tuple[float,
         distance_range: (min_distance, max_distance) in meters
         client: AirSim client instance
         max_attempts: Maximum sampling attempts before giving up
+        episode_id: Current episode ID to influence randomization
+        seed: Random seed for deterministic behavior
         
     Returns:
         List[float]: Target position [x, y, z] in NED coordinates
@@ -780,10 +783,29 @@ def sample_visible_target(current_pos: List[float], distance_range: Tuple[float,
     """
     min_dist, max_dist = distance_range
     
+    # Create a separate random generator for deterministic target generation
+    if seed is not None:
+        # Use episode_id to get different but deterministic targets for each episode
+        target_rng = random.Random(seed + episode_id)
+    else:
+        target_rng = random.Random()
+    
+    # Adapt the distance range based on the episode
+    # This creates a progression of targets with varying distances
+    if episode_id > 0:
+        # The early episodes get shorter distances, later episodes get longer distances
+        episode_factor = min(1.0, episode_id / 10)  # Scales from 0.1 to 1.0 over first 10 episodes
+        
+        # Adjust the distance range
+        min_dist = min_dist + (episode_factor * 5)  # Gradually increase minimum distance
+        max_dist = min(max_dist, min_dist + 20 + (episode_factor * 30))  # Gradually increase range span
+    
+    logging.info(f"Target distance range for episode {episode_id}: {min_dist:.1f}m - {max_dist:.1f}m")
+    
     for attempt in range(max_attempts):
         # Sample random direction (uniform on sphere)
-        theta = random.uniform(0, 2 * math.pi)  # Azimuth angle
-        phi = random.uniform(0, math.pi)        # Polar angle
+        theta = target_rng.uniform(0, 2 * math.pi)  # Azimuth angle
+        phi = target_rng.uniform(0, math.pi)        # Polar angle
         
         # Convert spherical to cartesian coordinates
         x = math.sin(phi) * math.cos(theta)
@@ -791,7 +813,7 @@ def sample_visible_target(current_pos: List[float], distance_range: Tuple[float,
         z = math.cos(phi)
         
         # Sample random distance within range
-        distance = random.uniform(min_dist, max_dist)
+        distance = target_rng.uniform(min_dist, max_dist)
         
         # Scale direction vector by distance
         direction = np.array([x, y, z]) * distance
@@ -858,7 +880,9 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
         target_pos = sample_visible_target(
             drone_pos, 
             config["target_distance_range"], 
-            client
+            client,
+            episode_id=episode_id,
+            seed=config["random_seed"]
         )
     except ValueError as e:
         logging.warning(f"Episode {episode_id}: {str(e)}")
@@ -875,12 +899,11 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
     start_time = time.time()
     trajectory = [drone_pos]
     
-    # Initialize stuck detection variables
-    position_history = [drone_pos]
-    stuck_threshold = 1.0  # Position must change by at least this much over stuck_window steps
-    stuck_window = 5  # Number of steps to check for being stuck
-    timeout_counter = 0
-    episode_timeout = config.get("episode_timeout", 120)  # Timeout in seconds
+    # Initialize stuck detection variables - based on time rather than movement
+    last_significant_movement_time = start_time
+    last_position = np.array(drone_pos)
+    stuck_timeout = config.get("stuck_timeout", 15.0)  # Time in seconds to consider the drone stuck
+    min_movement_threshold = 0.5  # Minimum movement in meters to consider significant
     
     # Initial distance to target
     distance_to_target = np.linalg.norm(np.array(target_pos) - np.array(drone_pos))
@@ -896,8 +919,8 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
         step_start_time = time.time()
         
         # Check for episode timeout
-        if time.time() - start_time > episode_timeout:
-            logging.warning(f"Episode {episode_id}: Timeout after {episode_timeout} seconds")
+        if time.time() - start_time > config.get("episode_timeout", 120):
+            logging.warning(f"Episode {episode_id}: Timeout after {config.get('episode_timeout', 120)} seconds")
             status = "timeout"
             break
         
@@ -909,29 +932,27 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
             drone_state.position.z_val
         ]
         
-        # Add position to history for stuck detection
-        position_history.append(drone_pos)
-        if len(position_history) > stuck_window:
-            position_history.pop(0)
+        # Check if drone has moved significantly
+        current_position = np.array(drone_pos)
+        movement = np.linalg.norm(current_position - last_position)
+        
+        if movement > min_movement_threshold:
+            # Drone has moved significantly, update time and position
+            last_significant_movement_time = time.time()
+            last_position = current_position
+            logging.debug(f"Episode {episode_id}: Significant movement detected: {movement:.2f}m")
+        
+        # Check if drone is stuck (no significant movement for too long)
+        time_since_movement = time.time() - last_significant_movement_time
+        if time_since_movement > stuck_timeout:
+            logging.error(f"Episode {episode_id}: Drone stuck for {time_since_movement:.1f}s (>= {stuck_timeout}s), aborting")
+            status = "stuck"
+            break
             
-            # Check if drone is stuck
-            if len(position_history) >= stuck_window:
-                start_pos = np.array(position_history[0])
-                end_pos = np.array(position_history[-1])
-                movement = np.linalg.norm(end_pos - start_pos)
-                
-                if movement < stuck_threshold:
-                    timeout_counter += 1
-                    logging.warning(f"Episode {episode_id}: Possible stuck detected (movement: {movement:.2f}m)")
-                    
-                    # If drone has been stuck for too many consecutive checks, abort the episode
-                    if timeout_counter >= 3:  # Stuck for 3 consecutive checks
-                        logging.error(f"Episode {episode_id}: Drone stuck, aborting episode")
-                        status = "stuck"
-                        break
-                else:
-                    # Reset counter if movement detected
-                    timeout_counter = 0
+        # Log stuck detection progress if approaching timeout
+        if time_since_movement > stuck_timeout * 0.6:  # At 60% of timeout
+            logging.warning(f"Episode {episode_id}: No significant movement for {time_since_movement:.1f}s " +
+                           f"(timeout: {stuck_timeout}s)")
         
         # Check for collisions
         collision_info = client.simGetCollisionInfo()
@@ -1037,7 +1058,7 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
             "obstacles_count": len(obstacle_positions),
             "inference_time_ms": inference_time,
             "replanning_occurred": retry_count > 0 if 'retry_count' in locals() else False,
-            "stuck_counter": timeout_counter
+            "time_since_movement": time_since_movement
         }
         step_metrics.append(step_data)
         
