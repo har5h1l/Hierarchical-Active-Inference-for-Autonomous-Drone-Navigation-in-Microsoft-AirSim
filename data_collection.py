@@ -802,6 +802,14 @@ def sample_visible_target(current_pos: List[float], distance_range: Tuple[float,
     
     logging.info(f"Target distance range for episode {episode_id}: {min_dist:.1f}m - {max_dist:.1f}m")
     
+    # Verify the drone's position is valid for sampling
+    if current_pos[2] > -1.0:  # NED coordinates: Z is negative for altitude
+        logging.warning(f"Sampling target with drone too close to ground (alt: {current_pos[2]:.2f}m)")
+    
+    valid_targets = []  # Track all valid targets for potential selection
+    best_target = None  # Best target based on obstacle clearance
+    best_obstacle_clearance = 0.0  # Track the best clearance found
+    
     for attempt in range(max_attempts):
         # Sample random direction (uniform on sphere)
         theta = target_rng.uniform(0, 2 * math.pi)  # Azimuth angle
@@ -827,23 +835,80 @@ def sample_visible_target(current_pos: List[float], distance_range: Tuple[float,
         # Convert to Vector3r for line of sight test
         target_vector = airsim.Vector3r(target_pos[0], target_pos[1], target_pos[2])
         
-        # Test line of sight - note: simTestLineOfSightToPoint expects (point, vehicle_name)
-        # The vehicle_name is optional and defaults to empty string which means the default vehicle
+        # Try to get obstacle clearance info for better target selection
         try:
-            if client.simTestLineOfSightToPoint(target_vector):
-                logging.info(f"Found valid target at {target_pos.tolist()} (attempt {attempt+1})")
-                return target_pos.tolist()
+            # Test line of sight with the appropriate API call
+            los_result = client.simTestLineOfSightToPoint(target_vector)
+            
+            if los_result:
+                # Target is visible - get additional information about clearance if possible
+                valid_targets.append(target_pos.tolist())
+                
+                # Check obstacle density in target area
+                try:
+                    obstacle_positions, obstacle_distances = scanner.fetch_density_distances()
+                    if obstacle_distances:
+                        # Calculate distances from potential target to nearby obstacles
+                        target_obstacle_distances = [
+                            np.linalg.norm(np.array(target_pos) - np.array(obs_pos))
+                            for obs_pos in obstacle_positions
+                        ]
+                        
+                        # Find the minimum distance to any obstacle
+                        if target_obstacle_distances:
+                            min_obstacle_distance = min(target_obstacle_distances)
+                            
+                            # If this target has better clearance than our previous best, update it
+                            if min_obstacle_distance > best_obstacle_clearance:
+                                best_obstacle_clearance = min_obstacle_distance
+                                best_target = target_pos.tolist()
+                                logging.debug(f"Better target found with {min_obstacle_distance:.2f}m obstacle clearance")
+                    
+                    # If we found a really good target (>5m clearance), stop early
+                    if best_obstacle_clearance > 5.0:
+                        logging.info(f"Found excellent target with {best_obstacle_clearance:.2f}m obstacle clearance")
+                        return best_target
+                except Exception as e:
+                    logging.debug(f"Error checking obstacle density near target: {e}")
+                
+                # Log that we found a valid target
+                logging.debug(f"Found valid target at {target_pos.tolist()} (attempt {attempt+1})")
+                
+                # If this is the first valid target, we'll use it as our initial best
+                if best_target is None:
+                    best_target = target_pos.tolist()
+                    logging.info(f"Found first valid target at {best_target}")
+                
+                # Every 10 valid targets, report progress
+                if len(valid_targets) % 10 == 0:
+                    logging.info(f"Found {len(valid_targets)} valid targets so far")
+                
+                # If we've found at least 3 valid targets, we can start being selective
+                if len(valid_targets) >= 3:
+                    # Return the best target we've found so far
+                    if best_target:
+                        return best_target
+                    # Or just return the last valid target
+                    return valid_targets[-1]
+                
+            # If line of sight fails, continue to next attempt
+                
         except Exception as e:
-            logging.warning(f"Error in line of sight test: {e}")
-            # If there's an error with the API call, try a simplified approach
-            # Just check if target is far enough from obstacles
-            # This is a fallback if the AirSim API call doesn't work properly
-            return target_pos.tolist()  # Return the target anyway
+            logging.warning(f"Error in line of sight test (attempt {attempt+1}): {e}")
+            # Don't return invalid targets on error - keep searching
     
-    # If we couldn't find a visible target after max attempts, just return the last one
-    # This is a fallback to avoid failing the episode
-    logging.warning(f"No unobstructed target found after {max_attempts} attempts. Using last sampled position.")
-    return target_pos.tolist()
+    # After exhausting all attempts, return the best target if found
+    if best_target:
+        logging.info(f"Using best target found with {best_obstacle_clearance:.2f}m clearance")
+        return best_target
+    
+    # Or return any valid target we found
+    if valid_targets:
+        logging.info(f"No ideal target found, using one of {len(valid_targets)} valid targets")
+        return target_rng.choice(valid_targets)  # Random choice from valid targets
+    
+    # If we couldn't find ANY valid target, raise an error
+    raise ValueError(f"No unobstructed target found after {max_attempts} attempts")
 
 def run_episode(episode_id: int, client: airsim.MultirotorClient, 
                 zmq_interface: ZMQInterface, scanner: Scanner, 
@@ -867,15 +932,31 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
     client.enableApiControl(True)
     client.armDisarm(True)
     
-    # Takeoff
+    # Takeoff - CRITICAL: We must take off before checking target visibility
+    logging.info(f"Episode {episode_id}: Taking off...")
     client.takeoffAsync().join()
-    time.sleep(1)  # Give time to stabilize
+    time.sleep(2)  # Extended stabilization time to ensure proper altitude before sampling target
     
-    # Get initial position
+    # Get initial position - AFTER takeoff
     drone_state = client.getMultirotorState().kinematics_estimated
     drone_pos = [drone_state.position.x_val, drone_state.position.y_val, drone_state.position.z_val]
     
-    # Sample a random target
+    # Ensure drone is at a reasonable altitude before sampling targets
+    if drone_pos[2] > -1.0:  # In NED coordinates, negative Z is up
+        logging.warning(f"Episode {episode_id}: Drone altitude too low ({drone_pos[2]:.2f}), adjusting height")
+        # Move up to ensure better visibility for target sampling
+        adjusted_height_pos = [drone_pos[0], drone_pos[1], -5.0]  # Minimum 5m above ground
+        client.moveToPositionAsync(
+            adjusted_height_pos[0], adjusted_height_pos[1], adjusted_height_pos[2], 2
+        ).join()
+        time.sleep(1)  # Wait for height adjustment
+        
+        # Update position after height adjustment
+        drone_state = client.getMultirotorState().kinematics_estimated
+        drone_pos = [drone_state.position.x_val, drone_state.position.y_val, drone_state.position.z_val]
+        logging.info(f"Episode {episode_id}: Adjusted drone height to {drone_pos[2]:.2f}m")
+    
+    # Sample a random target - NOW we can safely check visibility
     try:
         target_pos = sample_visible_target(
             drone_pos, 
@@ -899,11 +980,13 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
     start_time = time.time()
     trajectory = [drone_pos]
     
-    # Initialize stuck detection variables - based on time rather than movement
+    # Initialize stuck detection variables
     last_significant_movement_time = start_time
     last_position = np.array(drone_pos)
     stuck_timeout = config.get("stuck_timeout", 15.0)  # Time in seconds to consider the drone stuck
     min_movement_threshold = 0.5  # Minimum movement in meters to consider significant
+    stuck_check_interval = config.get("stuck_check_interval", 3.0)  # Only check for stuck condition every X seconds
+    last_stuck_check_time = start_time
     
     # Initial distance to target
     distance_to_target = np.linalg.norm(np.array(target_pos) - np.array(drone_pos))
@@ -932,6 +1015,15 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
             drone_state.position.z_val
         ]
         
+        # Calculate distance to target
+        distance_to_target = np.linalg.norm(np.array(target_pos) - np.array(drone_pos))
+        
+        # Check if target reached - IMPORTANT: Do this before stuck detection
+        if distance_to_target <= ARRIVAL_THRESHOLD:
+            logging.info(f"Episode {episode_id}: Target reached at step {step}")
+            status = "success"
+            break
+        
         # Check if drone has moved significantly
         current_position = np.array(drone_pos)
         movement = np.linalg.norm(current_position - last_position)
@@ -942,32 +1034,32 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
             last_position = current_position
             logging.debug(f"Episode {episode_id}: Significant movement detected: {movement:.2f}m")
         
-        # Check if drone is stuck (no significant movement for too long)
-        time_since_movement = time.time() - last_significant_movement_time
-        if time_since_movement > stuck_timeout:
-            logging.error(f"Episode {episode_id}: Drone stuck for {time_since_movement:.1f}s (>= {stuck_timeout}s), aborting")
-            status = "stuck"
-            break
+        # Only check for stuck condition at specified intervals (not every step)
+        # And don't check when drone is close to the target (within 2x the arrival threshold)
+        current_time = time.time()
+        if (current_time - last_stuck_check_time >= stuck_check_interval and 
+                distance_to_target > ARRIVAL_THRESHOLD * 2):
             
-        # Log stuck detection progress if approaching timeout
-        if time_since_movement > stuck_timeout * 0.6:  # At 60% of timeout
-            logging.warning(f"Episode {episode_id}: No significant movement for {time_since_movement:.1f}s " +
-                           f"(timeout: {stuck_timeout}s)")
-        
+            # Update the last check time
+            last_stuck_check_time = current_time
+            
+            # Check if drone is stuck (no significant movement for too long)
+            time_since_movement = current_time - last_significant_movement_time
+            if time_since_movement > stuck_timeout:
+                logging.error(f"Episode {episode_id}: Drone stuck for {time_since_movement:.1f}s (>= {stuck_timeout}s), aborting")
+                status = "stuck"
+                break
+                
+            # Log stuck detection progress if approaching timeout
+            if time_since_movement > stuck_timeout * 0.6:  # At 60% of timeout
+                logging.warning(f"Episode {episode_id}: No significant movement for {time_since_movement:.1f}s " +
+                              f"(timeout: {stuck_timeout}s)")
+
         # Check for collisions
         collision_info = client.simGetCollisionInfo()
         if collision_info.has_collided:
             collisions += 1
             logging.warning(f"Episode {episode_id}: Collision detected at step {step}")
-        
-        # Calculate distance to target
-        distance_to_target = np.linalg.norm(np.array(target_pos) - np.array(drone_pos))
-        
-        # Check if target reached
-        if distance_to_target <= ARRIVAL_THRESHOLD:
-            logging.info(f"Episode {episode_id}: Target reached at step {step}")
-            status = "success"
-            break
         
         # Get obstacle data
         obstacle_positions, obstacle_distances = scanner.fetch_density_distances()
