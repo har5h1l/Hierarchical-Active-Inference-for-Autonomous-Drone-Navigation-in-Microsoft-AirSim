@@ -1264,6 +1264,7 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
     min_movement_threshold = 0.5  # Minimum movement in meters to consider significant
     stuck_check_interval = config.get("stuck_check_interval", 3.0)  # Only check for stuck condition every X seconds
     last_stuck_check_time = start_time
+    time_since_movement = 0.0  # Initialize time_since_movement to avoid UnboundLocalError
     
     # Initial distance to target
     distance_to_target = np.linalg.norm(np.array(target_pos) - np.array(drone_pos))
