@@ -749,9 +749,6 @@ def move_to_waypoint(client, current_pos, waypoint, velocity=2):
         logging.debug(f"Moving with yaw: {yaw_degrees:.1f}° at velocity: {velocity} m/s")
         logging.debug(f"Movement vector: [{movement_vector[0]:.2f}, {movement_vector[1]:.2f}, {movement_vector[2]:.2f}]")
         
-        # Always ensure camera is forward-facing regardless of drone orientation
-        client.simSetCameraOrientation("0", airsim.to_quaternion(0, 0, 0))
-        
         # Move drone with yaw control
         client.moveToPositionAsync(
             waypoint[0], waypoint[1], waypoint[2],
@@ -851,9 +848,6 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
     # Takeoff
     client.takeoffAsync().join()
     time.sleep(1)  # Give time to stabilize
-    
-    # Set initial camera orientation (forward-facing)
-    client.simSetCameraOrientation("0", airsim.to_quaternion(0, 0, 0))  # pitch, roll, yaw
     
     # Get initial position
     drone_state = client.getMultirotorState().kinematics_estimated
@@ -1012,30 +1006,9 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
             logging.error(f"Episode {episode_id}: Invalid waypoint received (contains NaN or Inf)")
             status = "invalid_waypoint"
             break
-            
-        # Enforce minimum and maximum waypoint distance
-        min_waypoint_distance = 0.3  # Minimum distance for a single waypoint
-        max_waypoint_distance = 10.0  # Maximum distance for a single waypoint
-        waypoint_distance = np.linalg.norm(waypoint_array - np.array(drone_pos))
-        
-        # If waypoint is too close, extend it in the same direction
-        if waypoint_distance < min_waypoint_distance and waypoint_distance > 0.001:
-            logging.warning(f"Episode {episode_id}: Waypoint too close ({waypoint_distance:.2f}m), extending")
-            direction = (waypoint_array - np.array(drone_pos)) / waypoint_distance
-            next_waypoint = (np.array(drone_pos) + direction * min_waypoint_distance).tolist()
-            waypoint_distance = min_waypoint_distance  # Update for logging
-            
-        # If waypoint is too far, scale it down
-        elif waypoint_distance > max_waypoint_distance:
-            logging.warning(f"Episode {episode_id}: Waypoint too far ({waypoint_distance:.2f}m), scaling down")
-            direction = (waypoint_array - np.array(drone_pos)) / waypoint_distance
-            next_waypoint = (np.array(drone_pos) + direction * max_waypoint_distance).tolist()
-            waypoint_distance = max_waypoint_distance  # Update for logging
-            
-        logging.debug(f"Episode {episode_id}: Final waypoint distance: {waypoint_distance:.2f}m")
         
         # Compute action magnitude
-        action_magnitude = waypoint_distance  # Already calculated above
+        action_magnitude = np.linalg.norm(np.array(next_waypoint) - np.array(drone_pos))
         
         # Extract additional metrics from policy if available
         # These would need to be included in the Julia server response
