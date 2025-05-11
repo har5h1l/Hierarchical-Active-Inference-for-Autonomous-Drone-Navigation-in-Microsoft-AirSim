@@ -710,14 +710,25 @@ def move_to_waypoint(client, current_pos, waypoint, velocity=2):
         movement_vector = np.array(waypoint) - np.array(current_pos)
         distance = np.linalg.norm(movement_vector)
         
-        # Safety check for movement distance
-        if distance < 0.1:
-            print("Movement distance too small, using current orientation")
-            client.moveToPositionAsync(
-                waypoint[0], waypoint[1], waypoint[2],
-                velocity
-            ).join()
-            return
+        # Enforce minimum movement distance
+        min_movement_distance = 0.3  # Minimum movement distance in meters
+        if distance < min_movement_distance:
+            logging.warning(f"Waypoint too close ({distance:.2f}m), extending to minimum distance {min_movement_distance}m")
+            # Extend the waypoint in the same direction to meet minimum distance
+            if distance > 0.001:  # Avoid division by zero
+                # Normalize the movement vector and scale to minimum distance
+                normalized_vector = movement_vector / distance
+                extended_vector = normalized_vector * min_movement_distance
+                waypoint = (np.array(current_pos) + extended_vector).tolist()
+                # Recalculate movement vector and distance
+                movement_vector = np.array(waypoint) - np.array(current_pos)
+                distance = np.linalg.norm(movement_vector)
+            else:
+                # If distance is effectively zero, create movement in a default direction
+                logging.warning("Movement distance effectively zero, creating default movement direction")
+                waypoint = [current_pos[0] + min_movement_distance, current_pos[1], current_pos[2]]
+                movement_vector = np.array(waypoint) - np.array(current_pos)
+                distance = np.linalg.norm(movement_vector)
         
         # Calculate yaw angle in radians
         # In NED coordinates, yaw is measured from North (x-axis) and increases clockwise
@@ -735,8 +746,11 @@ def move_to_waypoint(client, current_pos, waypoint, velocity=2):
         elif yaw_degrees > 180:
             yaw_degrees -= 360
             
-        print(f"Moving with yaw: {yaw_degrees:.1f}° at velocity: {velocity} m/s")
-        print(f"Movement vector: [{movement_vector[0]:.2f}, {movement_vector[1]:.2f}, {movement_vector[2]:.2f}]")
+        logging.debug(f"Moving with yaw: {yaw_degrees:.1f}° at velocity: {velocity} m/s")
+        logging.debug(f"Movement vector: [{movement_vector[0]:.2f}, {movement_vector[1]:.2f}, {movement_vector[2]:.2f}]")
+        
+        # Always ensure camera is forward-facing regardless of drone orientation
+        client.simSetCameraOrientation("0", airsim.to_quaternion(0, 0, 0))
         
         # Move drone with yaw control
         client.moveToPositionAsync(
@@ -746,18 +760,10 @@ def move_to_waypoint(client, current_pos, waypoint, velocity=2):
             yaw_mode=airsim.YawMode(is_rate=False, yaw_or_rate=yaw_degrees)
         ).join()
     except Exception as e:
-        print(f"Error in move_to_waypoint: {e}")
+        logging.error(f"Error in move_to_waypoint: {e}")
         traceback.print_exc()
-        # Fallback to simple movement without yaw control
-        try:
-            client.moveToPositionAsync(
-                waypoint[0], waypoint[1], waypoint[2],
-                velocity
-            ).join()
-        except Exception as e2:
-            print(f"Fallback movement also failed: {e2}")
-            # Last resort - hover in place
-            client.hoverAsync().join()
+        # In case of error, just hover in place
+        client.hoverAsync().join()
 
 def sample_visible_target(current_pos: List[float], distance_range: Tuple[float, float], 
                           client: airsim.MultirotorClient, max_attempts: int = 100) -> List[float]:
@@ -846,6 +852,9 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
     client.takeoffAsync().join()
     time.sleep(1)  # Give time to stabilize
     
+    # Set initial camera orientation (forward-facing)
+    client.simSetCameraOrientation("0", airsim.to_quaternion(0, 0, 0))  # pitch, roll, yaw
+    
     # Get initial position
     drone_state = client.getMultirotorState().kinematics_estimated
     drone_pos = [drone_state.position.x_val, drone_state.position.y_val, drone_state.position.z_val]
@@ -872,6 +881,13 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
     start_time = time.time()
     trajectory = [drone_pos]
     
+    # Initialize stuck detection variables
+    position_history = [drone_pos]
+    stuck_threshold = 1.0  # Position must change by at least this much over stuck_window steps
+    stuck_window = 5  # Number of steps to check for being stuck
+    timeout_counter = 0
+    episode_timeout = config.get("episode_timeout", 120)  # Timeout in seconds
+    
     # Initial distance to target
     distance_to_target = np.linalg.norm(np.array(target_pos) - np.array(drone_pos))
     initial_distance = distance_to_target
@@ -885,6 +901,12 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
     for step in range(config["max_steps_per_episode"]):
         step_start_time = time.time()
         
+        # Check for episode timeout
+        if time.time() - start_time > episode_timeout:
+            logging.warning(f"Episode {episode_id}: Timeout after {episode_timeout} seconds")
+            status = "timeout"
+            break
+        
         # Get current drone position
         drone_state = client.getMultirotorState().kinematics_estimated
         drone_pos = [
@@ -892,6 +914,30 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
             drone_state.position.y_val,
             drone_state.position.z_val
         ]
+        
+        # Add position to history for stuck detection
+        position_history.append(drone_pos)
+        if len(position_history) > stuck_window:
+            position_history.pop(0)
+            
+            # Check if drone is stuck
+            if len(position_history) >= stuck_window:
+                start_pos = np.array(position_history[0])
+                end_pos = np.array(position_history[-1])
+                movement = np.linalg.norm(end_pos - start_pos)
+                
+                if movement < stuck_threshold:
+                    timeout_counter += 1
+                    logging.warning(f"Episode {episode_id}: Possible stuck detected (movement: {movement:.2f}m)")
+                    
+                    # If drone has been stuck for too many consecutive checks, abort the episode
+                    if timeout_counter >= 3:  # Stuck for 3 consecutive checks
+                        logging.error(f"Episode {episode_id}: Drone stuck, aborting episode")
+                        status = "stuck"
+                        break
+                else:
+                    # Reset counter if movement detected
+                    timeout_counter = 0
         
         # Check for collisions
         collision_info = client.simGetCollisionInfo()
@@ -911,6 +957,13 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
         # Get obstacle data
         obstacle_positions, obstacle_distances = scanner.fetch_density_distances()
         
+        # Log obstacle detection info for debugging
+        if step % 10 == 0:  # Log every 10 steps to avoid excessive logging
+            logging.debug(f"Episode {episode_id}: Detected {len(obstacle_positions)} obstacles")
+            if len(obstacle_positions) > 0:
+                min_dist = min(obstacle_distances) if obstacle_distances else "N/A"
+                logging.debug(f"Episode {episode_id}: Closest obstacle at {min_dist}m")
+        
         # Create observation for active inference
         observation = {
             "drone_position": drone_pos,
@@ -923,6 +976,15 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
             "density_radius": DENSITY_RADIUS
         }
         
+        # Verify the observation is valid before sending
+        has_nans = any(np.isnan(np.array(drone_pos))) or any(np.isnan(np.array(target_pos)))
+        has_infs = any(np.isinf(np.array(drone_pos))) or any(np.isinf(np.array(target_pos)))
+        
+        if has_nans or has_infs:
+            logging.error(f"Episode {episode_id}: Invalid position data detected (NaN or Inf)")
+            status = "invalid_data"
+            break
+
         # Get next waypoint and planning metrics
         inference_start = time.time()
         next_waypoint, policy = zmq_interface.send_observation_and_receive_action(observation)
@@ -943,9 +1005,37 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
                 logging.error(f"Episode {episode_id}: Aborting after failed replanning")
                 status = "planning_failure"
                 break
+                
+        # Verify waypoint is valid
+        waypoint_array = np.array(next_waypoint)
+        if np.any(np.isnan(waypoint_array)) or np.any(np.isinf(waypoint_array)):
+            logging.error(f"Episode {episode_id}: Invalid waypoint received (contains NaN or Inf)")
+            status = "invalid_waypoint"
+            break
+            
+        # Enforce minimum and maximum waypoint distance
+        min_waypoint_distance = 0.3  # Minimum distance for a single waypoint
+        max_waypoint_distance = 10.0  # Maximum distance for a single waypoint
+        waypoint_distance = np.linalg.norm(waypoint_array - np.array(drone_pos))
+        
+        # If waypoint is too close, extend it in the same direction
+        if waypoint_distance < min_waypoint_distance and waypoint_distance > 0.001:
+            logging.warning(f"Episode {episode_id}: Waypoint too close ({waypoint_distance:.2f}m), extending")
+            direction = (waypoint_array - np.array(drone_pos)) / waypoint_distance
+            next_waypoint = (np.array(drone_pos) + direction * min_waypoint_distance).tolist()
+            waypoint_distance = min_waypoint_distance  # Update for logging
+            
+        # If waypoint is too far, scale it down
+        elif waypoint_distance > max_waypoint_distance:
+            logging.warning(f"Episode {episode_id}: Waypoint too far ({waypoint_distance:.2f}m), scaling down")
+            direction = (waypoint_array - np.array(drone_pos)) / waypoint_distance
+            next_waypoint = (np.array(drone_pos) + direction * max_waypoint_distance).tolist()
+            waypoint_distance = max_waypoint_distance  # Update for logging
+            
+        logging.debug(f"Episode {episode_id}: Final waypoint distance: {waypoint_distance:.2f}m")
         
         # Compute action magnitude
-        action_magnitude = np.linalg.norm(np.array(next_waypoint) - np.array(drone_pos))
+        action_magnitude = waypoint_distance  # Already calculated above
         
         # Extract additional metrics from policy if available
         # These would need to be included in the Julia server response
@@ -973,7 +1063,8 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
             "collision": collision_info.has_collided,
             "obstacles_count": len(obstacle_positions),
             "inference_time_ms": inference_time,
-            "replanning_occurred": retry_count > 0 if 'retry_count' in locals() else False
+            "replanning_occurred": retry_count > 0 if 'retry_count' in locals() else False,
+            "stuck_counter": timeout_counter
         }
         step_metrics.append(step_data)
         
@@ -985,6 +1076,11 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
         
         # Brief pause to stabilize
         time.sleep(0.2)
+        
+        # Check step duration for performance monitoring
+        step_duration = time.time() - step_start_time
+        if step_duration > 5.0:  # If a step takes more than 5 seconds, it might indicate issues
+            logging.warning(f"Episode {episode_id}: Step {step} took {step_duration:.2f}s (unusually long)")
     
     # Episode ended - calculate final metrics
     episode_duration = time.time() - start_time
@@ -997,43 +1093,6 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
         drone_state.position.z_val
     ]
     final_distance = np.linalg.norm(np.array(target_pos) - np.array(final_pos))
-    
-    # Visualize trajectory
-    if config.get("visualize_trajectories", False):
-        try:
-            trajectory_array = np.array(trajectory)
-            
-            fig = plt.figure(figsize=(10, 8))
-            ax = fig.add_subplot(111, projection='3d')
-            
-            # Plot trajectory
-            ax.plot(trajectory_array[:, 0], trajectory_array[:, 1], trajectory_array[:, 2], 'b-', label='Drone Path')
-            
-            # Mark start and end points
-            ax.scatter(trajectory_array[0, 0], trajectory_array[0, 1], trajectory_array[0, 2], 
-                       c='green', marker='o', s=100, label='Start')
-            ax.scatter(trajectory_array[-1, 0], trajectory_array[-1, 1], trajectory_array[-1, 2], 
-                       c='red', marker='x', s=100, label='End')
-            
-            # Mark target
-            ax.scatter(target_pos[0], target_pos[1], target_pos[2], 
-                       c='purple', marker='*', s=200, label='Target')
-            
-            # Set labels and title
-            ax.set_xlabel('X (meters)')
-            ax.set_ylabel('Y (meters)')
-            ax.set_zlabel('Z (meters)')
-            ax.set_title(f'Episode {episode_id} Trajectory')
-            ax.legend()
-            
-            # Create directory if doesn't exist
-            os.makedirs(os.path.join(config["output_dir"], "trajectories"), exist_ok=True)
-            
-            # Save figure
-            plt.savefig(os.path.join(config["output_dir"], "trajectories", f'episode_{episode_id}_path.png'))
-            plt.close(fig)
-        except Exception as e:
-            logging.error(f"Error generating trajectory visualization: {e}")
     
     # Land the drone
     client.landAsync().join()
@@ -1054,7 +1113,8 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
         "replanning_percentage": (replanning_count / len(step_metrics) * 100) if step_metrics else 0,
         "duration_seconds": episode_duration,
         "avg_step_time": episode_duration / len(step_metrics) if step_metrics else 0,
-        "avg_inference_time_ms": np.mean([m["inference_time_ms"] for m in step_metrics]) if step_metrics else 0
+        "avg_inference_time_ms": np.mean([m["inference_time_ms"] for m in step_metrics]) if step_metrics else 0,
+        "stuck_detected": status == "stuck"
     }
     
     logging.info(f"Episode {episode_id} completed: {status}")
