@@ -34,7 +34,7 @@ MARGIN = 1.5  # Safety margin for waypoint generation (meters)
 WAYPOINT_SAMPLE_COUNT = 75  # Number of waypoints to consider
 POLICY_LENGTH = 3  # Number of steps in the policy
 DENSITY_RADIUS = 5.0  # Radius for density evaluation
-ARRIVAL_THRESHOLD = 1.2  # meters
+ARRIVAL_THRESHOLD = 1.5 # meters
 MAX_ITERATIONS = 100
 DEFAULT_ZMQ_PORT = 5555  # Default ZMQ server port
 ZMQ_TIMEOUT = 10000  # ZMQ socket timeout in milliseconds (10 seconds)
@@ -673,32 +673,67 @@ class Scanner:
             return [], []
 
 def move_to_waypoint(client, current_pos, waypoint, velocity=2):
-    """Move to waypoint with calculated yaw"""
-    # Calculate movement vector and distance
-    movement_vector = np.array(waypoint) - np.array(current_pos)
-    distance = np.linalg.norm(movement_vector)
+    """Move to waypoint with calculated yaw so drone faces direction of travel
     
-    # Skip yaw calculation for small movements
-    if distance < 0.1:
-        print("Movement distance too small, using current orientation")
+    Args:
+        client: AirSim client instance
+        current_pos: Current drone position [x, y, z]
+        waypoint: Target waypoint [x, y, z]
+        velocity: Movement velocity in m/s
+    """
+    try:
+        # Calculate movement vector and distance
+        movement_vector = np.array(waypoint) - np.array(current_pos)
+        distance = np.linalg.norm(movement_vector)
+        
+        # Safety check for movement distance
+        if distance < 0.1:
+            print("Movement distance too small, using current orientation")
+            client.moveToPositionAsync(
+                waypoint[0], waypoint[1], waypoint[2],
+                velocity
+            ).join()
+            return
+        
+        # Calculate yaw angle in radians
+        # In NED coordinates, yaw is measured from North (x-axis) and increases clockwise
+        # atan2(y, x) will give us the angle in the standard math frame, but we need to ensure
+        # it's properly mapped to the NED coordinate system
+        yaw = math.atan2(movement_vector[1], movement_vector[0])
+        
+        # Convert to degrees for display and for AirSim's YawMode
+        yaw_degrees = math.degrees(yaw)
+        
+        # AirSim expects yaw in degrees, ranging from -180 to 180 or 0 to 360
+        # We already have this range from atan2, but ensure it's clamped correctly
+        if yaw_degrees < -180:
+            yaw_degrees += 360
+        elif yaw_degrees > 180:
+            yaw_degrees -= 360
+            
+        print(f"Moving with yaw: {yaw_degrees:.1f}° at velocity: {velocity} m/s")
+        print(f"Movement vector: [{movement_vector[0]:.2f}, {movement_vector[1]:.2f}, {movement_vector[2]:.2f}]")
+        
+        # Move drone with yaw control
         client.moveToPositionAsync(
             waypoint[0], waypoint[1], waypoint[2],
-            velocity
+            velocity,
+            drivetrain=airsim.DrivetrainType.ForwardOnly,
+            yaw_mode=airsim.YawMode(is_rate=False, yaw_or_rate=yaw_degrees)
         ).join()
-        return
-    
-    # Calculate yaw angle in radians
-    yaw = math.atan2(movement_vector[1], movement_vector[0])
-    yaw_degrees = math.degrees(yaw)
-    print(f"Moving with yaw: {yaw_degrees:.1f}° at velocity: {velocity} m/s")
-    
-    # Move drone with yaw control
-    client.moveToPositionAsync(
-        waypoint[0], waypoint[1], waypoint[2],
-        velocity,
-        drivetrain=airsim.DrivetrainType.ForwardOnly,
-        yaw_mode=airsim.YawMode(is_rate=False, yaw_or_rate=yaw_degrees)
-    ).join()
+    except Exception as e:
+        print(f"Error in move_to_waypoint: {e}")
+        traceback.print_exc()
+        # Fallback to simple movement without yaw control
+        try:
+            client.moveToPositionAsync(
+                waypoint[0], waypoint[1], waypoint[2],
+                velocity
+            ).join()
+        except Exception as e2:
+            print(f"Fallback movement also failed: {e2}")
+            # Last resort - hover in place
+            client.hoverAsync().join()
 
 def main():
     """Main navigation process"""
@@ -767,7 +802,7 @@ def main():
         print(f"Distance to target: {distance_to_target:.2f} meters")
         
         # Manual check for target proximity - immediately exit loop if within 1 meter
-        if distance_to_target <= 1.0:
+        if distance_to_target <= 1.5:
             print("\n🎯 Target reached! Distance is within 1 meter threshold.")
             print("🎉 Successful navigation - terminating early.")
             break
