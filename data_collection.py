@@ -842,7 +842,9 @@ def sample_visible_target(current_pos: List[float], distance_range: Tuple[float,
     for attempt in range(max_attempts):
         # Sample random direction (uniform on sphere)
         theta = target_rng.uniform(0, 2 * math.pi)  # Azimuth angle
-        phi = target_rng.uniform(0, math.pi)        # Polar angle
+        
+        # Constrain polar angle to avoid targets that are too vertical
+        phi = target_rng.uniform(math.pi/6, math.pi/2.5)  # Between ~30° and ~70° from vertical
         
         # Convert spherical to cartesian coordinates
         x = math.sin(phi) * math.cos(theta)
@@ -862,8 +864,8 @@ def sample_visible_target(current_pos: List[float], distance_range: Tuple[float,
         target_pos[2] = min(target_pos[2], -2.0)  # Keep at least 2m below ground level
         
         # Convert to Vector3r for line of sight test
-        target_vector = airsim.Vector3r(target_pos[0], target_pos[1], target_pos[2])
         start_vector = airsim.Vector3r(current_pos[0], current_pos[1], current_pos[2])
+        target_vector = airsim.Vector3r(target_pos[0], target_pos[1], target_pos[2])
         
         # Flag to track if this target is valid across all ray checks
         target_valid = True
@@ -874,7 +876,8 @@ def sample_visible_target(current_pos: List[float], distance_range: Tuple[float,
             try:
                 # For the first ray, test direct line of sight
                 if ray_idx == 0:
-                    los_result = client.simTestLineOfSightToPoint(target_vector)
+                    # Use simTestLineOfSightBetweenPoints for better reliability
+                    los_result = client.simTestLineOfSightBetweenPoints(start_vector, target_vector)
                     ray_origin = start_vector
                     ray_end = target_vector
                 else:
@@ -949,32 +952,44 @@ def sample_visible_target(current_pos: List[float], distance_range: Tuple[float,
             # Target is visible - get additional information about clearance if possible
             valid_targets.append(target_pos.tolist())
             
-            # Check obstacle density in target area
+            # Check obstacle clearance around target
             try:
-                obstacle_positions, obstacle_distances = scanner.fetch_density_distances()
-                if obstacle_distances:
-                    # Calculate distances from potential target to nearby obstacles
-                    target_obstacle_distances = [
-                        np.linalg.norm(np.array(target_pos) - np.array(obs_pos))
-                        for obs_pos in obstacle_positions
-                    ]
-                    
-                    # Find the minimum distance to any obstacle
-                    if target_obstacle_distances:
-                        min_obstacle_distance = min(target_obstacle_distances)
+                # Use simplified clearance check with line of sight tests in multiple directions
+                clearance_dirs = [
+                    np.array([1, 0, 0]), np.array([-1, 0, 0]),
+                    np.array([0, 1, 0]), np.array([0, -1, 0]),
+                    np.array([0, 0, 1]), np.array([0, 0, -1])
+                ]
+                
+                min_obstacle_dist = float('inf')
+                
+                for direction in clearance_dirs:
+                    # Check line of sight in this direction from target
+                    # Try distances from 1m to 10m
+                    for dist in range(1, 11):
+                        check_point = target_pos + (direction * dist)
+                        check_vector = airsim.Vector3r(check_point[0], check_point[1], check_point[2])
                         
-                        # If this target has better clearance than our previous best, update it
-                        if min_obstacle_distance > best_obstacle_clearance:
-                            best_obstacle_clearance = min_obstacle_distance
-                            best_target = target_pos.tolist()
-                            logging.debug(f"Better target found with {min_obstacle_distance:.2f}m obstacle clearance")
-            
+                        # If line of sight fails, we found the obstacle distance
+                        if not client.simTestLineOfSightBetweenPoints(target_vector, check_vector):
+                            if dist < min_obstacle_dist:
+                                min_obstacle_dist = dist
+                            break
+                
+                # If we found a valid obstacle distance
+                if min_obstacle_dist < float('inf'):
+                    # If this target has better clearance than our previous best, update it
+                    if min_obstacle_dist > best_obstacle_clearance:
+                        best_obstacle_clearance = min_obstacle_dist
+                        best_target = target_pos.tolist()
+                        logging.debug(f"Better target found with {min_obstacle_dist:.2f}m obstacle clearance")
+                
                 # If we found a really good target (>5m clearance), stop early
                 if best_obstacle_clearance > 5.0:
                     logging.info(f"Found excellent target with {best_obstacle_clearance:.2f}m obstacle clearance")
                     return best_target
             except Exception as e:
-                logging.debug(f"Error checking obstacle density near target: {e}")
+                logging.debug(f"Error checking obstacle clearance near target: {e}")
             
             # Log that we found a valid target
             logging.debug(f"Found valid target at {target_pos.tolist()} (attempt {attempt+1})")
@@ -1038,7 +1053,7 @@ def sample_visible_target(current_pos: List[float], distance_range: Tuple[float,
         
         # Check if this forward target is valid
         forward_vector3r = airsim.Vector3r(forward_target_pos[0], forward_target_pos[1], forward_target_pos[2])
-        forward_los_result = client.simTestLineOfSightToPoint(forward_vector3r)
+        forward_los_result = client.simTestLineOfSightBetweenPoints(start_vector, forward_vector3r)
         
         if forward_los_result:
             logging.info(f"Using fallback forward target at {forward_target_pos.tolist()}")
