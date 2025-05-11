@@ -143,29 +143,51 @@ function calculate_suitability(obstacle_distance::Float64, obstacle_density::Flo
                              obstacle_weight::Float64=0.7, density_weight::Float64=0.3,
                              cutoff_distance::Float64=2.5, steepness_distance::Float64=3.0,
                              cutoff_density::Float64=0.2, steepness_density::Float64=10.0)::Float64
-    # Safety factor using sigmoid-like function for more predictable transition
-    # 1 / (1 + e^(-steepness * (distance - cutoff)))
-    # When distance equals cutoff, value is 0.5
-    # As distance increases, approaches 1.0
-    # As distance decreases, approaches 0.0
-    safety_factor = 1.0 / (1.0 + exp(-steepness_distance * (obstacle_distance - cutoff_distance)))
+    # Ensure parameters are valid
+    obstacle_weight = clamp(obstacle_weight, 0.0, 1.0)
+    density_weight = clamp(density_weight, 0.0, 1.0)
     
-    # Density factor similarly uses sigmoid-like function, but inverted
-    # 1 / (1 + e^(steepness * (density - cutoff)))
-    # When density equals cutoff, value is 0.5
-    # As density decreases, approaches 1.0
-    # As density increases, approaches 0.0
-    density_factor = 1.0 / (1.0 + exp(steepness_density * (obstacle_density - cutoff_density)))
+    # Normalize weights
+    total_weight = obstacle_weight + density_weight
+    if total_weight > 0
+        obstacle_weight /= total_weight
+        density_weight /= total_weight
+    else
+        # Default to equal weights if both weights are zero
+        obstacle_weight = density_weight = 0.5
+    end
     
-    # Combine factors with relative weights - both should be high for good suitability
-    # Ensure weights sum to 1.0 for proper scaling
-    weight_sum = obstacle_weight + density_weight
-    normalized_obstacle_weight = obstacle_weight / weight_sum
-    normalized_density_weight = density_weight / weight_sum
+    # Calculate distance-based suitability using sigmoid function
+    # Defines a smooth transition from high suitability (far from obstacles)
+    # to low suitability (close to obstacles)
+    # For distances below the hard_cutoff, return 0 (completely unsuitable)
+    hard_cutoff = 1.0  # Absolute minimum distance (meters)
     
-    suitability = normalized_obstacle_weight * safety_factor + normalized_density_weight * density_factor
+    if obstacle_distance <= hard_cutoff
+        distance_suitability = 0.0
+    else
+        # Enhanced sigmoid with sharper dropoff for closer obstacles
+        normalized_dist = (obstacle_distance - cutoff_distance) / steepness_distance
+        distance_suitability = 1.0 / (1.0 + exp(-normalized_dist))
+        
+        # Additional penalty for being close to obstacles
+        if obstacle_distance < cutoff_distance * 1.2
+            # Apply stronger penalty when very close to obstacles
+            close_factor = (obstacle_distance - hard_cutoff) / (cutoff_distance * 1.2 - hard_cutoff)
+            distance_suitability *= close_factor
+        end
+    end
     
-    return clamp(suitability, 0.0, 1.0)  # Ensure result is between 0 and 1
+    # Calculate density-based suitability using sigmoid function
+    # Higher density means lower suitability
+    normalized_density = (cutoff_density - obstacle_density) * steepness_density
+    density_suitability = 1.0 / (1.0 + exp(-normalized_density))
+    
+    # Combine distance and density suitabilities using weighted average
+    suitability = obstacle_weight * distance_suitability + density_weight * density_suitability
+    
+    # Safety clamp to ensure valid range
+    return clamp(suitability, 0.0, 1.0)
 end
 
 """

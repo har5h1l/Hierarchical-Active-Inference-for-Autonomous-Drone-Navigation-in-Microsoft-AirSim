@@ -909,9 +909,15 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
     distance_to_target = np.linalg.norm(np.array(target_pos) - np.array(drone_pos))
     initial_distance = distance_to_target
     
+    # Set initial safety margin (higher value = more conservative)
+    # When far from target, use conservative safety margins
+    # When closer to target, gradually reduce safety margins to allow reaching it
+    base_safety_margin = config.get("safety_margin", MARGIN)
+    
     logging.info(f"Episode {episode_id}: Initial position: {[round(p, 2) for p in drone_pos]}")
     logging.info(f"Episode {episode_id}: Target position: {[round(p, 2) for p in target_pos]}")
     logging.info(f"Episode {episode_id}: Initial distance: {distance_to_target:.2f}m")
+    logging.info(f"Episode {episode_id}: Base safety margin: {base_safety_margin:.2f}m")
     
     # Main navigation loop
     status = "timeout"  # Default status
@@ -963,6 +969,22 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
         # Calculate distance to target
         distance_to_target = np.linalg.norm(np.array(target_pos) - np.array(drone_pos))
         
+        # Dynamically adjust safety margin based on distance to target
+        # This allows more aggressive navigation when closer to the target
+        # But still maintains a minimum safety threshold
+        distance_ratio = min(1.0, distance_to_target / initial_distance)
+        min_safety_margin = 1.0  # Minimum safety margin in meters
+        
+        # Adjust safety margin:
+        # - Use full safety margin when far from target
+        # - Gradually reduce to min_safety_margin when close to target
+        # - But never go below the minimum
+        # - Additional factor: if obstacles are very close, increase margin
+        safety_margin = max(
+            min_safety_margin,
+            base_safety_margin * (0.5 + 0.5 * distance_ratio)  # Scale from 50-100% of base margin
+        )
+        
         # Check if target reached
         if distance_to_target <= ARRIVAL_THRESHOLD:
             logging.info(f"Episode {episode_id}: Target reached at step {step}")
@@ -986,7 +1008,7 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
             "obstacle_positions": obstacle_positions,
             "obstacle_distances": obstacle_distances,
             "waypoint_count": WAYPOINT_SAMPLE_COUNT,
-            "safety_margin": MARGIN,
+            "safety_margin": safety_margin,  # Use the dynamically adjusted safety margin
             "policy_length": POLICY_LENGTH,
             "density_radius": DENSITY_RADIUS
         }
@@ -1056,6 +1078,8 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
             "suitability": suitability,
             "collision": collision_info.has_collided,
             "obstacles_count": len(obstacle_positions),
+            "min_obstacle_distance": min(obstacle_distances) if obstacle_distances else float('inf'),
+            "safety_margin": safety_margin,
             "inference_time_ms": inference_time,
             "replanning_occurred": retry_count > 0 if 'retry_count' in locals() else False,
             "time_since_movement": time_since_movement
