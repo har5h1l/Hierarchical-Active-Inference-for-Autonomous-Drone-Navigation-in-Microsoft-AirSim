@@ -711,7 +711,7 @@ def move_to_waypoint(client, current_pos, waypoint, velocity=2):
         distance = np.linalg.norm(movement_vector)
         
         # Enforce minimum movement distance
-        min_movement_distance = 0.3  # Minimum movement distance in meters
+        min_movement_distance = 0.2  # Reduced minimum movement to 0.2m for finer control in dense areas
         if distance < min_movement_distance:
             logging.warning(f"Waypoint too close ({distance:.2f}m), extending to minimum distance {min_movement_distance}m")
             # Extend the waypoint in the same direction to meet minimum distance
@@ -909,15 +909,9 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
     distance_to_target = np.linalg.norm(np.array(target_pos) - np.array(drone_pos))
     initial_distance = distance_to_target
     
-    # Set initial safety margin (higher value = more conservative)
-    # When far from target, use conservative safety margins
-    # When closer to target, gradually reduce safety margins to allow reaching it
-    base_safety_margin = config.get("safety_margin", MARGIN)
-    
     logging.info(f"Episode {episode_id}: Initial position: {[round(p, 2) for p in drone_pos]}")
     logging.info(f"Episode {episode_id}: Target position: {[round(p, 2) for p in target_pos]}")
     logging.info(f"Episode {episode_id}: Initial distance: {distance_to_target:.2f}m")
-    logging.info(f"Episode {episode_id}: Base safety margin: {base_safety_margin:.2f}m")
     
     # Main navigation loop
     status = "timeout"  # Default status
@@ -969,22 +963,6 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
         # Calculate distance to target
         distance_to_target = np.linalg.norm(np.array(target_pos) - np.array(drone_pos))
         
-        # Dynamically adjust safety margin based on distance to target
-        # This allows more aggressive navigation when closer to the target
-        # But still maintains a minimum safety threshold
-        distance_ratio = min(1.0, distance_to_target / initial_distance)
-        min_safety_margin = 1.0  # Minimum safety margin in meters
-        
-        # Adjust safety margin:
-        # - Use full safety margin when far from target
-        # - Gradually reduce to min_safety_margin when close to target
-        # - But never go below the minimum
-        # - Additional factor: if obstacles are very close, increase margin
-        safety_margin = max(
-            min_safety_margin,
-            base_safety_margin * (0.5 + 0.5 * distance_ratio)  # Scale from 50-100% of base margin
-        )
-        
         # Check if target reached
         if distance_to_target <= ARRIVAL_THRESHOLD:
             logging.info(f"Episode {episode_id}: Target reached at step {step}")
@@ -994,23 +972,49 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
         # Get obstacle data
         obstacle_positions, obstacle_distances = scanner.fetch_density_distances()
         
+        # Calculate obstacle density metrics for adaptive planning
+        closest_obstacle_dist = min(obstacle_distances) if obstacle_distances else float('inf')
+        obstacle_count = len(obstacle_positions)
+        
+        # Determine if we're in a high-density obstacle area
+        high_density_area = obstacle_count > 10 or closest_obstacle_dist < 3.0
+        
+        # Calculate proximity to goal for adaptive behavior
+        near_goal = distance_to_target < 5.0  # Consider 5m to target as "near goal"
+        
+        # Modify the DENSITY_RADIUS parameter based on obstacle density and goal proximity
+        adaptive_density_radius = DENSITY_RADIUS
+        if high_density_area:
+            # Reduce density radius in high-density areas for more precise planning
+            adaptive_density_radius = max(2.0, DENSITY_RADIUS * 0.6)
+            logging.debug(f"Episode {episode_id}: High obstacle density area - reduced density radius to {adaptive_density_radius:.1f}m")
+        
+        # Modify safety margin based on goal proximity - allow slightly closer approach near goal
+        adaptive_safety_margin = MARGIN
+        if near_goal:
+            # Slightly reduce margin near goal but maintain safety
+            adaptive_safety_margin = max(0.8, MARGIN * 0.85) 
+            logging.debug(f"Episode {episode_id}: Near goal - adjusted safety margin to {adaptive_safety_margin:.1f}m")
+
         # Log obstacle detection info for debugging
-        if step % 10 == 0:  # Log every 10 steps to avoid excessive logging
+        if step % 10 == 0 or high_density_area:  # Log more frequently in high-density areas
             logging.debug(f"Episode {episode_id}: Detected {len(obstacle_positions)} obstacles")
             if len(obstacle_positions) > 0:
                 min_dist = min(obstacle_distances) if obstacle_distances else "N/A"
                 logging.debug(f"Episode {episode_id}: Closest obstacle at {min_dist}m")
         
-        # Create observation for active inference
+        # Create observation for active inference with adaptive parameters
         observation = {
             "drone_position": drone_pos,
             "target_position": target_pos,
             "obstacle_positions": obstacle_positions,
             "obstacle_distances": obstacle_distances,
             "waypoint_count": WAYPOINT_SAMPLE_COUNT,
-            "safety_margin": safety_margin,  # Use the dynamically adjusted safety margin
+            "safety_margin": adaptive_safety_margin,
             "policy_length": POLICY_LENGTH,
-            "density_radius": DENSITY_RADIUS
+            "density_radius": adaptive_density_radius,
+            "near_goal": near_goal,  # Add flag to inform planner we're near the goal
+            "distance_to_target": distance_to_target  # Explicitly include distance to target
         }
         
         # Verify the observation is valid before sending
@@ -1042,7 +1046,7 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
                 logging.error(f"Episode {episode_id}: Aborting after failed replanning")
                 status = "planning_failure"
                 break
-                
+        
         # Verify waypoint is valid
         waypoint_array = np.array(next_waypoint)
         if np.any(np.isnan(waypoint_array)) or np.any(np.isinf(waypoint_array)):
@@ -1050,8 +1054,52 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
             status = "invalid_waypoint"
             break
         
-        # Compute action magnitude
+        # Calculate action magnitude (waypoint distance)
         action_magnitude = np.linalg.norm(np.array(next_waypoint) - np.array(drone_pos))
+        
+        # Adaptively adjust waypoint based on obstacle density and goal proximity
+        # In high-density areas, we want to maintain the direction but potentially reduce step size
+        if high_density_area and not near_goal and action_magnitude > 3.0:
+            # In high density areas (but not near goal), we limit large movements for safety
+            # Scale down the waypoint distance to avoid large jumps in dense areas
+            direction = (waypoint_array - np.array(drone_pos)) / action_magnitude
+            adjusted_distance = min(3.0, action_magnitude)  # Cap at 3m in dense areas
+            next_waypoint = (np.array(drone_pos) + direction * adjusted_distance).tolist()
+            logging.debug(f"Episode {episode_id}: Scaled down waypoint in dense area from {action_magnitude:.2f}m to {adjusted_distance:.2f}m")
+            # Update action magnitude after scaling
+            action_magnitude = adjusted_distance
+        
+        # Near goal with high obstacle density - prioritize target approach with careful steps
+        if near_goal and high_density_area:
+            # Calculate direction to target
+            to_target = np.array(target_pos) - np.array(drone_pos)
+            to_target_dist = np.linalg.norm(to_target)
+            to_target_dir = to_target / to_target_dist if to_target_dist > 0 else np.array([1, 0, 0])
+            
+            # Calculate direction of planned waypoint
+            to_waypoint = np.array(next_waypoint) - np.array(drone_pos)
+            to_waypoint_dist = np.linalg.norm(to_waypoint)
+            to_waypoint_dir = to_waypoint / to_waypoint_dist if to_waypoint_dist > 0 else np.array([1, 0, 0])
+            
+            # Calculate dot product to see if waypoint is roughly in direction of target
+            alignment = np.dot(to_target_dir, to_waypoint_dir)
+            
+            # If waypoint is not aligned with target direction and we're near the goal
+            # in a dense area, blend the directions to favor target approach
+            if alignment < 0.7 and distance_to_target < 3.0:  # Less than 70% aligned and very close
+                # Create a blended direction (60% to target, 40% original waypoint direction)
+                blended_dir = 0.6 * to_target_dir + 0.4 * to_waypoint_dir
+                blended_dir = blended_dir / np.linalg.norm(blended_dir)  # Normalize
+                
+                # Use a conservative step size in this sensitive region
+                step_size = min(1.5, distance_to_target * 0.6)  # 60% of distance to target or 1.5m max
+                
+                # Create new waypoint that's more aligned with target
+                next_waypoint = (np.array(drone_pos) + blended_dir * step_size).tolist()
+                logging.debug(f"Episode {episode_id}: Near goal in dense area - adjusted waypoint for better target alignment")
+                
+                # Update action magnitude after adjustment
+                action_magnitude = step_size
         
         # Extract additional metrics from policy if available
         # These would need to be included in the Julia server response
@@ -1078,8 +1126,9 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
             "suitability": suitability,
             "collision": collision_info.has_collided,
             "obstacles_count": len(obstacle_positions),
-            "min_obstacle_distance": min(obstacle_distances) if obstacle_distances else float('inf'),
-            "safety_margin": safety_margin,
+            "closest_obstacle": closest_obstacle_dist if obstacle_distances else float('inf'),
+            "high_density_area": high_density_area,
+            "near_goal": near_goal,
             "inference_time_ms": inference_time,
             "replanning_occurred": retry_count > 0 if 'retry_count' in locals() else False,
             "time_since_movement": time_since_movement
@@ -1102,7 +1151,7 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
     
     # Episode ended - calculate final metrics
     episode_duration = time.time() - start_time
-    
+
     # Final position and distance
     drone_state = client.getMultirotorState().kinematics_estimated
     final_pos = [

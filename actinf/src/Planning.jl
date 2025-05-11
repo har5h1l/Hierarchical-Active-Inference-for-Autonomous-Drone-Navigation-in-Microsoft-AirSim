@@ -23,12 +23,8 @@ const STEEPNESS_DENSITY = 10.0
 const CLOSE_TO_TARGET_THRESHOLD = 10.0  # Distance in meters to prioritize direct paths to target
 const VERY_CLOSE_TO_TARGET_THRESHOLD = 5.0  # Distance in meters for even stronger target preference
 
-# Minimum acceptable suitability for waypoints - increased to ensure safety
-const MIN_ACCEPTABLE_SUITABILITY = 0.3  # Waypoints below this are considered risky
-
-# New constants for preventing crash near target
-const EMERGENCY_SUITABILITY_THRESHOLD = 0.25  # Absolute minimum suitability to consider a path
-const MIN_OBSTACLE_DISTANCE = 1.2  # Minimum obstacle distance in meters to allow paths
+# Minimum acceptable suitability for waypoints
+const MIN_ACCEPTABLE_SUITABILITY = 0.2  # Waypoints below this are considered risky
 
 """
     PreferenceModel
@@ -425,45 +421,26 @@ function select_action(state::StateSpace.DroneState, beliefs::Inference.DroneBel
     # For suitability, higher values (closer to 1) mean safer navigation conditions
     suitability_factor = clamp(state.suitability, 0.0, 1.0)  # Ensure it's in valid range
     
-    # 1. Adjust waypoint radius (step size) based on both suitability and obstacle density
+    # 1. Adjust waypoint radius (step size) - inverse relationship with suitability
     # Low suitability -> smaller radius (safer, shorter steps)
     # High suitability -> larger radius (faster exploitation)
-    
-    # Scale radius based on both obstacle density and closest obstacle distance
-    obstacle_density_factor = 1.0 - clamp(obstacle_density, 0.0, 0.9)  # Higher density reduces steps
-    obstacle_distance_factor = clamp(obstacle_distance / 10.0, 0.0, 1.0)  # Normalize distance to 0-1 range
-    
-    # Combined safety factor - weighs both density and distance
-    combined_safety_factor = 0.7 * obstacle_distance_factor + 0.3 * obstacle_density_factor
-    
-    # More gradual scaling of waypoint radius based on safety factors
-    adaptive_radius = MIN_RADIUS + combined_safety_factor * (MAX_RADIUS - MIN_RADIUS)
+    adaptive_radius = MIN_RADIUS + suitability_factor * (MAX_RADIUS - MIN_RADIUS)
     
     # If close to target, ensure radius is at least enough to reach the target
-    # But don't override safety constraints when very close to obstacles
     if close_to_target
-        if obstacle_distance > MIN_OBSTACLE_DISTANCE
-            # Allow reaching target in one step if safe
-            adaptive_radius = max(adaptive_radius, min(current_to_target_dist * 1.1, MAX_RADIUS))
-        else
-            # When close to obstacles, prioritize safety with smaller steps
-            adaptive_radius = min(adaptive_radius, 1.0)
-            println("Close to target but also close to obstacles, using conservative radius: $(adaptive_radius)")
-        end
+        adaptive_radius = max(adaptive_radius, current_to_target_dist * 1.1)
     end
-    
-    println("Adaptive radius: $(adaptive_radius)m, Obstacle distance: $(obstacle_distance)m, Density: $(obstacle_density)")
     
     # 2. Adjust policy length - inverse relationship with suitability
     # Low suitability -> longer policy (more careful planning)
     # High suitability -> shorter policy (less planning needed)
-    adaptive_policy_length = MAX_POLICY_LEN - combined_safety_factor * (MAX_POLICY_LEN - MIN_POLICY_LEN)
+    adaptive_policy_length = MAX_POLICY_LEN - suitability_factor * (MAX_POLICY_LEN - MIN_POLICY_LEN)
     adaptive_policy_length = round(Int, adaptive_policy_length)
     
     # 3. Adjust number of waypoints - inverse relationship with suitability
     # Low suitability -> more waypoints (greater caution, more exploration)
     # High suitability -> fewer waypoints (less exploration needed)
-    adaptive_waypoint_count = MAX_WAYPOINTS - combined_safety_factor * (MAX_WAYPOINTS - MIN_WAYPOINTS)
+    adaptive_waypoint_count = MAX_WAYPOINTS - suitability_factor * (MAX_WAYPOINTS - MIN_WAYPOINTS)
     adaptive_waypoint_count = round(Int, adaptive_waypoint_count)
     
     # Calculate appropriate number of angles and elevations to achieve target waypoint count
@@ -530,109 +507,115 @@ function select_action(state::StateSpace.DroneState, beliefs::Inference.DroneBel
         push!(all_distances, next_state.distance)
     end
     
-    # Step 3: Early elimination based on dynamic suitability threshold
-    # If close to target, use a more nuanced approach to balance safety and goal-reaching
-    local_suitability_threshold = SUITABILITY_THRESHOLD
+    # Step 3: Early elimination based on suitability threshold
+    # Use a lower suitability threshold when close to target
+    effective_threshold = close_to_target ? 
+                          MIN_ACCEPTABLE_SUITABILITY : 
+                          SUITABILITY_THRESHOLD
     
-    # Adjust threshold based on proximity to target
-    if close_to_target
-        # Scale threshold based on closeness, but never below emergency threshold
-        distance_factor = current_to_target_dist / CLOSE_TO_TARGET_THRESHOLD
-        # More forgiving threshold when closer to target, but with a hard safety floor
-        local_suitability_threshold = max(
-            EMERGENCY_SUITABILITY_THRESHOLD,  
-            SUITABILITY_THRESHOLD * (0.7 + 0.3 * distance_factor)
-        )
-        println("Close to target, adjusted suitability threshold to $(local_suitability_threshold)")
-    end
+    safe_indices = findall(s -> s >= effective_threshold, all_suitabilities)
     
-    # Filter waypoints based on suitability
-    safe_indices = findall(s -> s >= local_suitability_threshold, all_suitabilities)
-    
-    # If no waypoints passed the threshold but we're close to target,
-    # try to find at least one that meets the emergency threshold
-    if isempty(safe_indices) && close_to_target
-        safe_indices = findall(s -> s >= EMERGENCY_SUITABILITY_THRESHOLD, all_suitabilities)
-        println("Using emergency suitability threshold: $(EMERGENCY_SUITABILITY_THRESHOLD)")
-    end
-    
-    # If still empty, try to at least find the safest option
-    if isempty(safe_indices)
-        # Find the waypoint with the highest suitability
-        _, max_idx = findmax(all_suitabilities)
-        # Only use it if it meets minimum acceptable standards
-        if all_suitabilities[max_idx] >= MIN_ACCEPTABLE_SUITABILITY
-            safe_indices = [max_idx]
-            println("No satisfactory waypoints found. Using best available with suitability: $(all_suitabilities[max_idx])")
+    # If no waypoints pass the suitability threshold, relax it to take the best available
+    if isempty(safe_indices) && !isempty(all_suitabilities)
+        println("Warning: No waypoints passed suitability threshold. Finding best alternative.")
+        
+        # When close to target, prioritize waypoints that move closer to target with acceptable safety
+        if close_to_target
+            # Calculate combined scores that balance safety with progress toward target
+            combined_scores = Float64[]
+            
+            for i in 1:length(all_waypoints)
+                # Distance improvement factor (positive if getting closer to target)
+                distance_improvement = current_to_target_dist - all_distances[i]
+                progress_score = distance_improvement > 0 ? distance_improvement / current_to_target_dist : 0.0
+                
+                # Calculate combined score (60% suitability, 40% progress toward target)
+                combined_score = 0.6 * all_suitabilities[i] + 0.4 * progress_score
+                push!(combined_scores, combined_score)
+            end
+            
+            # Select best combined score
+            _, best_idx = findmax(combined_scores)
+            safe_indices = [best_idx]
+            
+            println("Selected best combined score option when close to target.")
         else
-            println("WARNING: All waypoints have very low suitability (best: $(all_suitabilities[max_idx]))")
+            # When far from target, just take the highest suitability option
+            _, best_idx = findmax(all_suitabilities)
+            safe_indices = [best_idx]
+            println("Selected highest suitability option when far from target.")
         end
     end
     
-    # Step 4: If still no safe waypoints, generate a minimal safe action
-    if isempty(safe_indices)
-        # Generate a minimal safe action by moving away from nearest obstacle
-        println("Generating minimal safe action due to lack of safe waypoints")
-        
-        # If we have obstacle distance information, try to move away from nearest obstacle
-        if obstacle_distance < 5.0
-            # Calculate direction to nearest obstacle from belief state
-            # This is a simplification; in practice you would use the actual obstacle position
-            # For our purposes, a random direction with a safety bias is sufficient
-            
-            # Generate a short step in a random direction with slight upward bias (in NED, that's negative z)
-            theta = rand() * 2π
-            step_size = MIN_RADIUS / 2  # Very short step
-            safe_action = SVector{3, Float64}(
-                step_size * cos(theta),  # x component
-                step_size * sin(theta),  # y component
-                -0.2 * step_size         # z component (slightly upward in NED)
-            )
-            
-            # Create a safe waypoint from current position
-            safe_waypoint = current_position + safe_action
-            
-            # Simulate this safe action
-            safe_state = simulate_transition(
-                state, 
-                safe_waypoint, 
-                target_position, 
-                beliefs.voxel_grid, 
-                obstacle_distance, 
-                obstacle_density, 
-                planner.density_weight,
-                obstacle_weight=obstacle_weight
-            )
-            
-            # Use this safe action
-            return [(safe_waypoint, safe_state, safe_action)]
-        end
-        
-        # If we get here, we have no obstacle information and no safe waypoints
-        # Return current position as a fallback (stay in place)
-        println("WARNING: No safe waypoints found, will hover in place")
-        stay_action = SVector{3, Float64}(0.0, 0.0, 0.0)
-        return [(current_position, state, stay_action)]
+    filtered_states = all_states[safe_indices]
+    filtered_actions = all_actions[safe_indices]
+    filtered_distances = all_distances[safe_indices]
+    
+    println("$(length(filtered_states)) waypoints passed suitability threshold ($(effective_threshold))")
+    
+    # Step 4: Evaluate EFE on filtered (safe) waypoints
+    if isempty(filtered_states)
+        # Emergency fallback - just stay in place
+        println("Emergency: No safe paths found. Staying in place.")
+        return [(SVector{3, Float64}(0.0, 0.0, 0.0), 0.0)]
     end
     
-    # Use only safe waypoints for further evaluation
-    safe_waypoints = all_waypoints[safe_indices]
-    safe_states = all_states[safe_indices]
-    safe_actions = all_actions[safe_indices]
+    # For each safe candidate, calculate EFE
+    efe_scores = Vector{Float64}()
     
-    # Step 5: Rank the safe waypoints by expected free energy
-    efes = [calculate_efe(s, state, beliefs, planner.preference_model,
-                          planner.pragmatic_weight, planner.epistemic_weight, 
-                          safe_actions[i]) for (i, s) in enumerate(safe_states)]
+    for (state_idx, next_state) in enumerate(filtered_states)
+        action = filtered_actions[state_idx]
+        next_distance = filtered_distances[state_idx]
+        
+        # Calculate baseline EFE without risk penalty (safety already ensured by filtering)
+        efe = calculate_efe(
+            next_state,
+            beliefs,
+            action,
+            planner.preference_model,
+            pragmatic_weight=planner.pragmatic_weight,
+            epistemic_weight=planner.epistemic_weight
+        )
+        
+        # Apply bonus for actions that make progress toward target
+        if close_to_target && next_distance < current_to_target_dist
+            # Stronger bonus when very close to target
+            distance_bonus = if current_to_target_dist < VERY_CLOSE_TO_TARGET_THRESHOLD
+                (current_to_target_dist - next_distance) * 3.0  # Very strong bonus when very close
+            else
+                (current_to_target_dist - next_distance) * 1.5  # Moderate bonus when somewhat close
+            end
+            
+            # Apply bonus (remember lower EFE is better)
+            efe -= distance_bonus
+        end
+        
+        push!(efe_scores, efe)
+    end
     
-    # Create policy items (waypoint, state, action) sorted by EFE
-    sorted_indices = sortperm(efes)
-    sorted_policies = [(safe_waypoints[i], safe_states[i], safe_actions[i], efes[i], all_suitabilities[safe_indices[i]]) 
-                       for i in sorted_indices]
+    # Step 5: Policy selection - choose the best actions based on EFE
+    # Sort by EFE ascending (lower is better)
+    sorted_indices = sortperm(efe_scores)
     
-    # Create and return the top policies
-    top_n = min(num_policies, length(sorted_policies))
-    return [(p[1], p[2], p[3]) for p in sorted_policies[1:top_n]]
+    # Use the adaptive policy length instead of fixed num_policies
+    top_k = min(adaptive_policy_length, length(sorted_indices))
+    
+    # Create selected tuples of (action, efe)
+    selected = [(filtered_actions[sorted_indices[i]], efe_scores[sorted_indices[i]]) for i in 1:top_k]
+    
+    # Step 7: Debug info
+    if !isempty(sorted_indices) && !isempty(efe_scores)
+        best_idx = sorted_indices[1]
+        best_efe = efe_scores[best_idx]
+        best_action = filtered_actions[best_idx]
+        best_suitability = filtered_states[best_idx].suitability
+        best_distance = filtered_distances[best_idx]
+        
+        println("Best EFE: $(best_efe), Action: $(best_action), Suitability: $(best_suitability)")
+        println("Current distance to target: $(current_to_target_dist), Next distance: $(best_distance)")
+    end
+    
+    return selected
 end
 
 end # module
