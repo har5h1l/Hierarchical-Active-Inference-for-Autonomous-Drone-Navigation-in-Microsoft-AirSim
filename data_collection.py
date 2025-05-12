@@ -353,6 +353,22 @@ class JuliaServer:
                 except:
                     pass
             
+            # Julia command with additional flags to address the signal handler issue
+            julia_cmd = [
+                self.julia_path,
+                "--project=.",  # Use project in current directory
+                "--startup-file=no",  # Don't load startup file
+                "--handle-signals=no",  # Disable Julia's signal handling
+                server_script
+            ]
+            
+            # Add environment variables to configure ZMQ server
+            env = os.environ.copy()
+            env["JULIA_ZMQ_PORT"] = str(port)
+            env["JULIA_DEBUG"] = "ZMQServer"  # Enable debug logging for the server
+            
+            print(f"Starting Julia with command: {' '.join(julia_cmd)}")
+            
             # Start the server as a background process with a visible console for easier debugging
             if platform.system() == "Windows":
                 # Windows needs different flags to start detached with visible window
@@ -361,17 +377,19 @@ class JuliaServer:
                 startupinfo.wShowWindow = 1  # SW_SHOWNORMAL
                 
                 self.server_process = subprocess.Popen(
-                    [self.julia_path, "--project=.", server_script],
+                    julia_cmd,
                     cwd=self.cwd,
                     creationflags=subprocess.CREATE_NEW_CONSOLE,
-                    startupinfo=startupinfo
+                    startupinfo=startupinfo,
+                    env=env
                 )
             else:
                 # Unix-like systems
                 self.server_process = subprocess.Popen(
-                    [self.julia_path, "--project=.", server_script],
+                    julia_cmd,
                     cwd=self.cwd,
-                    start_new_session=True
+                    start_new_session=True,
+                    env=env
                 )
             
             # Wait for server to start and check status file for port
@@ -425,6 +443,17 @@ class JuliaServer:
                 # Check if process is still running
                 if self.server_process.poll() is not None:
                     print(f"❌ Server process exited with code {self.server_process.returncode}")
+                    # Try to read any error logs
+                    log_file = os.path.join(self.cwd, "zmq_server.log")
+                    if os.path.exists(log_file):
+                        try:
+                            with open(log_file, 'r') as f:
+                                log_tail = f.readlines()[-20:]  # Last 20 lines
+                                print("Server log tail:")
+                                for line in log_tail:
+                                    print(f"  {line.strip()}")
+                        except Exception as log_e:
+                            print(f"Error reading server log: {log_e}")
                     return None
                 
                 print(f"Waiting for server to start... (attempt {attempt+1}/{max_attempts})")
@@ -545,12 +574,36 @@ class ZMQInterface:
         try:
             print("\nSending observation to Active Inference engine...")
             
+            # Validate the observation data to prevent sending invalid data
+            # Check for NaN or Inf values in drone_position and target_position
+            for key in ["drone_position", "target_position"]:
+                if key in observation:
+                    pos = observation[key]
+                    if any(np.isnan(val) or np.isinf(val) for val in pos):
+                        print(f"❌ Invalid {key} with NaN/Inf values: {pos}")
+                        # Replace with a valid default if needed
+                        if key == "drone_position":
+                            observation[key] = [0.0, 0.0, -5.0]  # Default position
+                        else:
+                            observation[key] = [10.0, 0.0, -5.0]  # Default target
+                        print(f"✓ Replaced with default: {observation[key]}")
+            
+            # Add a request type field to make the protocol more explicit
+            observation["request_type"] = "get_waypoint"
+            observation["client_timestamp"] = time.time()
+            
             # Convert observation to JSON string
             obs_json = json.dumps(observation, cls=NumpyJSONEncoder)
             
             # Send with retry mechanism
             for retry in range(ZMQ_MAX_RETRIES):
                 try:
+                    # Reset socket on first retry and after errors
+                    if retry > 0:
+                        print(f"Retry {retry}/{ZMQ_MAX_RETRIES}: Resetting connection...")
+                        self._setup_connection()
+                        time.sleep(1)  # Give time for reconnection
+                    
                     # Send observation data
                     self.socket.send_string(obs_json)
                     print(f"Sent observation data (attempt {retry+1}/{ZMQ_MAX_RETRIES})")
@@ -564,34 +617,84 @@ class ZMQInterface:
                         response = self.socket.recv_string()
                         print(f"Received response ({len(response)} bytes)")
                         
-                        result = json.loads(response)
+                        # Validate the response to handle invalid JSON
+                        try:
+                            result = json.loads(response)
+                        except json.JSONDecodeError as e:
+                            print(f"❌ Invalid JSON response: {e}")
+                            print(f"Response preview: {response[:100]}...")
+                            continue  # Try again
+                        
+                        # Check for error message in response
+                        if "error" in result:
+                            print(f"❌ Server error: {result.get('message', 'Unknown error')}")
+                            continue  # Try again
+                        
+                        # Extract waypoint and policy
                         waypoint = result.get("next_waypoint")
                         policy = result.get("policy", [])
                         
-                        if waypoint:
-                            print(f"Next waypoint: {[round(p, 2) for p in waypoint]}")
-                            return waypoint, policy
-                        else:
-                            print("Error: No waypoint in response")
-                            if "error" in result:
-                                print(f"Server error: {result['message']}")
-                            return None, None
+                        # Validate the waypoint
+                        if waypoint is None or len(waypoint) != 3:
+                            print(f"❌ Invalid waypoint format: {waypoint}")
+                            continue  # Try again
+                        
+                        # Check for NaN or Inf in waypoint
+                        if any(np.isnan(p) or np.isinf(p) for p in waypoint):
+                            print(f"❌ Waypoint contains NaN/Inf values: {waypoint}")
+                            continue  # Try again
+                        
+                        print(f"Next waypoint: {[round(p, 2) for p in waypoint]}")
+                        return waypoint, policy
                     else:
                         print(f"Response timeout (attempt {retry+1}/{ZMQ_MAX_RETRIES})")
                         
-                        # Reset connection on timeout (except on last attempt)
-                        if retry < ZMQ_MAX_RETRIES - 1:
-                            print("Resetting connection...")
-                            self._setup_connection()
-                            time.sleep(1)
                 except zmq.ZMQError as e:
                     print(f"ZMQ error (attempt {retry+1}/{ZMQ_MAX_RETRIES}): {e}")
-                    if retry < ZMQ_MAX_RETRIES - 1:
-                        print("Resetting connection...")
-                        self._setup_connection()
-                        time.sleep(1)
+                except Exception as e:
+                    print(f"Unexpected error (attempt {retry+1}/{ZMQ_MAX_RETRIES}): {e}")
+                    traceback.print_exc()
             
+            # If we get here, all retries failed
             print("❌ Failed to get valid response after all retries")
+            
+            # Last resort: try a simple ping to check if server is still responsive
+            try:
+                print("Sending ping to check server status...")
+                self.socket.close()
+                self.socket = self.context.socket(zmq.REQ)
+                self.socket.setsockopt(zmq.RCVTIMEO, 2000)  # Short timeout for ping
+                self.socket.connect(self.server_address)
+                self.socket.send_string("ping")
+                
+                response = self.socket.recv_string()
+                if response == "pong":
+                    print("✅ Server is responsive to ping but failed to process observation")
+                else:
+                    print(f"❓ Server responded to ping with: {response}")
+            except Exception as e:
+                print(f"❌ Server is not responsive to ping: {e}")
+            
+            # Generate a simple fallback waypoint in the general target direction
+            try:
+                drone_pos = observation.get("drone_position", [0, 0, -5])
+                target_pos = observation.get("target_position", [10, 0, -5])
+                
+                # Calculate direction to target
+                direction = np.array(target_pos) - np.array(drone_pos)
+                distance = np.linalg.norm(direction)
+                
+                if distance > 0:
+                    # Normalize and scale to a small step (1-3 meters)
+                    direction = direction / distance
+                    step_size = min(distance / 2, 3.0)
+                    fallback_waypoint = (np.array(drone_pos) + direction * step_size).tolist()
+                    
+                    print(f"⚠️ Using fallback waypoint: {[round(p, 2) for p in fallback_waypoint]}")
+                    return fallback_waypoint, []
+            except Exception as e:
+                print(f"❌ Failed to generate fallback waypoint: {e}")
+            
             return None, None
                 
         except Exception as e:
