@@ -1,0 +1,66 @@
+2025-05-11 18:51:57,719 - INFO - Using random seed: 42
+2025-05-11 18:51:57,720 - INFO - Starting experiment with configuration:
+2025-05-11 18:51:57,720 - INFO -   num_episodes: 10
+2025-05-11 18:51:57,720 - INFO -   target_distance_range: (15.0, 50.0)
+2025-05-11 18:51:57,721 - INFO -   random_seed: 42
+2025-05-11 18:51:57,721 - INFO -   max_steps_per_episode: 100
+2025-05-11 18:51:57,721 - INFO -   output_dir: experiment_results
+2025-05-11 18:51:57,721 - INFO -   stuck_timeout: 15.0
+2025-05-11 18:51:57,721 - INFO -   stuck_check_interval: 3.0
+2025-05-11 18:51:57,722 - INFO -   episode_timeout: 120
+2025-05-11 18:51:57,722 - INFO -   precompile_julia: True
+2025-05-11 18:51:57,722 - INFO -   zmq_port: 5555
+2025-05-11 18:51:57,722 - INFO -   debug_raycasting: False
+2025-05-11 18:51:57,722 - INFO -   min_ray_checks: 3
+2025-05-11 18:51:57,723 - INFO -   max_ray_checks: 7
+2025-05-11 18:51:57,723 - INFO -   visualize_raycasts: False
+2025-05-11 18:51:57,723 - INFO -   visualization_duration: 60.0
+2025-05-11 18:52:46,415 - INFO - === Starting Episode 0 ===
+2025-05-11 18:52:46,419 - INFO - Episode 0: Taking off...
+2025-05-11 18:52:51,838 - INFO - Target distance range for episode 0: 15.0m - 50.0m
+2025-05-11 18:52:51,941 - INFO - Found first valid target at [-8.13, -9.76, -2.0]
+2025-05-11 18:52:56,373 - INFO - Phase 2: Found 50 valid targets, focusing on refining these
+2025-05-11 18:52:58,891 - INFO - Found 77 valid targets, selecting best with 0.00m clearance
+2025-05-11 18:52:58,892 - INFO - Episode 0: Target sampling took 7.05s with 3 rays
+2025-05-11 18:52:58,894 - INFO - Episode 0: Initial position: [0.0, 0.0, -1.67]
+2025-05-11 18:52:58,894 - INFO - Episode 0: Target position: [-8.13, -9.76, -2.0]
+2025-05-11 18:52:58,895 - INFO - Episode 0: Initial distance: 12.71m
+2025-05-11 18:52:58,900 - INFO - Episode 0: Target verified with 3 rays
+2025-05-11 18:53:01,586 - WARNING - Obstacle detected on planned path before movement at 3.33m distance
+2025-05-11 18:53:01,587 - INFO - Episode 0: Obstacle detected during movement, triggering immediate replanning
+2025-05-11 18:53:01,608 - INFO - Adding newly detected obstacle at [np.float32(-4.79), np.float32(-3.91), np.float32(-2.0)] to planning data
+2025-05-11 18:53:01,608 - INFO - Episode 0: Triggering dynamic replanning due to detected obstacle
+2025-05-11 18:53:01,627 - INFO - Episode 0: Executing replanned path to avoid obstacle
+2025-05-11 18:53:01,648 - WARNING - Obstacle detected on planned path before movement at 7.93m distance
+2025-05-11 18:53:04,339 - WARNING - Obstacle detected on planned path before movement at 2.23m distance
+2025-05-11 18:53:04,339 - INFO - Episode 0: Obstacle detected during movement, triggering immediate replanning
+2025-05-11 18:53:04,356 - INFO - Adding newly detected obstacle at [np.float32(-6.32), np.float32(-5.3), np.float32(-1.91)] to planning data
+2025-05-11 18:53:04,357 - INFO - Episode 0: Triggering dynamic replanning due to detected obstacle
+2025-05-11 18:53:04,373 - INFO - Episode 0: Executing replanned path to avoid obstacle
+2025-05-11 18:53:04,390 - WARNING - Obstacle detected on planned path before movement at 2.06m distance
+2025-05-11 18:53:04,647 - WARNING - Obstacle detected on planned path before movement at 2.07m distance
+2025-05-11 18:53:04,648 - INFO - Episode 0: Obstacle detected during movement, triggering immediate replanning
+2025-05-11 18:53:04,663 - INFO - Adding newly detected obstacle at [np.float32(-6.05), np.float32(-4.6), np.float32(-1.74)] to planning data
+2025-05-11 18:53:04,663 - INFO - Episode 0: Triggering dynamic replanning due to detected obstacle
+2025-05-11 18:53:04,679 - INFO - Episode 0: Executing replanned path to avoid obstacle
+2025-05-11 18:53:04,695 - WARNING - Obstacle detected on planned path before movement at 2.97m distance
+2025-05-11 18:53:04,955 - WARNING - Obstacle detected on planned path before movement at 2.87m distance
+2025-05-11 18:53:04,956 - INFO - Episode 0: Obstacle detected during movement, triggering immediate replanning
+2025-05-11 18:53:04,974 - INFO - Adding newly detected obstacle at [np.float32(-7.31), np.float32(-5.5), np.float32(-1.81)] to planning data
+2025-05-11 18:53:04,974 - INFO - Episode 0: Triggering dynamic replanning due to detected obstacle
+2025-05-11 18:53:04,987 - INFO - Episode 0: Executing replanned path to avoid obstacle
+2025-05-11 18:53:05,007 - WARNING - Obstacle detected on planned path before movement at 3.96m distance
+2025-05-11 18:53:05,266 - WARNING - Obstacle detected on planned path before movement at 2.44m distance
+2025-05-11 18:53:05,266 - INFO - Episode 0: Obstacle detected during movement, triggering immediate replanning
+2025-05-11 18:53:05,281 - INFO - Adding newly detected obstacle at [np.float32(-6.68), np.float32(-4.73), np.float32(-1.69)] to planning data
+2025-05-11 18:53:05,282 - INFO - Episode 0: Triggering dynamic replanning due to detected obstacle
+2025-05-11 18:53:05,292 - INFO - Episode 0: Executing replanned path to avoid obstacle
+2025-05-11 18:53:05,307 - WARNING - Obstacle detected on planned path before movement at 4.74m distance
+2025-05-11 18:53:10,559 - WARNING - Movement taking too long, cancelling and replanning
+2025-05-11 18:53:10,560 - INFO - Episode 0: Obstacle detected during movement, triggering immediate replanning
+2025-05-11 18:53:10,573 - INFO - Adding newly detected obstacle at [-6.65, -8.14, -1.96] to planning data
+2025-05-11 18:53:10,574 - INFO - Episode 0: Triggering dynamic replanning due to detected obstacle
+2025-05-11 18:53:10,590 - INFO - Episode 0: Executing replanned path to avoid obstacle
+2025-05-11 18:53:18,164 - WARNING - Movement taking too long, cancelling and replanning
+2025-05-11 18:53:18,366 - WARNING - Episode 0: Step 7 took 12.86s (unusually long)
+2025-05-11 18:53:18,368 - WARNING - Episode 0: Collision detected at step 8

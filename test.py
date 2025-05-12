@@ -29,7 +29,7 @@ class NumpyJSONEncoder(json.JSONEncoder):
         return super(NumpyJSONEncoder, self).default(obj)
 
 # Constants and hyperparameters
-TARGET_LOCATION = [-20.0, -20.0, -30.0]  # [x, y, z] in NED coordinates
+TARGET_LOCATION =[-8.13, -9.76, -2.0]  # [x, y, z] in NED coordinates
 MARGIN = 1.5  # Safety margin for waypoint generation (meters)
 WAYPOINT_SAMPLE_COUNT = 75  # Number of waypoints to consider
 POLICY_LENGTH = 3  # Number of steps in the policy

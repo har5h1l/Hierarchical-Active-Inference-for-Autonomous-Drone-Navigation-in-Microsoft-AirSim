@@ -1,0 +1,20 @@
+{
+  "num_episodes": 10,
+  "target_distance_range": [
+    15.0,
+    50.0
+  ],
+  "random_seed": 42,
+  "max_steps_per_episode": 100,
+  "output_dir": "experiment_results",
+  "stuck_timeout": 15.0,
+  "stuck_check_interval": 3.0,
+  "episode_timeout": 120,
+  "precompile_julia": true,
+  "zmq_port": 5555,
+  "debug_raycasting": false,
+  "min_ray_checks": 3,
+  "max_ray_checks": 7,
+  "visualize_raycasts": false,
+  "visualization_duration": 60.0
+}

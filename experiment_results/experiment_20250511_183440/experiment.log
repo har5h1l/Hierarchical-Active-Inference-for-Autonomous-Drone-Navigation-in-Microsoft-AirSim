@@ -1,0 +1,421 @@
+2025-05-11 18:34:40,983 - INFO - Using random seed: 42
+2025-05-11 18:34:40,984 - INFO - Starting experiment with configuration:
+2025-05-11 18:34:40,985 - INFO -   num_episodes: 10
+2025-05-11 18:34:40,986 - INFO -   target_distance_range: (15.0, 50.0)
+2025-05-11 18:34:40,986 - INFO -   random_seed: 42
+2025-05-11 18:34:40,987 - INFO -   max_steps_per_episode: 100
+2025-05-11 18:34:40,987 - INFO -   output_dir: experiment_results
+2025-05-11 18:34:40,988 - INFO -   stuck_timeout: 15.0
+2025-05-11 18:34:40,989 - INFO -   stuck_check_interval: 3.0
+2025-05-11 18:34:40,989 - INFO -   episode_timeout: 120
+2025-05-11 18:34:41,000 - INFO -   precompile_julia: True
+2025-05-11 18:34:41,001 - INFO -   zmq_port: 5555
+2025-05-11 18:34:41,001 - INFO -   debug_raycasting: False
+2025-05-11 18:34:41,002 - INFO -   min_ray_checks: 3
+2025-05-11 18:34:41,003 - INFO -   max_ray_checks: 7
+2025-05-11 18:34:41,004 - INFO -   visualize_raycasts: False
+2025-05-11 18:34:41,004 - INFO -   visualization_duration: 60.0
+2025-05-11 18:35:41,618 - INFO - === Starting Episode 0 ===
+2025-05-11 18:35:41,621 - INFO - Episode 0: Taking off...
+2025-05-11 18:35:47,031 - INFO - Target distance range for episode 0: 15.0m - 50.0m
+2025-05-11 18:35:47,122 - INFO - Found first valid target at [-8.13, -9.76, -2.0]
+2025-05-11 18:35:51,410 - INFO - Phase 2: Found 50 valid targets, focusing on refining these
+2025-05-11 18:35:53,791 - INFO - Found 77 valid targets, selecting best with 0.00m clearance
+2025-05-11 18:35:53,792 - INFO - Episode 0: Target sampling took 6.76s with 3 rays
+2025-05-11 18:35:53,792 - INFO - Episode 0: Initial position: [0.0, 0.0, -1.67]
+2025-05-11 18:35:53,793 - INFO - Episode 0: Target position: [-8.13, -9.76, -2.0]
+2025-05-11 18:35:53,793 - INFO - Episode 0: Initial distance: 12.71m
+2025-05-11 18:35:53,797 - INFO - Episode 0: Target verified with 3 rays
+2025-05-11 18:35:53,854 - ERROR - Error in move_to_waypoint: 'Future' object has no attribute 'is_done'
+2025-05-11 18:35:54,105 - ERROR - Error in move_to_waypoint: 'Future' object has no attribute 'is_done'
+2025-05-11 18:35:54,354 - ERROR - Error in move_to_waypoint: 'Future' object has no attribute 'is_done'
+2025-05-11 18:35:54,605 - ERROR - Error in move_to_waypoint: 'Future' object has no attribute 'is_done'
+2025-05-11 18:35:54,850 - ERROR - Error in move_to_waypoint: 'Future' object has no attribute 'is_done'
+2025-05-11 18:35:55,095 - ERROR - Error in move_to_waypoint: 'Future' object has no attribute 'is_done'
+2025-05-11 18:35:55,347 - ERROR - Error in move_to_waypoint: 'Future' object has no attribute 'is_done'
+2025-05-11 18:35:55,602 - ERROR - Error in move_to_waypoint: 'Future' object has no attribute 'is_done'
+2025-05-11 18:35:55,856 - ERROR - Error in move_to_waypoint: 'Future' object has no attribute 'is_done'
+2025-05-11 18:35:56,102 - ERROR - Error in move_to_waypoint: 'Future' object has no attribute 'is_done'
+2025-05-11 18:35:56,350 - ERROR - Error in move_to_waypoint: 'Future' object has no attribute 'is_done'
+2025-05-11 18:35:56,612 - ERROR - Error in move_to_waypoint: 'Future' object has no attribute 'is_done'
+2025-05-11 18:35:56,860 - ERROR - Error in move_to_waypoint: 'Future' object has no attribute 'is_done'
+2025-05-11 18:35:57,126 - ERROR - Error in move_to_waypoint: 'Future' object has no attribute 'is_done'
+2025-05-11 18:35:57,380 - ERROR - Error in move_to_waypoint: 'Future' object has no attribute 'is_done'
+2025-05-11 18:35:57,630 - ERROR - Error in move_to_waypoint: 'Future' object has no attribute 'is_done'
+2025-05-11 18:35:57,879 - ERROR - Error in move_to_waypoint: 'Future' object has no attribute 'is_done'
+2025-05-11 18:35:58,132 - ERROR - Error in move_to_waypoint: 'Future' object has no attribute 'is_done'
+2025-05-11 18:35:58,387 - ERROR - Error in move_to_waypoint: 'Future' object has no attribute 'is_done'
+2025-05-11 18:35:58,632 - ERROR - Error in move_to_waypoint: 'Future' object has no attribute 'is_done'
+2025-05-11 18:35:58,880 - ERROR - Error in move_to_waypoint: 'Future' object has no attribute 'is_done'
+2025-05-11 18:35:59,127 - ERROR - Error in move_to_waypoint: 'Future' object has no attribute 'is_done'
+2025-05-11 18:35:59,373 - ERROR - Error in move_to_waypoint: 'Future' object has no attribute 'is_done'
+2025-05-11 18:35:59,629 - ERROR - Error in move_to_waypoint: 'Future' object has no attribute 'is_done'
+2025-05-11 18:35:59,877 - ERROR - Error in move_to_waypoint: 'Future' object has no attribute 'is_done'
+2025-05-11 18:36:00,121 - ERROR - Error in move_to_waypoint: 'Future' object has no attribute 'is_done'
+2025-05-11 18:36:00,389 - ERROR - Error in move_to_waypoint: 'Future' object has no attribute 'is_done'
+2025-05-11 18:36:00,635 - ERROR - Error in move_to_waypoint: 'Future' object has no attribute 'is_done'
+2025-05-11 18:36:00,882 - ERROR - Error in move_to_waypoint: 'Future' object has no attribute 'is_done'
+2025-05-11 18:36:01,131 - ERROR - Error in move_to_waypoint: 'Future' object has no attribute 'is_done'
+2025-05-11 18:36:01,381 - ERROR - Error in move_to_waypoint: 'Future' object has no attribute 'is_done'
+2025-05-11 18:36:01,630 - ERROR - Error in move_to_waypoint: 'Future' object has no attribute 'is_done'
+2025-05-11 18:36:01,882 - WARNING - Obstacle detected on planned path before movement at 3.50m distance
+2025-05-11 18:36:01,882 - INFO - Episode 0: Obstacle detected during movement, triggering immediate replanning
+2025-05-11 18:36:01,895 - INFO - Episode 0: Triggering dynamic replanning due to detected obstacle
+2025-05-11 18:36:01,910 - INFO - Episode 0: Executing replanned path to avoid obstacle
+2025-05-11 18:36:01,932 - WARNING - Obstacle detected on planned path before movement at 5.99m distance
+2025-05-11 18:36:02,201 - WARNING - Obstacle detected on planned path before movement at 2.86m distance
+2025-05-11 18:36:02,201 - INFO - Episode 0: Obstacle detected during movement, triggering immediate replanning
+2025-05-11 18:36:02,219 - INFO - Episode 0: Triggering dynamic replanning due to detected obstacle
+2025-05-11 18:36:02,238 - INFO - Episode 0: Executing replanned path to avoid obstacle
+2025-05-11 18:36:02,257 - WARNING - Obstacle detected on planned path before movement at 6.86m distance
+2025-05-11 18:36:02,513 - WARNING - Obstacle detected on planned path before movement at 2.99m distance
+2025-05-11 18:36:02,513 - INFO - Episode 0: Obstacle detected during movement, triggering immediate replanning
+2025-05-11 18:36:02,527 - INFO - Episode 0: Triggering dynamic replanning due to detected obstacle
+2025-05-11 18:36:02,549 - INFO - Episode 0: Executing replanned path to avoid obstacle
+2025-05-11 18:36:02,566 - WARNING - Obstacle detected on planned path before movement at 7.95m distance
+2025-05-11 18:36:02,825 - WARNING - Obstacle detected on planned path before movement at 3.49m distance
+2025-05-11 18:36:02,826 - INFO - Episode 0: Obstacle detected during movement, triggering immediate replanning
+2025-05-11 18:36:02,839 - INFO - Episode 0: Triggering dynamic replanning due to detected obstacle
+2025-05-11 18:36:02,853 - INFO - Episode 0: Executing replanned path to avoid obstacle
+2025-05-11 18:36:02,871 - WARNING - Obstacle detected on planned path before movement at 6.33m distance
+2025-05-11 18:36:03,120 - WARNING - Obstacle detected on planned path before movement at 3.64m distance
+2025-05-11 18:36:03,121 - INFO - Episode 0: Obstacle detected during movement, triggering immediate replanning
+2025-05-11 18:36:03,136 - INFO - Episode 0: Triggering dynamic replanning due to detected obstacle
+2025-05-11 18:36:03,152 - INFO - Episode 0: Executing replanned path to avoid obstacle
+2025-05-11 18:36:03,169 - WARNING - Obstacle detected on planned path before movement at 7.11m distance
+2025-05-11 18:36:03,420 - ERROR - Error in move_to_waypoint: 'Future' object has no attribute 'is_done'
+2025-05-11 18:36:03,669 - ERROR - Error in move_to_waypoint: 'Future' object has no attribute 'is_done'
+2025-05-11 18:36:03,916 - ERROR - Error in move_to_waypoint: 'Future' object has no attribute 'is_done'
+2025-05-11 18:36:04,192 - ERROR - Error in move_to_waypoint: 'Future' object has no attribute 'is_done'
+2025-05-11 18:36:04,460 - ERROR - Error in move_to_waypoint: 'Future' object has no attribute 'is_done'
+2025-05-11 18:36:04,736 - WARNING - Obstacle detected on planned path before movement at 3.43m distance
+2025-05-11 18:36:04,736 - INFO - Episode 0: Obstacle detected during movement, triggering immediate replanning
+2025-05-11 18:36:04,758 - INFO - Episode 0: Triggering dynamic replanning due to detected obstacle
+2025-05-11 18:36:04,775 - INFO - Episode 0: Executing replanned path to avoid obstacle
+2025-05-11 18:36:04,792 - WARNING - Obstacle detected on planned path before movement at 7.73m distance
+2025-05-11 18:36:05,048 - WARNING - Obstacle detected on planned path before movement at 2.82m distance
+2025-05-11 18:36:05,049 - INFO - Episode 0: Obstacle detected during movement, triggering immediate replanning
+2025-05-11 18:36:05,064 - INFO - Episode 0: Triggering dynamic replanning due to detected obstacle
+2025-05-11 18:36:05,091 - INFO - Episode 0: Executing replanned path to avoid obstacle
+2025-05-11 18:36:05,110 - WARNING - Obstacle detected on planned path before movement at 7.09m distance
+2025-05-11 18:36:05,375 - WARNING - Obstacle detected on planned path before movement at 3.21m distance
+2025-05-11 18:36:05,377 - INFO - Episode 0: Obstacle detected during movement, triggering immediate replanning
+2025-05-11 18:36:05,401 - INFO - Episode 0: Triggering dynamic replanning due to detected obstacle
+2025-05-11 18:36:05,421 - INFO - Episode 0: Executing replanned path to avoid obstacle
+2025-05-11 18:36:05,438 - WARNING - Obstacle detected on planned path before movement at 7.22m distance
+2025-05-11 18:36:05,720 - WARNING - Obstacle detected on planned path before movement at 2.22m distance
+2025-05-11 18:36:05,721 - INFO - Episode 0: Obstacle detected during movement, triggering immediate replanning
+2025-05-11 18:36:05,750 - INFO - Episode 0: Triggering dynamic replanning due to detected obstacle
+2025-05-11 18:36:05,777 - INFO - Episode 0: Executing replanned path to avoid obstacle
+2025-05-11 18:36:05,797 - WARNING - Obstacle detected on planned path before movement at 7.41m distance
+2025-05-11 18:36:06,052 - WARNING - Obstacle detected on planned path before movement at 2.47m distance
+2025-05-11 18:36:06,052 - INFO - Episode 0: Obstacle detected during movement, triggering immediate replanning
+2025-05-11 18:36:06,073 - INFO - Episode 0: Triggering dynamic replanning due to detected obstacle
+2025-05-11 18:36:06,095 - INFO - Episode 0: Executing replanned path to avoid obstacle
+2025-05-11 18:36:06,115 - WARNING - Obstacle detected on planned path before movement at 6.29m distance
+2025-05-11 18:36:06,394 - WARNING - Obstacle detected on planned path before movement at 2.61m distance
+2025-05-11 18:36:06,395 - INFO - Episode 0: Obstacle detected during movement, triggering immediate replanning
+2025-05-11 18:36:06,417 - INFO - Episode 0: Triggering dynamic replanning due to detected obstacle
+2025-05-11 18:36:06,440 - INFO - Episode 0: Executing replanned path to avoid obstacle
+2025-05-11 18:36:06,458 - WARNING - Obstacle detected on planned path before movement at 6.54m distance
+2025-05-11 18:36:06,727 - WARNING - Obstacle detected on planned path before movement at 2.87m distance
+2025-05-11 18:36:06,728 - INFO - Episode 0: Obstacle detected during movement, triggering immediate replanning
+2025-05-11 18:36:06,751 - INFO - Episode 0: Triggering dynamic replanning due to detected obstacle
+2025-05-11 18:36:06,766 - INFO - Episode 0: Executing replanned path to avoid obstacle
+2025-05-11 18:36:06,788 - WARNING - Obstacle detected on planned path before movement at 6.22m distance
+2025-05-11 18:36:07,055 - WARNING - Obstacle detected on planned path before movement at 2.78m distance
+2025-05-11 18:36:07,056 - INFO - Episode 0: Obstacle detected during movement, triggering immediate replanning
+2025-05-11 18:36:07,072 - INFO - Episode 0: Triggering dynamic replanning due to detected obstacle
+2025-05-11 18:36:07,097 - INFO - Episode 0: Executing replanned path to avoid obstacle
+2025-05-11 18:36:07,115 - WARNING - Obstacle detected on planned path before movement at 6.75m distance
+2025-05-11 18:36:07,368 - WARNING - Obstacle detected on planned path before movement at 3.30m distance
+2025-05-11 18:36:07,369 - INFO - Episode 0: Obstacle detected during movement, triggering immediate replanning
+2025-05-11 18:36:07,394 - INFO - Episode 0: Triggering dynamic replanning due to detected obstacle
+2025-05-11 18:36:07,414 - INFO - Episode 0: Executing replanned path to avoid obstacle
+2025-05-11 18:36:07,435 - WARNING - Obstacle detected on planned path before movement at 6.39m distance
+2025-05-11 18:36:07,701 - WARNING - Obstacle detected on planned path before movement at 3.05m distance
+2025-05-11 18:36:07,702 - INFO - Episode 0: Obstacle detected during movement, triggering immediate replanning
+2025-05-11 18:36:07,724 - INFO - Episode 0: Triggering dynamic replanning due to detected obstacle
+2025-05-11 18:36:07,740 - INFO - Episode 0: Executing replanned path to avoid obstacle
+2025-05-11 18:36:07,765 - WARNING - Obstacle detected on planned path before movement at 6.87m distance
+2025-05-11 18:36:08,017 - WARNING - Obstacle detected on planned path before movement at 3.38m distance
+2025-05-11 18:36:08,018 - INFO - Episode 0: Obstacle detected during movement, triggering immediate replanning
+2025-05-11 18:36:08,034 - INFO - Episode 0: Triggering dynamic replanning due to detected obstacle
+2025-05-11 18:36:08,054 - INFO - Episode 0: Executing replanned path to avoid obstacle
+2025-05-11 18:36:08,069 - WARNING - Obstacle detected on planned path before movement at 6.48m distance
+2025-05-11 18:36:08,322 - WARNING - Obstacle detected on planned path before movement at 3.10m distance
+2025-05-11 18:36:08,322 - INFO - Episode 0: Obstacle detected during movement, triggering immediate replanning
+2025-05-11 18:36:08,340 - INFO - Episode 0: Triggering dynamic replanning due to detected obstacle
+2025-05-11 18:36:08,355 - INFO - Episode 0: Executing replanned path to avoid obstacle
+2025-05-11 18:36:08,375 - WARNING - Obstacle detected on planned path before movement at 6.95m distance
+2025-05-11 18:36:08,627 - WARNING - Obstacle detected on planned path before movement at 3.43m distance
+2025-05-11 18:36:08,628 - INFO - Episode 0: Obstacle detected during movement, triggering immediate replanning
+2025-05-11 18:36:08,644 - INFO - Episode 0: Triggering dynamic replanning due to detected obstacle
+2025-05-11 18:36:08,662 - INFO - Episode 0: Executing replanned path to avoid obstacle
+2025-05-11 18:36:08,679 - WARNING - Obstacle detected on planned path before movement at 6.55m distance
+2025-05-11 18:36:08,927 - WARNING - Obstacle detected on planned path before movement at 3.14m distance
+2025-05-11 18:36:08,927 - INFO - Episode 0: Obstacle detected during movement, triggering immediate replanning
+2025-05-11 18:36:08,944 - INFO - Episode 0: Triggering dynamic replanning due to detected obstacle
+2025-05-11 18:36:08,961 - INFO - Episode 0: Executing replanned path to avoid obstacle
+2025-05-11 18:36:08,980 - WARNING - Obstacle detected on planned path before movement at 7.01m distance
+2025-05-11 18:36:09,235 - WARNING - Obstacle detected on planned path before movement at 3.16m distance
+2025-05-11 18:36:09,236 - INFO - Episode 0: Obstacle detected during movement, triggering immediate replanning
+2025-05-11 18:36:09,254 - INFO - Episode 0: Triggering dynamic replanning due to detected obstacle
+2025-05-11 18:36:09,269 - INFO - Episode 0: Executing replanned path to avoid obstacle
+2025-05-11 18:36:09,285 - WARNING - Obstacle detected on planned path before movement at 6.61m distance
+2025-05-11 18:36:09,530 - WARNING - Obstacle detected on planned path before movement at 2.96m distance
+2025-05-11 18:36:09,530 - INFO - Episode 0: Obstacle detected during movement, triggering immediate replanning
+2025-05-11 18:36:09,544 - INFO - Episode 0: Triggering dynamic replanning due to detected obstacle
+2025-05-11 18:36:09,560 - INFO - Episode 0: Executing replanned path to avoid obstacle
+2025-05-11 18:36:09,579 - WARNING - Obstacle detected on planned path before movement at 7.07m distance
+2025-05-11 18:36:09,834 - WARNING - Obstacle detected on planned path before movement at 3.19m distance
+2025-05-11 18:36:09,835 - INFO - Episode 0: Obstacle detected during movement, triggering immediate replanning
+2025-05-11 18:36:09,850 - INFO - Episode 0: Triggering dynamic replanning due to detected obstacle
+2025-05-11 18:36:09,866 - INFO - Episode 0: Executing replanned path to avoid obstacle
+2025-05-11 18:36:09,885 - WARNING - Obstacle detected on planned path before movement at 7.10m distance
+2025-05-11 18:36:10,130 - WARNING - Obstacle detected on planned path before movement at 3.20m distance
+2025-05-11 18:36:10,131 - INFO - Episode 0: Obstacle detected during movement, triggering immediate replanning
+2025-05-11 18:36:10,147 - INFO - Episode 0: Triggering dynamic replanning due to detected obstacle
+2025-05-11 18:36:10,167 - INFO - Episode 0: Executing replanned path to avoid obstacle
+2025-05-11 18:36:10,192 - WARNING - Obstacle detected on planned path before movement at 6.69m distance
+2025-05-11 18:36:10,433 - WARNING - Obstacle detected on planned path before movement at 2.99m distance
+2025-05-11 18:36:10,434 - INFO - Episode 0: Obstacle detected during movement, triggering immediate replanning
+2025-05-11 18:36:10,450 - INFO - Episode 0: Triggering dynamic replanning due to detected obstacle
+2025-05-11 18:36:10,468 - INFO - Episode 0: Executing replanned path to avoid obstacle
+2025-05-11 18:36:10,485 - WARNING - Obstacle detected on planned path before movement at 6.86m distance
+2025-05-11 18:36:10,732 - WARNING - Obstacle detected on planned path before movement at 3.24m distance
+2025-05-11 18:36:10,732 - INFO - Episode 0: Obstacle detected during movement, triggering immediate replanning
+2025-05-11 18:36:10,740 - INFO - Episode 0: Triggering dynamic replanning due to detected obstacle
+2025-05-11 18:36:10,750 - INFO - Episode 0: Executing replanned path to avoid obstacle
+2025-05-11 18:36:10,757 - WARNING - Obstacle detected on planned path before movement at 6.73m distance
+2025-05-11 18:36:10,998 - WARNING - Obstacle detected on planned path before movement at 3.01m distance
+2025-05-11 18:36:10,999 - INFO - Episode 0: Obstacle detected during movement, triggering immediate replanning
+2025-05-11 18:36:11,015 - INFO - Episode 0: Triggering dynamic replanning due to detected obstacle
+2025-05-11 18:36:11,030 - INFO - Episode 0: Executing replanned path to avoid obstacle
+2025-05-11 18:36:11,047 - WARNING - Obstacle detected on planned path before movement at 6.74m distance
+2025-05-11 18:36:11,299 - WARNING - Obstacle detected on planned path before movement at 3.27m distance
+2025-05-11 18:36:11,300 - INFO - Episode 0: Obstacle detected during movement, triggering immediate replanning
+2025-05-11 18:36:11,314 - INFO - Episode 0: Triggering dynamic replanning due to detected obstacle
+2025-05-11 18:36:11,326 - INFO - Episode 0: Executing replanned path to avoid obstacle
+2025-05-11 18:36:11,341 - WARNING - Obstacle detected on planned path before movement at 6.72m distance
+2025-05-11 18:36:11,586 - WARNING - Obstacle detected on planned path before movement at 3.03m distance
+2025-05-11 18:36:11,587 - INFO - Episode 0: Obstacle detected during movement, triggering immediate replanning
+2025-05-11 18:36:11,604 - INFO - Episode 0: Triggering dynamic replanning due to detected obstacle
+2025-05-11 18:36:11,619 - INFO - Episode 0: Executing replanned path to avoid obstacle
+2025-05-11 18:36:11,635 - WARNING - Obstacle detected on planned path before movement at 6.79m distance
+2025-05-11 18:36:11,876 - WARNING - Obstacle detected on planned path before movement at 3.04m distance
+2025-05-11 18:36:11,877 - INFO - Episode 0: Obstacle detected during movement, triggering immediate replanning
+2025-05-11 18:36:11,895 - INFO - Episode 0: Triggering dynamic replanning due to detected obstacle
+2025-05-11 18:36:11,907 - INFO - Episode 0: Executing replanned path to avoid obstacle
+2025-05-11 18:36:11,922 - WARNING - Obstacle detected on planned path before movement at 6.67m distance
+2025-05-11 18:36:12,176 - WARNING - Obstacle detected on planned path before movement at 3.31m distance
+2025-05-11 18:36:12,177 - INFO - Episode 0: Obstacle detected during movement, triggering immediate replanning
+2025-05-11 18:36:12,196 - INFO - Episode 0: Triggering dynamic replanning due to detected obstacle
+2025-05-11 18:36:12,209 - INFO - Episode 0: Executing replanned path to avoid obstacle
+2025-05-11 18:36:12,223 - WARNING - Obstacle detected on planned path before movement at 6.83m distance
+2025-05-11 18:36:12,473 - WARNING - Obstacle detected on planned path before movement at 3.06m distance
+2025-05-11 18:36:12,474 - INFO - Episode 0: Obstacle detected during movement, triggering immediate replanning
+2025-05-11 18:36:12,488 - INFO - Episode 0: Triggering dynamic replanning due to detected obstacle
+2025-05-11 18:36:12,501 - INFO - Episode 0: Executing replanned path to avoid obstacle
+2025-05-11 18:36:12,516 - WARNING - Obstacle detected on planned path before movement at 6.44m distance
+2025-05-11 18:36:12,772 - WARNING - Obstacle detected on planned path before movement at 3.34m distance
+2025-05-11 18:36:12,772 - INFO - Episode 0: Obstacle detected during movement, triggering immediate replanning
+2025-05-11 18:36:12,787 - INFO - Episode 0: Triggering dynamic replanning due to detected obstacle
+2025-05-11 18:36:12,801 - INFO - Episode 0: Executing replanned path to avoid obstacle
+2025-05-11 18:36:12,817 - WARNING - Obstacle detected on planned path before movement at 6.88m distance
+2025-05-11 18:36:13,060 - WARNING - Obstacle detected on planned path before movement at 3.08m distance
+2025-05-11 18:36:13,061 - INFO - Episode 0: Obstacle detected during movement, triggering immediate replanning
+2025-05-11 18:36:13,076 - INFO - Episode 0: Triggering dynamic replanning due to detected obstacle
+2025-05-11 18:36:13,089 - INFO - Episode 0: Executing replanned path to avoid obstacle
+2025-05-11 18:36:13,108 - WARNING - Obstacle detected on planned path before movement at 6.89m distance
+2025-05-11 18:36:13,360 - WARNING - Obstacle detected on planned path before movement at 3.38m distance
+2025-05-11 18:36:13,361 - INFO - Episode 0: Obstacle detected during movement, triggering immediate replanning
+2025-05-11 18:36:13,380 - INFO - Episode 0: Triggering dynamic replanning due to detected obstacle
+2025-05-11 18:36:13,395 - INFO - Episode 0: Executing replanned path to avoid obstacle
+2025-05-11 18:36:13,412 - WARNING - Obstacle detected on planned path before movement at 6.49m distance
+2025-05-11 18:36:13,665 - WARNING - Obstacle detected on planned path before movement at 3.11m distance
+2025-05-11 18:36:13,666 - INFO - Episode 0: Obstacle detected during movement, triggering immediate replanning
+2025-05-11 18:36:13,682 - INFO - Episode 0: Triggering dynamic replanning due to detected obstacle
+2025-05-11 18:36:13,696 - INFO - Episode 0: Executing replanned path to avoid obstacle
+2025-05-11 18:36:13,713 - WARNING - Obstacle detected on planned path before movement at 6.94m distance
+2025-05-11 18:36:13,960 - WARNING - Obstacle detected on planned path before movement at 3.41m distance
+2025-05-11 18:36:13,961 - INFO - Episode 0: Obstacle detected during movement, triggering immediate replanning
+2025-05-11 18:36:13,978 - INFO - Episode 0: Triggering dynamic replanning due to detected obstacle
+2025-05-11 18:36:13,993 - INFO - Episode 0: Executing replanned path to avoid obstacle
+2025-05-11 18:36:14,025 - WARNING - Obstacle detected on planned path before movement at 6.54m distance
+2025-05-11 18:36:14,272 - WARNING - Obstacle detected on planned path before movement at 3.13m distance
+2025-05-11 18:36:14,273 - INFO - Episode 0: Obstacle detected during movement, triggering immediate replanning
+2025-05-11 18:36:14,288 - INFO - Episode 0: Triggering dynamic replanning due to detected obstacle
+2025-05-11 18:36:14,307 - INFO - Episode 0: Executing replanned path to avoid obstacle
+2025-05-11 18:36:14,325 - WARNING - Obstacle detected on planned path before movement at 6.98m distance
+2025-05-11 18:36:14,578 - WARNING - Obstacle detected on planned path before movement at 3.15m distance
+2025-05-11 18:36:14,578 - INFO - Episode 0: Obstacle detected during movement, triggering immediate replanning
+2025-05-11 18:36:14,594 - INFO - Episode 0: Triggering dynamic replanning due to detected obstacle
+2025-05-11 18:36:14,609 - INFO - Episode 0: Executing replanned path to avoid obstacle
+2025-05-11 18:36:14,625 - WARNING - Obstacle detected on planned path before movement at 6.58m distance
+2025-05-11 18:36:14,846 - ERROR - Error in move_to_waypoint: 'Future' object has no attribute 'is_done'
+2025-05-11 18:36:15,052 - WARNING - Episode 0: Collision detected at step 76
+2025-05-11 18:36:15,085 - WARNING - Waypoint too close (0.00m), extending to minimum distance 0.2m
+2025-05-11 18:36:15,085 - WARNING - Movement distance effectively zero, creating default movement direction
+2025-05-11 18:36:15,105 - WARNING - Obstacle detected on planned path before movement at 1.24m distance
+2025-05-11 18:36:15,105 - INFO - Episode 0: Obstacle detected during movement, triggering immediate replanning
+2025-05-11 18:36:15,122 - INFO - Episode 0: Triggering dynamic replanning due to detected obstacle
+2025-05-11 18:36:15,136 - INFO - Episode 0: Executing replanned path to avoid obstacle
+2025-05-11 18:36:15,136 - WARNING - Waypoint too close (0.00m), extending to minimum distance 0.2m
+2025-05-11 18:36:15,136 - WARNING - Movement distance effectively zero, creating default movement direction
+2025-05-11 18:36:15,152 - WARNING - Obstacle detected on planned path before movement at 1.24m distance
+2025-05-11 18:36:15,355 - WARNING - Episode 0: Collision detected at step 77
+2025-05-11 18:36:15,398 - WARNING - Waypoint too close (0.00m), extending to minimum distance 0.2m
+2025-05-11 18:36:15,398 - WARNING - Movement distance effectively zero, creating default movement direction
+2025-05-11 18:36:15,422 - WARNING - Obstacle detected on planned path before movement at 2.36m distance
+2025-05-11 18:36:15,423 - INFO - Episode 0: Obstacle detected during movement, triggering immediate replanning
+2025-05-11 18:36:15,446 - INFO - Episode 0: Triggering dynamic replanning due to detected obstacle
+2025-05-11 18:36:15,460 - INFO - Episode 0: Executing replanned path to avoid obstacle
+2025-05-11 18:36:15,460 - WARNING - Waypoint too close (0.00m), extending to minimum distance 0.2m
+2025-05-11 18:36:15,460 - WARNING - Movement distance effectively zero, creating default movement direction
+2025-05-11 18:36:15,480 - WARNING - Obstacle detected on planned path before movement at 2.36m distance
+2025-05-11 18:36:15,719 - WARNING - Waypoint too close (0.00m), extending to minimum distance 0.2m
+2025-05-11 18:36:15,721 - WARNING - Movement distance effectively zero, creating default movement direction
+2025-05-11 18:36:15,744 - WARNING - Obstacle detected on planned path before movement at 1.73m distance
+2025-05-11 18:36:15,745 - INFO - Episode 0: Obstacle detected during movement, triggering immediate replanning
+2025-05-11 18:36:15,769 - INFO - Episode 0: Triggering dynamic replanning due to detected obstacle
+2025-05-11 18:36:15,784 - INFO - Episode 0: Executing replanned path to avoid obstacle
+2025-05-11 18:36:15,785 - WARNING - Waypoint too close (0.00m), extending to minimum distance 0.2m
+2025-05-11 18:36:15,785 - WARNING - Movement distance effectively zero, creating default movement direction
+2025-05-11 18:36:15,806 - WARNING - Obstacle detected on planned path before movement at 1.73m distance
+2025-05-11 18:36:16,052 - WARNING - Waypoint too close (0.00m), extending to minimum distance 0.2m
+2025-05-11 18:36:16,052 - WARNING - Movement distance effectively zero, creating default movement direction
+2025-05-11 18:36:16,072 - WARNING - Obstacle detected on planned path before movement at 2.36m distance
+2025-05-11 18:36:16,073 - INFO - Episode 0: Obstacle detected during movement, triggering immediate replanning
+2025-05-11 18:36:16,094 - INFO - Episode 0: Triggering dynamic replanning due to detected obstacle
+2025-05-11 18:36:16,112 - INFO - Episode 0: Executing replanned path to avoid obstacle
+2025-05-11 18:36:16,112 - WARNING - Waypoint too close (0.00m), extending to minimum distance 0.2m
+2025-05-11 18:36:16,112 - WARNING - Movement distance effectively zero, creating default movement direction
+2025-05-11 18:36:16,129 - WARNING - Obstacle detected on planned path before movement at 2.36m distance
+2025-05-11 18:36:16,365 - WARNING - Waypoint too close (0.00m), extending to minimum distance 0.2m
+2025-05-11 18:36:16,366 - WARNING - Movement distance effectively zero, creating default movement direction
+2025-05-11 18:36:16,391 - ERROR - Error in move_to_waypoint: 'Future' object has no attribute 'is_done'
+2025-05-11 18:36:16,638 - WARNING - Waypoint too close (0.00m), extending to minimum distance 0.2m
+2025-05-11 18:36:16,639 - WARNING - Movement distance effectively zero, creating default movement direction
+2025-05-11 18:36:16,665 - ERROR - Error in move_to_waypoint: 'Future' object has no attribute 'is_done'
+2025-05-11 18:36:16,915 - WARNING - Waypoint too close (0.00m), extending to minimum distance 0.2m
+2025-05-11 18:36:16,915 - WARNING - Movement distance effectively zero, creating default movement direction
+2025-05-11 18:36:16,937 - WARNING - Obstacle detected on planned path before movement at 2.36m distance
+2025-05-11 18:36:16,938 - INFO - Episode 0: Obstacle detected during movement, triggering immediate replanning
+2025-05-11 18:36:16,960 - INFO - Episode 0: Triggering dynamic replanning due to detected obstacle
+2025-05-11 18:36:16,979 - INFO - Episode 0: Executing replanned path to avoid obstacle
+2025-05-11 18:36:16,980 - WARNING - Waypoint too close (0.00m), extending to minimum distance 0.2m
+2025-05-11 18:36:16,981 - WARNING - Movement distance effectively zero, creating default movement direction
+2025-05-11 18:36:17,010 - ERROR - Error in move_to_waypoint: 'Future' object has no attribute 'is_done'
+2025-05-11 18:36:17,259 - WARNING - Waypoint too close (0.00m), extending to minimum distance 0.2m
+2025-05-11 18:36:17,260 - WARNING - Movement distance effectively zero, creating default movement direction
+2025-05-11 18:36:17,292 - ERROR - Error in move_to_waypoint: 'Future' object has no attribute 'is_done'
+2025-05-11 18:36:17,539 - WARNING - Waypoint too close (0.00m), extending to minimum distance 0.2m
+2025-05-11 18:36:17,540 - WARNING - Movement distance effectively zero, creating default movement direction
+2025-05-11 18:36:17,564 - WARNING - Obstacle detected on planned path before movement at 2.36m distance
+2025-05-11 18:36:17,565 - INFO - Episode 0: Obstacle detected during movement, triggering immediate replanning
+2025-05-11 18:36:17,585 - INFO - Episode 0: Triggering dynamic replanning due to detected obstacle
+2025-05-11 18:36:17,602 - INFO - Episode 0: Executing replanned path to avoid obstacle
+2025-05-11 18:36:17,603 - WARNING - Waypoint too close (0.00m), extending to minimum distance 0.2m
+2025-05-11 18:36:17,603 - WARNING - Movement distance effectively zero, creating default movement direction
+2025-05-11 18:36:17,622 - ERROR - Error in move_to_waypoint: 'Future' object has no attribute 'is_done'
+2025-05-11 18:36:17,857 - WARNING - Waypoint too close (0.00m), extending to minimum distance 0.2m
+2025-05-11 18:36:17,858 - WARNING - Movement distance effectively zero, creating default movement direction
+2025-05-11 18:36:17,879 - WARNING - Obstacle detected on planned path before movement at 2.36m distance
+2025-05-11 18:36:17,879 - INFO - Episode 0: Obstacle detected during movement, triggering immediate replanning
+2025-05-11 18:36:17,894 - INFO - Episode 0: Triggering dynamic replanning due to detected obstacle
+2025-05-11 18:36:17,909 - INFO - Episode 0: Executing replanned path to avoid obstacle
+2025-05-11 18:36:17,909 - WARNING - Waypoint too close (0.00m), extending to minimum distance 0.2m
+2025-05-11 18:36:17,910 - WARNING - Movement distance effectively zero, creating default movement direction
+2025-05-11 18:36:17,938 - WARNING - Obstacle detected on planned path before movement at 2.36m distance
+2025-05-11 18:36:18,179 - WARNING - Waypoint too close (0.00m), extending to minimum distance 0.2m
+2025-05-11 18:36:18,180 - WARNING - Movement distance effectively zero, creating default movement direction
+2025-05-11 18:36:18,201 - WARNING - Obstacle detected on planned path before movement at 2.36m distance
+2025-05-11 18:36:18,202 - INFO - Episode 0: Obstacle detected during movement, triggering immediate replanning
+2025-05-11 18:36:18,223 - INFO - Episode 0: Triggering dynamic replanning due to detected obstacle
+2025-05-11 18:36:18,237 - INFO - Episode 0: Executing replanned path to avoid obstacle
+2025-05-11 18:36:18,237 - WARNING - Waypoint too close (0.00m), extending to minimum distance 0.2m
+2025-05-11 18:36:18,238 - WARNING - Movement distance effectively zero, creating default movement direction
+2025-05-11 18:36:18,257 - WARNING - Obstacle detected on planned path before movement at 2.36m distance
+2025-05-11 18:36:18,494 - WARNING - Waypoint too close (0.00m), extending to minimum distance 0.2m
+2025-05-11 18:36:18,495 - WARNING - Movement distance effectively zero, creating default movement direction
+2025-05-11 18:36:18,520 - WARNING - Obstacle detected on planned path before movement at 2.36m distance
+2025-05-11 18:36:18,521 - INFO - Episode 0: Obstacle detected during movement, triggering immediate replanning
+2025-05-11 18:36:18,548 - INFO - Episode 0: Triggering dynamic replanning due to detected obstacle
+2025-05-11 18:36:18,567 - INFO - Episode 0: Executing replanned path to avoid obstacle
+2025-05-11 18:36:18,567 - WARNING - Waypoint too close (0.00m), extending to minimum distance 0.2m
+2025-05-11 18:36:18,568 - WARNING - Movement distance effectively zero, creating default movement direction
+2025-05-11 18:36:18,588 - WARNING - Obstacle detected on planned path before movement at 2.36m distance
+2025-05-11 18:36:18,832 - WARNING - Waypoint too close (0.00m), extending to minimum distance 0.2m
+2025-05-11 18:36:18,832 - WARNING - Movement distance effectively zero, creating default movement direction
+2025-05-11 18:36:18,859 - ERROR - Error in move_to_waypoint: 'Future' object has no attribute 'is_done'
+2025-05-11 18:36:19,089 - WARNING - Waypoint too close (0.00m), extending to minimum distance 0.2m
+2025-05-11 18:36:19,090 - WARNING - Movement distance effectively zero, creating default movement direction
+2025-05-11 18:36:19,110 - ERROR - Error in move_to_waypoint: 'Future' object has no attribute 'is_done'
+2025-05-11 18:36:19,346 - WARNING - Waypoint too close (0.00m), extending to minimum distance 0.2m
+2025-05-11 18:36:19,346 - WARNING - Movement distance effectively zero, creating default movement direction
+2025-05-11 18:36:19,363 - WARNING - Obstacle detected on planned path before movement at 2.36m distance
+2025-05-11 18:36:19,363 - INFO - Episode 0: Obstacle detected during movement, triggering immediate replanning
+2025-05-11 18:36:19,378 - INFO - Episode 0: Triggering dynamic replanning due to detected obstacle
+2025-05-11 18:36:19,390 - INFO - Episode 0: Executing replanned path to avoid obstacle
+2025-05-11 18:36:19,391 - WARNING - Waypoint too close (0.00m), extending to minimum distance 0.2m
+2025-05-11 18:36:19,391 - WARNING - Movement distance effectively zero, creating default movement direction
+2025-05-11 18:36:19,406 - WARNING - Obstacle detected on planned path before movement at 2.36m distance
+2025-05-11 18:36:19,645 - WARNING - Waypoint too close (0.00m), extending to minimum distance 0.2m
+2025-05-11 18:36:19,646 - WARNING - Movement distance effectively zero, creating default movement direction
+2025-05-11 18:36:19,662 - ERROR - Error in move_to_waypoint: 'Future' object has no attribute 'is_done'
+2025-05-11 18:36:19,894 - WARNING - Waypoint too close (0.00m), extending to minimum distance 0.2m
+2025-05-11 18:36:19,894 - WARNING - Movement distance effectively zero, creating default movement direction
+2025-05-11 18:36:19,910 - ERROR - Error in move_to_waypoint: 'Future' object has no attribute 'is_done'
+2025-05-11 18:36:20,138 - WARNING - Waypoint too close (0.00m), extending to minimum distance 0.2m
+2025-05-11 18:36:20,138 - WARNING - Movement distance effectively zero, creating default movement direction
+2025-05-11 18:36:20,155 - WARNING - Obstacle detected on planned path before movement at 2.36m distance
+2025-05-11 18:36:20,155 - INFO - Episode 0: Obstacle detected during movement, triggering immediate replanning
+2025-05-11 18:36:20,172 - INFO - Episode 0: Triggering dynamic replanning due to detected obstacle
+2025-05-11 18:36:20,185 - INFO - Episode 0: Executing replanned path to avoid obstacle
+2025-05-11 18:36:20,186 - WARNING - Waypoint too close (0.00m), extending to minimum distance 0.2m
+2025-05-11 18:36:20,187 - WARNING - Movement distance effectively zero, creating default movement direction
+2025-05-11 18:36:20,201 - WARNING - Obstacle detected on planned path before movement at 2.36m distance
+2025-05-11 18:36:20,439 - WARNING - Waypoint too close (0.00m), extending to minimum distance 0.2m
+2025-05-11 18:36:20,439 - WARNING - Movement distance effectively zero, creating default movement direction
+2025-05-11 18:36:20,457 - WARNING - Obstacle detected on planned path before movement at 1.73m distance
+2025-05-11 18:36:20,458 - INFO - Episode 0: Obstacle detected during movement, triggering immediate replanning
+2025-05-11 18:36:20,473 - INFO - Episode 0: Triggering dynamic replanning due to detected obstacle
+2025-05-11 18:36:20,486 - INFO - Episode 0: Executing replanned path to avoid obstacle
+2025-05-11 18:36:20,487 - WARNING - Waypoint too close (0.00m), extending to minimum distance 0.2m
+2025-05-11 18:36:20,487 - WARNING - Movement distance effectively zero, creating default movement direction
+2025-05-11 18:36:20,504 - WARNING - Obstacle detected on planned path before movement at 1.73m distance
+2025-05-11 18:36:20,744 - WARNING - Waypoint too close (0.00m), extending to minimum distance 0.2m
+2025-05-11 18:36:20,744 - WARNING - Movement distance effectively zero, creating default movement direction
+2025-05-11 18:36:20,760 - WARNING - Obstacle detected on planned path before movement at 2.36m distance
+2025-05-11 18:36:20,761 - INFO - Episode 0: Obstacle detected during movement, triggering immediate replanning
+2025-05-11 18:36:20,776 - INFO - Episode 0: Triggering dynamic replanning due to detected obstacle
+2025-05-11 18:36:20,788 - INFO - Episode 0: Executing replanned path to avoid obstacle
+2025-05-11 18:36:20,789 - WARNING - Waypoint too close (0.00m), extending to minimum distance 0.2m
+2025-05-11 18:36:20,790 - WARNING - Movement distance effectively zero, creating default movement direction
+2025-05-11 18:36:20,809 - WARNING - Obstacle detected on planned path before movement at 2.36m distance
+2025-05-11 18:36:21,057 - WARNING - Waypoint too close (0.00m), extending to minimum distance 0.2m
+2025-05-11 18:36:21,058 - WARNING - Movement distance effectively zero, creating default movement direction
+2025-05-11 18:36:21,075 - ERROR - Error in move_to_waypoint: 'Future' object has no attribute 'is_done'
+2025-05-11 18:36:21,320 - WARNING - Waypoint too close (0.00m), extending to minimum distance 0.2m
+2025-05-11 18:36:21,321 - WARNING - Movement distance effectively zero, creating default movement direction
+2025-05-11 18:36:21,338 - ERROR - Error in move_to_waypoint: 'Future' object has no attribute 'is_done'
+2025-05-11 18:36:21,574 - WARNING - Waypoint too close (0.00m), extending to minimum distance 0.2m
+2025-05-11 18:36:21,575 - WARNING - Movement distance effectively zero, creating default movement direction
+2025-05-11 18:36:21,595 - WARNING - Obstacle detected on planned path before movement at 2.36m distance
+2025-05-11 18:36:21,597 - INFO - Episode 0: Obstacle detected during movement, triggering immediate replanning
+2025-05-11 18:36:21,618 - INFO - Episode 0: Triggering dynamic replanning due to detected obstacle
+2025-05-11 18:36:21,630 - INFO - Episode 0: Executing replanned path to avoid obstacle
+2025-05-11 18:36:21,630 - WARNING - Waypoint too close (0.00m), extending to minimum distance 0.2m
+2025-05-11 18:36:21,630 - WARNING - Movement distance effectively zero, creating default movement direction
+2025-05-11 18:36:21,650 - WARNING - Obstacle detected on planned path before movement at 2.36m distance
+2025-05-11 18:36:21,883 - WARNING - Waypoint too close (0.00m), extending to minimum distance 0.2m
+2025-05-11 18:36:21,884 - WARNING - Movement distance effectively zero, creating default movement direction
+2025-05-11 18:36:21,901 - ERROR - Error in move_to_waypoint: 'Future' object has no attribute 'is_done'
+2025-05-11 18:36:22,325 - INFO - Episode 0 completed: timeout
+2025-05-11 18:36:22,326 - INFO -   Steps: 100, Duration: 28.31s
+2025-05-11 18:36:22,326 - INFO -   Final distance: 12.87m, Collisions: 2
+2025-05-11 18:36:22,326 - INFO -   Dynamic replanning events: 52
+2025-05-11 18:36:22,373 - INFO - === Starting Episode 1 ===
+2025-05-11 18:36:22,376 - INFO - Episode 1: Taking off...
+2025-05-11 18:36:27,290 - WARNING - Episode 1: Drone altitude too low (0.05), adjusting height

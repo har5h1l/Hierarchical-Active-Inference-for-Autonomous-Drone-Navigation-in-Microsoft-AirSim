@@ -712,10 +712,32 @@ class Scanner:
     def __init__(self, client, scan_range=20.0):
         self.client = client
         self.scan_range = scan_range
-    
-    def fetch_density_distances(self):
-        """Get obstacle positions and distances with orientation-aware transformation"""
+        
+        # Cache for recent scans to optimize performance during rapid rescanning
+        self.last_scan_time = 0
+        self.scan_cache_ttl = 0.1  # 100ms TTL for cached scan data
+        self.cached_positions = []
+        self.cached_distances = []
+        
+        # Parameters for directional scanning (used in real-time path monitoring)
+        self.fov_angle = 120  # Field of view angle in degrees for forward scan
+        
+    def fetch_density_distances(self, use_cache=False):
+        """Get obstacle positions and distances with orientation-aware transformation
+        
+        Args:
+            use_cache: Whether to use cached results if available within TTL
+            
+        Returns:
+            tuple: (obstacle_positions, obstacle_distances)
+        """
         try:
+            current_time = time.time()
+            
+            # Check if we can use cached results
+            if use_cache and current_time - self.last_scan_time < self.scan_cache_ttl:
+                return self.cached_positions, self.cached_distances
+            
             # Initialize empty lists for return values
             obstacle_positions = []
             obstacle_distances = []
@@ -804,10 +826,187 @@ class Scanner:
                 except Exception:
                     continue
             
+            # Update cache
+            self.cached_positions = obstacle_positions
+            self.cached_distances = obstacle_distances
+            self.last_scan_time = current_time
+            
             return obstacle_positions, obstacle_distances
         
         except Exception as e:
             print(f"Error in fetch_density_distances: {e}")
+            traceback.print_exc()
+            return [], []
+            
+    def scan_path_for_obstacles(self, start_pos, end_pos, safety_radius=3.0):
+        """Scan specifically for obstacles along a planned movement path
+        
+        Args:
+            start_pos: Starting position [x, y, z]
+            end_pos: Ending position [x, y, z]
+            safety_radius: Safety radius around path to check for obstacles (meters)
+            
+        Returns:
+            tuple: (obstacle_detected, obstacle_position, obstacle_distance)
+        """
+        try:
+            # Quick line of sight check using AirSim's built-in function first
+            start_vector = airsim.Vector3r(start_pos[0], start_pos[1], start_pos[2])
+            end_vector = airsim.Vector3r(end_pos[0], end_pos[1], end_pos[2])
+            
+            # This is much faster than processing point clouds for initial check
+            los_clear = self.client.simTestLineOfSightBetweenPoints(start_vector, end_vector)
+            
+            # If line of sight is blocked, we have a definite obstacle
+            if not los_clear:
+                # Try to locate the obstacle more precisely using raycasting
+                try:
+                    # Cast multiple rays to better pinpoint obstacle location
+                    movement_vector = np.array(end_pos) - np.array(start_pos)
+                    movement_dist = np.linalg.norm(movement_vector)
+                    
+                    # Normalize to get direction
+                    if movement_dist > 0:
+                        direction = movement_vector / movement_dist
+                    else:
+                        direction = np.array([1.0, 0.0, 0.0])
+                    
+                    # Create test points along path
+                    num_test_points = min(5, max(3, int(movement_dist / 2)))
+                    distances = np.linspace(0.5, movement_dist - 0.5, num_test_points)
+                    
+                    # Check each test point
+                    for dist in distances:
+                        test_point = np.array(start_pos) + direction * dist
+                        test_vector = airsim.Vector3r(test_point[0], test_point[1], test_point[2])
+                        
+                        if not self.client.simTestLineOfSightBetweenPoints(start_vector, test_vector):
+                            # Found obstacle - return estimated position and distance
+                            obstacle_pos = test_point.tolist()
+                            obstacle_dist = dist
+                            return True, obstacle_pos, obstacle_dist
+                    
+                    # If no specific obstacle found but LOS check failed, use middle of path as estimate
+                    middle_point = np.array(start_pos) + direction * (movement_dist / 2)
+                    return True, middle_point.tolist(), movement_dist / 2
+                except:
+                    # If precise location fails, just report an obstacle exists
+                    return True, None, None
+            
+            # If built-in LOS check passed, do a more detailed check using point cloud for nearby obstacles
+            obstacle_positions, obstacle_distances = self.fetch_density_distances(use_cache=True)
+            
+            if not obstacle_positions:
+                return False, None, None  # No obstacles detected
+            
+            # Calculate path vector
+            path_vector = np.array(end_pos) - np.array(start_pos)
+            path_length = np.linalg.norm(path_vector)
+            
+            if path_length < 0.001:  # Effectively not moving
+                return False, None, None
+                
+            path_direction = path_vector / path_length
+            
+            # Check each obstacle to see if it's close to our path
+            for i, obstacle_pos in enumerate(obstacle_positions):
+                obstacle_vector = np.array(obstacle_pos) - np.array(start_pos)
+                
+                # Project obstacle vector onto path direction
+                projection = np.dot(obstacle_vector, path_direction)
+                
+                # Only consider obstacles that are ahead of us along the path
+                # and within the path length (not past the destination)
+                if 0 <= projection <= path_length:
+                    # Calculate perpendicular distance from obstacle to path
+                    closest_point = np.array(start_pos) + projection * path_direction
+                    perpendicular_dist = np.linalg.norm(np.array(obstacle_pos) - closest_point)
+                    
+                    # If obstacle is within safety radius of path
+                    if perpendicular_dist <= safety_radius:
+                        return True, obstacle_pos, obstacle_distances[i]
+            
+            # No obstacles detected near the path
+            return False, None, None
+            
+        except Exception as e:
+            logging.error(f"Error in scan_path_for_obstacles: {e}")
+            traceback.print_exc()
+            return False, None, None
+            
+    def scan_in_direction(self, direction, max_distance=10.0, cone_angle=45.0):
+        """Scan for obstacles in a specific direction with a cone-shaped field of view
+        
+        Args:
+            direction: Direction vector [x, y, z]
+            max_distance: Maximum distance to scan
+            cone_angle: Half-angle of the cone field of view in degrees
+            
+        Returns:
+            tuple: (obstacle_positions, obstacle_distances) within the cone
+        """
+        try:
+            # First get all obstacle positions
+            all_positions, all_distances = self.fetch_density_distances(use_cache=True)
+            
+            if not all_positions:
+                return [], []
+                
+            # Get current drone position
+            try:
+                drone_state = self.client.getMultirotorState().kinematics_estimated
+                drone_pos = np.array([
+                    drone_state.position.x_val,
+                    drone_state.position.y_val,
+                    drone_state.position.z_val
+                ])
+            except:
+                return [], []  # Can't determine position
+            
+            # Normalize direction vector
+            direction = np.array(direction)
+            norm = np.linalg.norm(direction)
+            if norm < 0.001:  # Avoid division by zero
+                return [], []
+            direction = direction / norm
+            
+            # Calculate cosine of cone angle
+            cos_angle = np.cos(np.radians(cone_angle))
+            
+            # Filter obstacles within the cone
+            in_cone_positions = []
+            in_cone_distances = []
+            
+            for i, pos in enumerate(all_positions):
+                if i >= len(all_distances):  # Safety check
+                    continue
+                    
+                # Skip if beyond max distance
+                if all_distances[i] > max_distance:
+                    continue
+                    
+                # Vector from drone to obstacle
+                to_obstacle = np.array(pos) - drone_pos
+                to_obstacle_dist = np.linalg.norm(to_obstacle)
+                
+                if to_obstacle_dist < 0.001:  # Avoid division by zero
+                    continue
+                    
+                # Normalize
+                to_obstacle = to_obstacle / to_obstacle_dist
+                
+                # Calculate dot product to get cosine of angle between vectors
+                angle_cos = np.dot(direction, to_obstacle)
+                
+                # If obstacle is within the cone
+                if angle_cos > cos_angle:
+                    in_cone_positions.append(pos)
+                    in_cone_distances.append(all_distances[i])
+            
+            return in_cone_positions, in_cone_distances
+            
+        except Exception as e:
+            logging.error(f"Error in scan_in_direction: {e}")
             traceback.print_exc()
             return [], []
 
@@ -819,6 +1018,10 @@ def move_to_waypoint(client, current_pos, waypoint, velocity=2):
         current_pos: Current drone position [x, y, z]
         waypoint: Target waypoint [x, y, z]
         velocity: Movement velocity in m/s
+        
+    Returns:
+        tuple: (obstacle_detected, obstacle_pos, obstacle_dist) - 
+               Boolean indicating if obstacle was detected, the position and distance of the obstacle
     """
     try:
         # Calculate movement vector and distance
@@ -864,405 +1067,164 @@ def move_to_waypoint(client, current_pos, waypoint, velocity=2):
         logging.debug(f"Moving with yaw: {yaw_degrees:.1f}° at velocity: {velocity} m/s")
         logging.debug(f"Movement vector: [{movement_vector[0]:.2f}, {movement_vector[1]:.2f}, {movement_vector[2]:.2f}]")
         
-        # Move drone with yaw control
-        client.moveToPositionAsync(
+        # Create scanner for obstacle detection during movement
+        scanner = Scanner(client, scan_range=8.0)  # Use a shorter scan range for immediate obstacles
+        
+        # Perform a pre-check for obstacles on the planned path
+        obstacle_detected, obstacle_pos, obstacle_dist = scanner.scan_path_for_obstacles(
+            current_pos, waypoint, safety_radius=2.5
+        )
+        
+        # If obstacle detected before movement starts, return immediately to trigger replanning
+        if obstacle_detected:
+            logging.warning(f"Obstacle detected on planned path before movement at {obstacle_dist:.2f}m distance")
+            return True, obstacle_pos, obstacle_dist
+        
+        # Start drone movement without waiting for completion
+        move_task = client.moveToPositionAsync(
             waypoint[0], waypoint[1], waypoint[2],
             velocity,
             drivetrain=airsim.DrivetrainType.ForwardOnly,
             yaw_mode=airsim.YawMode(is_rate=False, yaw_or_rate=yaw_degrees)
-        ).join()
+        )
+        
+        # Direction vector (normalized)
+        if distance > 0:
+            direction = movement_vector / distance
+        else:
+            direction = np.array([1.0, 0.0, 0.0])  # Default to forward direction
+            
+        # Parameters for obstacle monitoring
+        check_interval = 0.1  # Check for obstacles every 100ms
+        safety_radius = 2.5  # Consider obstacles dangerous if within 2.5 meters of path
+        start_time = time.time()
+        progress_timeout = max(5.0, distance / velocity * 3)  # Timeout is 3x expected travel time, minimum 5 seconds
+        
+        # Monitor movement and check for obstacles
+        obstacle_detected = False
+        obstacle_pos = None
+        obstacle_dist = None
+        last_check_time = start_time
+        
+        # Use a timeout-based polling approach instead of relying on done() method
+        movement_complete = False
+        timeout_per_check = 0.05  # 50ms timeout for each join attempt
+        
+        while not movement_complete:
+            current_time = time.time()
+            
+            # Check if we've exceeded timeout (stuck detection)
+            if current_time - start_time > progress_timeout:
+                logging.warning("Movement taking too long, cancelling and replanning")
+                client.cancelLastTask()
+                # Create a virtual obstacle at the waypoint to avoid this path in future planning
+                obstacle_pos = waypoint
+                obstacle_dist = distance * 0.5  # Assume obstacle is halfway along path
+                return True, obstacle_pos, obstacle_dist
+                
+            # Only check for obstacles at specified intervals to avoid overloading
+            if current_time - last_check_time < check_interval:
+                # Short sleep to prevent CPU hogging, but periodically check task status
+                try:
+                    # Try to join with a short timeout - if it completes, movement is done
+                    # If timeout occurs, we'll continue obstacle checking
+                    move_task.join(timeout=timeout_per_check)
+                    movement_complete = True  # If join completes without exception, we're done
+                    break
+                except Exception:
+                    # Timeout occurred, continue with obstacle checks
+                    time.sleep(0.01)
+                    continue
+                
+            last_check_time = current_time
+                
+            # Get current drone position
+            try:
+                drone_state = client.getMultirotorState().kinematics_estimated
+                drone_pos = np.array([
+                    drone_state.position.x_val,
+                    drone_state.position.y_val,
+                    drone_state.position.z_val
+                ])
+            except:
+                # If we can't get position, wait and try again
+                time.sleep(check_interval)
+                continue
+                
+            # Check remaining distance to waypoint
+            remaining_dist = np.linalg.norm(np.array(waypoint) - drone_pos)
+            if remaining_dist < 0.5:  # Almost at waypoint, just let it complete
+                try:
+                    # Wait for the movement to actually complete
+                    move_task.join()
+                    movement_complete = True
+                except:
+                    # If the join fails, we'll continue - the drone is close enough anyway
+                    pass
+                break
+                
+            # Use the optimized scanner methods to check for obstacles
+            # First check directly along the path
+            obstacle_detected, detected_obstacle_pos, detected_obstacle_dist = scanner.scan_path_for_obstacles(
+                drone_pos.tolist(), waypoint, safety_radius
+            )
+            
+            if obstacle_detected:
+                obstacle_pos = detected_obstacle_pos
+                obstacle_dist = detected_obstacle_dist
+                
+                if obstacle_dist is not None:
+                    logging.warning(f"Obstacle detected at {obstacle_dist:.2f}m during movement execution")
+                else:
+                    logging.warning("Obstacle detected during movement execution (distance unknown)")
+                    
+                # Cancel the movement and signal replanning
+                client.cancelLastTask()
+                break
+                
+            # Also check in the forward direction with a cone scan (can detect dynamic obstacles better)
+            cone_obstacles, cone_distances = scanner.scan_in_direction(
+                direction, max_distance=6.0, cone_angle=35.0
+            )
+            
+            if cone_obstacles and cone_distances:
+                min_cone_dist = min(cone_distances)
+                
+                # If obstacle is very close in forward direction, halt movement
+                if min_cone_dist < 2.0:
+                    closest_idx = cone_distances.index(min_cone_dist)
+                    obstacle_pos = cone_obstacles[closest_idx]
+                    obstacle_dist = min_cone_dist
+                    logging.warning(f"Forward obstacle detected at {min_cone_dist:.2f}m during movement")
+                    logging.debug(f"Obstacle position: {obstacle_pos}")
+                    
+                    # Cancel movement and signal replanning needed
+                    client.cancelLastTask()
+                    obstacle_detected = True
+                    break
+                    
+            # Try joining with a timeout to see if the movement has completed
+            try:
+                move_task.join(timeout=timeout_per_check)
+                movement_complete = True  # If join completes without exception, we're done
+                break
+            except:
+                # Timeout occurred, continue with obstacle checks on next iteration
+                pass
+                    
+        # Return obstacle detection status to inform caller if replanning is needed
+        return obstacle_detected, obstacle_pos, obstacle_dist
+        
     except Exception as e:
         logging.error(f"Error in move_to_waypoint: {e}")
         traceback.print_exc()
-        # In case of error, just hover in place
-        client.hoverAsync().join()
-
-def sample_visible_target(current_pos: List[float], distance_range: Tuple[float, float], 
-                          client: airsim.MultirotorClient, max_attempts: int = 100,
-                          episode_id: int = 0, seed: int = None, 
-                          ray_checks: int = 5) -> List[float]:
-    """Sample a random target position within distance bounds that is visible to the drone
-    
-    Args:
-        current_pos: Current drone position [x, y, z]
-        distance_range: (min_distance, max_distance) in meters
-        client: AirSim client instance
-        max_attempts: Maximum sampling attempts before giving up
-        episode_id: Current episode ID to influence randomization
-        seed: Random seed for deterministic behavior
-        ray_checks: Number of rays to use for validating each target
-        
-    Returns:
-        List[float]: Target position [x, y, z] in NED coordinates
-        
-    Raises:
-        ValueError: If no valid target is found within max_attempts
-    """
-    min_dist, max_dist = distance_range
-    
-    # Create a separate random generator for deterministic target generation
-    if seed is not None:
-        # Use episode_id to get different but deterministic targets for each episode
-        target_rng = random.Random(seed + episode_id)
-    else:
-        target_rng = random.Random()
-    
-    # Adapt the distance range based on the episode
-    # This creates a progression of targets with varying distances
-    if episode_id > 0:
-        # The early episodes get shorter distances, later episodes get longer distances
-        episode_factor = min(1.0, episode_id / 10)  # Scales from 0.1 to 1.0 over first 10 episodes
-        
-        # Adjust the distance range
-        min_dist = min_dist + (episode_factor * 5)  # Gradually increase minimum distance
-        max_dist = min(max_dist, min_dist + 20 + (episode_factor * 30))  # Gradually increase range span
-    
-    logging.info(f"Target distance range for episode {episode_id}: {min_dist:.1f}m - {max_dist:.1f}m")
-    
-    # Verify the drone's position is valid for sampling
-    if current_pos[2] > -1.0:  # NED coordinates: Z is negative for altitude
-        logging.warning(f"Sampling target with drone too close to ground (alt: {current_pos[2]:.2f}m)")
-    
-    valid_targets = []  # Track all valid targets for potential selection
-    best_target = None  # Best target based on obstacle clearance
-    best_obstacle_clearance = 0.0  # Track the best clearance found
-    los_failures = []   # Track target positions with failed line of sight checks for logging
-    ray_test_results = []  # Track detailed ray test results for debugging
-    
-    # Get current drone state once for reference
-    try:
-        drone_state = client.getMultirotorState().kinematics_estimated
-        drone_orientation = [
-            drone_state.orientation.w_val,
-            drone_state.orientation.x_val,
-            drone_state.orientation.y_val,
-            drone_state.orientation.z_val
-        ]
-    except Exception as e:
-        logging.error(f"Failed to get drone state: {e}")
-        drone_orientation = [1.0, 0.0, 0.0, 0.0]  # Default orientation (no rotation)
-    
-    for attempt in range(max_attempts):
-        # Sample random direction (uniform on sphere)
-        theta = target_rng.uniform(0, 2 * math.pi)  # Azimuth angle
-        
-        # Constrain polar angle to avoid targets that are too vertical
-        phi = target_rng.uniform(math.pi/6, math.pi/2.5)  # Between ~30° and ~70° from vertical
-        
-        # Convert spherical to cartesian coordinates
-        x = math.sin(phi) * math.cos(theta)
-        y = math.sin(phi) * math.sin(theta)
-        z = math.cos(phi)
-        
-        # Sample random distance within range
-        distance = target_rng.uniform(min_dist, max_dist)
-        
-        # Scale direction vector by distance
-        direction = np.array([x, y, z]) * distance
-        
-        # Calculate target position in NED coordinates
-        target_pos = np.array(current_pos) + direction
-        
-        # Ensure z-coordinate is negative (below ground level in NED)
-        target_pos[2] = min(target_pos[2], -2.0)  # Keep at least 2m below ground level
-        
-        # Convert to Vector3r for line of sight test
-        start_vector = airsim.Vector3r(current_pos[0], current_pos[1], current_pos[2])
-        target_vector = airsim.Vector3r(target_pos[0], target_pos[1], target_pos[2])
-        
-        # Flag to track if this target is valid across all ray checks
-        target_valid = True
-        current_ray_results = []
-        
-        # Use multiple rays with slight perturbations to verify line of sight
-        for ray_idx in range(ray_checks):
-            try:
-                # For the first ray, test direct line of sight
-                if ray_idx == 0:
-                    # Use simTestLineOfSightBetweenPoints for better reliability
-                    los_result = client.simTestLineOfSightBetweenPoints(start_vector, target_vector)
-                    ray_origin = start_vector
-                    ray_end = target_vector
-                else:
-                    # For additional rays, add small perturbation (±10cm) to ensure robust detection
-                    perturb = 0.1  # 10cm perturbation
-                    offset = np.array([
-                        target_rng.uniform(-perturb, perturb),
-                        target_rng.uniform(-perturb, perturb),
-                        target_rng.uniform(-perturb, perturb)
-                    ])
-                    
-                    # Create slightly perturbed start and end points
-                    perturbed_start = airsim.Vector3r(
-                        current_pos[0] + offset[0], 
-                        current_pos[1] + offset[1], 
-                        current_pos[2] + offset[2]
-                    )
-                    perturbed_target = airsim.Vector3r(
-                        target_pos[0] + offset[0], 
-                        target_pos[1] + offset[1], 
-                        target_pos[2] + offset[2]
-                    )
-                    
-                    # Check line of sight with perturbed rays
-                    los_result = client.simTestLineOfSightBetweenPoints(perturbed_start, perturbed_target)
-                    ray_origin = perturbed_start
-                    ray_end = perturbed_target
-                
-                # Store ray test result for debugging
-                current_ray_results.append({
-                    "ray_idx": ray_idx,
-                    "origin": [ray_origin.x_val, ray_origin.y_val, ray_origin.z_val],
-                    "end": [ray_end.x_val, ray_end.y_val, ray_end.z_val],
-                    "result": los_result
-                })
-                
-                # If any ray test fails, mark the target as invalid
-                if not los_result:
-                    target_valid = False
-                    # For debugging, attempt to get more detailed collision information
-                    try:
-                        # Try to use the hit test API for more details
-                        hit_result = client.simGetCollisionInfo()
-                        if hit_result.has_collided:
-                            collision_point = [
-                                hit_result.impact_point.x_val,
-                                hit_result.impact_point.y_val,
-                                hit_result.impact_point.z_val
-                            ]
-                            logging.debug(f"Ray {ray_idx} hit obstacle at {collision_point}")
-                    except Exception as hit_error:
-                        logging.debug(f"Could not get collision details: {hit_error}")
-                    
-                    # Don't check additional rays if one already failed
-                    break
-                
-            except Exception as e:
-                logging.warning(f"Error in line of sight test for ray {ray_idx}: {e}")
-                target_valid = False
-                break
-                
-        # Store all ray test results for debugging
-        ray_test_results.append({
-            "attempt": attempt,
-            "target": target_pos.tolist(),
-            "rays": current_ray_results,
-            "valid": target_valid
-        })
-        
-        # If target passed all ray checks, proceed with validation
-        if target_valid:
-            # Target is visible - get additional information about clearance if possible
-            valid_targets.append(target_pos.tolist())
-            
-            # Check obstacle clearance around target
-            try:
-                # Use simplified clearance check with line of sight tests in multiple directions
-                clearance_dirs = [
-                    np.array([1, 0, 0]), np.array([-1, 0, 0]),
-                    np.array([0, 1, 0]), np.array([0, -1, 0]),
-                    np.array([0, 0, 1]), np.array([0, 0, -1])
-                ]
-                
-                min_obstacle_dist = float('inf')
-                
-                for direction in clearance_dirs:
-                    # Check line of sight in this direction from target
-                    # Try distances from 1m to 10m
-                    for dist in range(1, 11):
-                        check_point = target_pos + (direction * dist)
-                        check_vector = airsim.Vector3r(check_point[0], check_point[1], check_point[2])
-                        
-                        # If line of sight fails, we found the obstacle distance
-                        if not client.simTestLineOfSightBetweenPoints(target_vector, check_vector):
-                            if dist < min_obstacle_dist:
-                                min_obstacle_dist = dist
-                            break
-                
-                # If we found a valid obstacle distance
-                if min_obstacle_dist < float('inf'):
-                    # If this target has better clearance than our previous best, update it
-                    if min_obstacle_dist > best_obstacle_clearance:
-                        best_obstacle_clearance = min_obstacle_dist
-                        best_target = target_pos.tolist()
-                        logging.debug(f"Better target found with {min_obstacle_dist:.2f}m obstacle clearance")
-                
-                # If we found a really good target (>5m clearance), stop early
-                if best_obstacle_clearance > 5.0:
-                    logging.info(f"Found excellent target with {best_obstacle_clearance:.2f}m obstacle clearance")
-                    return best_target
-            except Exception as e:
-                logging.debug(f"Error checking obstacle clearance near target: {e}")
-            
-            # Log that we found a valid target
-            logging.debug(f"Found valid target at {target_pos.tolist()} (attempt {attempt+1})")
-            
-            # If this is the first valid target, we'll use it as our initial best
-            if best_target is None:
-                best_target = target_pos.tolist()
-                logging.info(f"Found first valid target at {best_target}")
-            
-            # Every 10 valid targets, report progress
-            if len(valid_targets) % 10 == 0:
-                logging.info(f"Found {len(valid_targets)} valid targets so far")
-            
-            # If we've found at least 3 valid targets, we can start being selective
-            if len(valid_targets) >= 3:
-                # Return the best target we've found so far
-                if best_target:
-                    return best_target
-                # Or just return the last valid target
-                return valid_targets[-1]
-        else:
-            # For failed targets, store position for visualization
-            los_failures.append(target_pos.tolist())
-            
-    # After all attempts, if we have debugging enabled, save visualizations of ray tests
-    if logging.getLogger().level <= logging.DEBUG and len(ray_test_results) > 0:
-        debug_dir = "debug_raycasts"
+        # In case of error, hover in place
         try:
-            os.makedirs(debug_dir, exist_ok=True)
-            debug_file = os.path.join(debug_dir, f"raycast_debug_ep{episode_id}.json")
-            with open(debug_file, "w") as f:
-                json.dump({
-                    "ray_tests": ray_test_results,
-                    "failures": los_failures,
-                    "valid_targets": valid_targets,
-                    "drone_pos": current_pos,
-                    "drone_orientation": drone_orientation
-                }, f, cls=NumpyJSONEncoder, indent=2)
-            logging.debug(f"Saved raycast debug information to {debug_file}")
-        except Exception as e:
-            logging.warning(f"Failed to save raycast debug information: {e}")
-    
-    # After exhausting all attempts, return the best target if found
-    if best_target:
-        logging.info(f"Using best target found with {best_obstacle_clearance:.2f}m clearance")
-        return best_target
-    
-    # Or return any valid target we found
-    if valid_targets:
-        logging.info(f"No ideal target found, using one of {len(valid_targets)} valid targets")
-        return target_rng.choice(valid_targets)  # Random choice from valid targets
-    
-    # If we couldn't find ANY valid target, try one last direct check with a fixed target
-    # This helps in environments where random sampling might be challenging
-    try:
-        logging.warning("No valid targets found with random sampling, trying a fixed fallback target")
-        # Try a target directly ahead of the drone at min distance
-        forward_vector = np.array([1.0, 0.0, 0.0])  # Forward in NED
-        forward_target_pos = np.array(current_pos) + (forward_vector * min_dist)
-        forward_target_pos[2] = min(forward_target_pos[2], -2.0)  # Keep below ground level
-        
-        # Check if this forward target is valid
-        forward_vector3r = airsim.Vector3r(forward_target_pos[0], forward_target_pos[1], forward_target_pos[2])
-        forward_los_result = client.simTestLineOfSightBetweenPoints(start_vector, forward_vector3r)
-        
-        if forward_los_result:
-            logging.info(f"Using fallback forward target at {forward_target_pos.tolist()}")
-            return forward_target_pos.tolist()
-    except Exception as e:
-        logging.warning(f"Error checking fallback target: {e}")
-    
-    # If we couldn't find ANY valid target, raise an error
-    raise ValueError(f"No unobstructed target found after {max_attempts} attempts")
-
-def visualize_raycasts(client, raycast_data_file, duration=60.0):
-    """Visualize the results of raycasting tests by drawing lines in the AirSim environment
-    
-    Args:
-        client: AirSim client instance
-        raycast_data_file: Path to a JSON file containing raycast debug information
-        duration: Duration in seconds for visualization markers to remain visible
-    """
-    try:
-        # Load raycast debug data
-        with open(raycast_data_file, 'r') as f:
-            raycast_data = json.load(f)
-        
-        # Clear previous visualizations
-        client.simFlushPersistentMarkers()
-        
-        # Draw drone position
-        drone_pos = raycast_data.get("drone_pos", [0, 0, 0])
-        client.simAddMarker(
-            airsim.Vector3r(drone_pos[0], drone_pos[1], drone_pos[2]),
-            1.0,  # size
-            [0, 0, 255, 255],  # blue
-            "drone_position",
-            duration  # duration in seconds
-        )
-        
-        # Draw successful rays in green
-        for test_result in raycast_data.get("ray_tests", []):
-            if test_result.get("valid", False):
-                target = test_result.get("target", [0, 0, 0])
-                # Draw successful target
-                client.simAddMarker(
-                    airsim.Vector3r(target[0], target[1], target[2]),
-                    0.5,  # size
-                    [0, 255, 0, 255],  # green
-                    f"valid_target_{target[0]}_{target[1]}_{target[2]}",
-                    duration  # duration
-                )
-                
-                # Draw rays for this target
-                for ray in test_result.get("rays", []):
-                    if ray.get("result", False):
-                        origin = ray.get("origin", [0, 0, 0])
-                        end = ray.get("end", [0, 0, 0])
-                        # Draw successful ray
-                        client.simDrawLine(
-                            airsim.Vector3r(origin[0], origin[1], origin[2]),
-                            airsim.Vector3r(end[0], end[1], end[2]),
-                            0.05,  # thickness
-                            [0, 255, 0, 255],  # green
-                            duration  # duration
-                        )
-        
-        # Draw failed rays in red
-        for test_result in raycast_data.get("ray_tests", []):
-            if not test_result.get("valid", True):
-                target = test_result.get("target", [0, 0, 0])
-                # Draw failed target
-                client.simAddMarker(
-                    airsim.Vector3r(target[0], target[1], target[2]),
-                    0.5,  # size
-                    [255, 0, 0, 255],  # red
-                    f"invalid_target_{target[0]}_{target[1]}_{target[2]}",
-                    duration  # duration
-                )
-                
-                # Draw rays for this target
-                for ray in test_result.get("rays", []):
-                    origin = ray.get("origin", [0, 0, 0])
-                    end = ray.get("end", [0, 0, 0])
-                    color = [255, 0, 0, 255] if not ray.get("result", True) else [0, 255, 0, 255]
-                    # Draw ray
-                    client.simDrawLine(
-                        airsim.Vector3r(origin[0], origin[1], origin[2]),
-                        airsim.Vector3r(end[0], end[1], end[2]),
-                        0.05,  # thickness
-                        color,
-                        duration  # duration
-                    )
-        
-        # Draw all failed targets
-        for failed_target in raycast_data.get("failures", []):
-            client.simAddMarker(
-                airsim.Vector3r(failed_target[0], failed_target[1], failed_target[2]),
-                0.3,  # size
-                [255, 0, 0, 128],  # red with some transparency
-                f"failed_{failed_target[0]}_{failed_target[1]}_{failed_target[2]}",
-                duration  # duration
-            )
-        
-        logging.info(f"Visualized raycast debug data from {raycast_data_file} (visible for {duration}s)")
-        return True
-    except Exception as e:
-        logging.error(f"Failed to visualize raycasts: {e}")
-        traceback.print_exc()
-        return False
+            hover_task = client.hoverAsync()
+            hover_task.join()  # Wait for hover command to complete
+        except Exception as hover_e:
+            logging.error(f"Additional error during hover: {hover_e}")
+        return False, None, None  # No explicit obstacle detected on error
 
 def run_episode(episode_id: int, client: airsim.MultirotorClient, 
                 zmq_interface: ZMQInterface, scanner: Scanner, 
@@ -1288,7 +1250,16 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
     
     # Takeoff - CRITICAL: We must take off before checking target visibility
     logging.info(f"Episode {episode_id}: Taking off...")
-    client.takeoffAsync().join()
+    takeoff_task = client.takeoffAsync()
+    try:
+        takeoff_task.join()  # Wait for takeoff to complete
+    except Exception as e:
+        logging.error(f"Error during takeoff: {e}")
+        return [], {
+            "episode_id": episode_id,
+            "status": "failed",
+            "reason": "Takeoff failed"
+        }
     time.sleep(2)  # Extended stabilization time to ensure proper altitude before sampling target
     
     # Get initial position - AFTER takeoff
@@ -1300,9 +1271,14 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
         logging.warning(f"Episode {episode_id}: Drone altitude too low ({drone_pos[2]:.2f}), adjusting height")
         # Move up to ensure better visibility for target sampling
         adjusted_height_pos = [drone_pos[0], drone_pos[1], -5.0]  # Minimum 5m above ground
-        client.moveToPositionAsync(
+        move_task = client.moveToPositionAsync(
             adjusted_height_pos[0], adjusted_height_pos[1], adjusted_height_pos[2], 2
-        ).join()
+        )
+        try:
+            move_task.join()  # Wait for height adjustment to complete
+        except Exception as e:
+            logging.error(f"Error during height adjustment: {e}")
+            # Continue anyway - we'll try to work with the current height
         time.sleep(1)  # Wait for height adjustment
         
         # Update position after height adjustment
@@ -1357,6 +1333,7 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
     step_metrics = []
     collisions = 0
     replanning_count = 0
+    dynamic_replanning_count = 0  # Track dynamic replanning events specifically
     start_time = time.time()
     trajectory = [drone_pos]
     
@@ -1466,16 +1443,68 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
             
             # Check if drone is stuck (no significant movement for too long)
             time_since_movement = current_time - last_significant_movement_time
+            
+            # Enhanced stuck detection with different severity levels
             if time_since_movement > stuck_timeout:
-                logging.error(f"Episode {episode_id}: Drone stuck for {time_since_movement:.1f}s (>= {stuck_timeout}s), aborting")
+                # Severe stuck condition - abort episode
+                logging.error(f"Episode {episode_id}: Drone stuck for {time_since_movement:.1f}s (>= {stuck_timeout}s), aborting episode")
                 status = "stuck"
                 break
+            elif time_since_movement > 10.0:
+                # Moderate stuck condition - try more aggressive replanning
+                logging.warning(f"Episode {episode_id}: No significant movement for {time_since_movement:.1f}s, attempting recovery maneuver")
+                
+                # Try a more aggressive recovery by moving upward slightly to get a better view
+                try:
+                    # Get current height and add 2 meters
+                    recovery_pos = [drone_pos[0], drone_pos[1], drone_pos[2] - 2.0]  # Remember NED coordinates, negative Z is up
+                    logging.info(f"Executing vertical recovery maneuver to position: {[round(p, 2) for p in recovery_pos]}")
+                    
+                    # Move up
+                    recovery_task = client.moveToPositionAsync(
+                        recovery_pos[0], recovery_pos[1], recovery_pos[2], 2
+                    )
+                    
+                    try:
+                        recovery_task.join(timeout=5)  # 5 second timeout
+                    except:
+                        # If timeout occurs, it's fine - we'll continue with replanning
+                        pass
+                    
+                    # Refresh position after recovery attempt
+                    drone_state = client.getMultirotorState().kinematics_estimated
+                    drone_pos = [
+                        drone_state.position.x_val,
+                        drone_state.position.y_val,
+                        drone_state.position.z_val
+                    ]
+                    
+                    # Update last significant movement time to reset the stuck counter
+                    last_significant_movement_time = current_time
+                    
+                except Exception as e:
+                    logging.error(f"Error during recovery maneuver: {e}")
+                
+                # Force a replanning with enhanced obstacle avoidance parameters
+                obstacle_positions, obstacle_distances = scanner.fetch_density_distances()
+                next_waypoint, policy, planning_error, inference_time_ms = get_next_waypoint(needs_replanning=True)
+                
+                if planning_error:
+                    logging.error("Recovery planning failed, aborting episode")
+                    status = "planning_failure"
+                    break
+                
+                # Try to execute the new plan
+                _, new_obstacle_pos, new_obstacle_dist = move_to_waypoint(client, drone_pos, next_waypoint, velocity=1.5)
                 
             # Log stuck detection progress if approaching timeout
-            if time_since_movement > stuck_timeout * 0.6:  # At 60% of timeout
+            elif time_since_movement > stuck_timeout * 0.6:  # At 60% of timeout
                 logging.warning(f"Episode {episode_id}: No significant movement for {time_since_movement:.1f}s " +
                               f"(timeout: {stuck_timeout}s)")
-
+                              
+            # Update the time_since_movement for metrics
+            step_data["time_since_movement"] = time_since_movement
+        
         # Check for collisions
         collision_info = client.simGetCollisionInfo()
         if collision_info.has_collided:
@@ -1516,55 +1545,132 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
                 min_dist = min(obstacle_distances) if obstacle_distances else "N/A"
                 logging.debug(f"Episode {episode_id}: Closest obstacle at {min_dist}m")
         
-        # Create observation for active inference with adaptive parameters
-        observation = {
-            "drone_position": drone_pos,
-            "target_position": target_pos,
-            "obstacle_positions": obstacle_positions,
-            "obstacle_distances": obstacle_distances,
-            "waypoint_count": WAYPOINT_SAMPLE_COUNT,
-            "safety_margin": adaptive_safety_margin,
-            "policy_length": POLICY_LENGTH,
-            "density_radius": adaptive_density_radius,
-            "near_goal": near_goal,  # Add flag to inform planner we're near the goal
-            "distance_to_target": distance_to_target  # Explicitly include distance to target
-        }
-        
-        # Verify the observation is valid before sending
-        has_nans = any(np.isnan(np.array(drone_pos))) or any(np.isnan(np.array(target_pos)))
-        has_infs = any(np.isinf(np.array(drone_pos))) or any(np.isinf(np.array(target_pos)))
-        
-        if has_nans or has_infs:
-            logging.error(f"Episode {episode_id}: Invalid position data detected (NaN or Inf)")
-            status = "invalid_data"
-            break
-
-        # Get next waypoint and planning metrics
-        inference_start = time.time()
-        next_waypoint, policy = zmq_interface.send_observation_and_receive_action(observation)
-        inference_time = (time.time() - inference_start) * 1000  # Convert to ms
-        
-        # Check if planning succeeded
-        if next_waypoint is None:
-            logging.error(f"Episode {episode_id}: Failed to get valid waypoint at step {step}")
-            retry_count = 0
-            # Try replanning up to 3 times
-            while next_waypoint is None and retry_count < 3:
-                retry_count += 1
-                replanning_count += 1
-                logging.info(f"Episode {episode_id}: Replanning attempt {retry_count}")
-                next_waypoint, policy = zmq_interface.send_observation_and_receive_action(observation)
+        # Main planning function - will be used for initial planning and dynamic replanning
+        def get_next_waypoint(needs_replanning=False):
+            nonlocal replanning_count, dynamic_replanning_count
             
+            if needs_replanning:
+                logging.info(f"Episode {episode_id}: Triggering dynamic replanning due to detected obstacle")
+                replanning_count += 1
+                dynamic_replanning_count += 1
+            
+            # Create observation for active inference with adaptive parameters
+            observation = {
+                "drone_position": drone_pos,
+                "target_position": target_pos,
+                "obstacle_positions": obstacle_positions,
+                "obstacle_distances": obstacle_distances,
+                "waypoint_count": WAYPOINT_SAMPLE_COUNT,
+                "safety_margin": adaptive_safety_margin,
+                "policy_length": POLICY_LENGTH,
+                "density_radius": adaptive_density_radius,
+                "near_goal": near_goal,  # Add flag to inform planner we're near the goal
+                "distance_to_target": distance_to_target,  # Explicitly include distance to target
+                "dynamic_replanning": needs_replanning  # Flag to inform planner this is a dynamic replanning request
+            }
+            
+            # If we're replanning due to obstacle detection, enhance the obstacle data
+            # to ensure the planner gives it proper consideration
+            if needs_replanning:
+                # Increase the safety margin during replanning to be more cautious
+                observation["safety_margin"] = max(adaptive_safety_margin * 1.5, 3.0)
+                
+                # Increase waypoint sampling to find more path options
+                observation["waypoint_count"] = WAYPOINT_SAMPLE_COUNT * 1.5
+                
+                # Add extra parameters to highlight obstacle importance
+                observation["obstacle_weight_factor"] = 2.0  # Double the weight of obstacles during planning
+                observation["replanning_obstacle_threshold"] = 4.0  # Consider obstacles within 4m as high priority
+                
+                # Add flag to indicate this is a critical avoidance scenario
+                observation["critical_obstacle_avoidance"] = True
+                
+                logging.info(f"Enhanced planning parameters for obstacle avoidance: safety_margin={observation['safety_margin']:.2f}, " 
+                             f"waypoint_count={observation['waypoint_count']:.0f}")
+            
+            # Verify the observation is valid before sending
+            has_nans = any(np.isnan(np.array(drone_pos))) or any(np.isnan(np.array(target_pos)))
+            has_infs = any(np.isinf(np.array(drone_pos))) or any(np.isinf(np.array(target_pos)))
+            
+            if has_nans or has_infs:
+                logging.error(f"Episode {episode_id}: Invalid position data detected (NaN or Inf)")
+                return None, None, True, 0  # Signal planning error, include 0 for inference time
+
+            # Get next waypoint and planning metrics
+            inference_start = time.time()
+            next_waypoint, policy = zmq_interface.send_observation_and_receive_action(observation)
+            inference_time_ms = (time.time() - inference_start) * 1000  # Convert to ms
+            
+            # Check if planning succeeded
             if next_waypoint is None:
-                logging.error(f"Episode {episode_id}: Aborting after failed replanning")
-                status = "planning_failure"
-                break
+                logging.error(f"Episode {episode_id}: Failed to get valid waypoint at step {step}")
+                retry_count = 0
+                # Try replanning up to 3 times
+                while next_waypoint is None and retry_count < 3:
+                    retry_count += 1
+                    replanning_count += 1
+                    logging.info(f"Episode {episode_id}: Replanning attempt {retry_count}")
+                    next_waypoint, policy = zmq_interface.send_observation_and_receive_action(observation)
+                
+                if next_waypoint is None:
+                    logging.error(f"Episode {episode_id}: Aborting after failed replanning")
+                    return None, None, True, 0  # Signal planning error, include 0 for inference time
+            
+            # Verify waypoint is valid
+            waypoint_array = np.array(next_waypoint)
+            if np.any(np.isnan(waypoint_array)) or np.any(np.isinf(waypoint_array)):
+                logging.error(f"Episode {episode_id}: Invalid waypoint received (contains NaN or Inf)")
+                return None, None, True, 0  # Signal planning error, include 0 for inference time
+                
+            # If this is a replanning scenario, verify the waypoint doesn't lead through known obstacles
+            if needs_replanning and obstacle_positions and len(obstacle_positions) > 0:
+                # Check if the planned waypoint path goes through any known obstacles
+                path_clear = True
+                problem_obstacle = None
+                problem_distance = None
+                
+                # Use the scanner to check the path specifically
+                obstacle_detected, obstacle_pos, obstacle_dist = scanner.scan_path_for_obstacles(
+                    drone_pos, next_waypoint, safety_radius=3.0  # Use larger safety radius during replanning
+                )
+                
+                if obstacle_detected:
+                    logging.warning(f"Episode {episode_id}: Planned waypoint would lead through obstacle at {obstacle_dist:.2f}m")
+                    path_clear = False
+                    problem_obstacle = obstacle_pos
+                    problem_distance = obstacle_dist
+                
+                # If the path isn't clear, try an alternative approach - move slightly away from obstacles first
+                if not path_clear:
+                    logging.info(f"Episode {episode_id}: Attempting to generate safer waypoint away from obstacles")
+                    
+                    # Find direction away from the closest obstacle
+                    obstacle_vec = np.array(drone_pos) - np.array(problem_obstacle)
+                    distance_to_obstacle = np.linalg.norm(obstacle_vec)
+                    
+                    if distance_to_obstacle > 0.1:  # Ensure we're not too close to divide by zero
+                        # Normalize and scale to create a small retreat vector
+                        retreat_direction = obstacle_vec / distance_to_obstacle
+                        retreat_distance = min(3.0, distance_to_obstacle * 0.5)  # Don't retreat too far
+                        
+                        # Create a new waypoint that moves away from the obstacle first
+                        safe_waypoint = (np.array(drone_pos) + retreat_direction * retreat_distance).tolist()
+                        
+                        logging.info(f"Episode {episode_id}: Generated safety waypoint to retreat from obstacle " 
+                                     f"at direction {[round(d, 2) for d in retreat_direction]}, " 
+                                     f"distance {retreat_distance:.2f}m")
+                        
+                        # Replace the proposed waypoint with our safer alternative
+                        next_waypoint = safe_waypoint
+            
+            return next_waypoint, policy, False, inference_time_ms  # No planning error, include inference time
         
-        # Verify waypoint is valid
-        waypoint_array = np.array(next_waypoint)
-        if np.any(np.isnan(waypoint_array)) or np.any(np.isinf(waypoint_array)):
-            logging.error(f"Episode {episode_id}: Invalid waypoint received (contains NaN or Inf)")
-            status = "invalid_waypoint"
+        # Plan the initial waypoint
+        next_waypoint, policy, planning_error, inference_time_ms = get_next_waypoint()
+        
+        # Check for planning errors
+        if planning_error:
+            status = "planning_failure"
             break
         
         # Calculate action magnitude (waypoint distance)
@@ -1575,6 +1681,7 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
         if high_density_area and not near_goal and action_magnitude > 3.0:
             # In high density areas (but not near goal), we limit large movements for safety
             # Scale down the waypoint distance to avoid large jumps in dense areas
+            waypoint_array = np.array(next_waypoint)
             direction = (waypoint_array - np.array(drone_pos)) / action_magnitude
             adjusted_distance = min(3.0, action_magnitude)  # Cap at 3m in dense areas
             next_waypoint = (np.array(drone_pos) + direction * adjusted_distance).tolist()
@@ -1590,7 +1697,8 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
             to_target_dir = to_target / to_target_dist if to_target_dist > 0 else np.array([1, 0, 0])
             
             # Calculate direction of planned waypoint
-            to_waypoint = np.array(next_waypoint) - np.array(drone_pos)
+            waypoint_array = np.array(next_waypoint)
+            to_waypoint = waypoint_array - np.array(drone_pos)
             to_waypoint_dist = np.linalg.norm(to_waypoint)
             to_waypoint_dir = to_waypoint / to_waypoint_dist if to_waypoint_dist > 0 else np.array([1, 0, 0])
             
@@ -1642,14 +1750,68 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
             "closest_obstacle": closest_obstacle_dist if obstacle_distances else float('inf'),
             "high_density_area": high_density_area,
             "near_goal": near_goal,
-            "inference_time_ms": inference_time,
-            "replanning_occurred": retry_count > 0 if 'retry_count' in locals() else False,
+            "inference_time_ms": inference_time_ms,
+            "replanning_occurred": replanning_count > 0,
+            "dynamic_replanning": dynamic_replanning_count > 0,
             "time_since_movement": time_since_movement
         }
         step_metrics.append(step_data)
         
-        # Move drone to waypoint
-        move_to_waypoint(client, drone_pos, next_waypoint)
+        # Move drone to waypoint with continuous obstacle monitoring
+        # Our enhanced move_to_waypoint function now returns obstacle information
+        obstacle_detected, obstacle_pos, obstacle_dist = move_to_waypoint(client, drone_pos, next_waypoint, velocity=2)
+        
+        # If obstacle detected during movement, trigger dynamic replanning
+        if obstacle_detected:
+            logging.info(f"Episode {episode_id}: Obstacle detected during movement, triggering immediate replanning")
+            
+            # Update drone position after obstacle detection
+            drone_state = client.getMultirotorState().kinematics_estimated
+            drone_pos = [
+                drone_state.position.x_val,
+                drone_state.position.y_val,
+                drone_state.position.z_val
+            ]
+            
+            # Refresh obstacle data after detection (get latest obstacle information)
+            obstacle_positions, obstacle_distances = scanner.fetch_density_distances()
+            
+            # Add the newly detected obstacle to our list if it's not already included
+            # This ensures the planner explicitly knows about this specific obstacle
+            if obstacle_pos is not None:
+                # Check if this obstacle is already in our list (within a small threshold)
+                obstacle_already_included = False
+                threshold = 0.5  # Consider obstacles within 0.5m to be the same
+                
+                for existing_pos in obstacle_positions:
+                    if np.linalg.norm(np.array(existing_pos) - np.array(obstacle_pos)) < threshold:
+                        obstacle_already_included = True
+                        break
+                
+                if not obstacle_already_included:
+                    logging.info(f"Adding newly detected obstacle at {[round(p, 2) for p in obstacle_pos]} to planning data")
+                    obstacle_positions.append(obstacle_pos)
+                    if obstacle_dist is not None:
+                        obstacle_distances.append(obstacle_dist)
+                    else:
+                        # If distance is unknown, estimate it as the distance from current position
+                        est_dist = np.linalg.norm(np.array(obstacle_pos) - np.array(drone_pos))
+                        obstacle_distances.append(est_dist)
+                        logging.debug(f"Estimated obstacle distance: {est_dist:.2f}m")
+                else:
+                    logging.debug("Detected obstacle already included in obstacle list")
+            
+            # Get new waypoint with dynamic replanning flag
+            next_waypoint, policy, planning_error, replanning_inference_time_ms = get_next_waypoint(needs_replanning=True)
+            
+            if planning_error:
+                status = "planning_failure"
+                break
+                
+            # Immediately move to the new waypoint
+            logging.info(f"Episode {episode_id}: Executing replanned path to avoid obstacle")
+            # Note: using the updated obstacle data for the next movement
+            _, _, _ = move_to_waypoint(client, drone_pos, next_waypoint)
         
         # Record trajectory
         trajectory.append(next_waypoint)
@@ -1675,7 +1837,12 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
     final_distance = np.linalg.norm(np.array(target_pos) - np.array(final_pos))
     
     # Land the drone
-    client.landAsync().join()
+    land_task = client.landAsync()
+    try:
+        land_task.join()  # Wait for landing to complete
+    except Exception as e:
+        logging.error(f"Error during landing: {e}")
+        # We'll continue even if landing failed
     client.armDisarm(False)
     
     # Compile episode summary
@@ -1690,7 +1857,9 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
         "normalized_improvement": (initial_distance - final_distance) / initial_distance,
         "collisions": collisions,
         "replanning_count": replanning_count,
+        "dynamic_replanning_count": dynamic_replanning_count,
         "replanning_percentage": (replanning_count / len(step_metrics) * 100) if step_metrics else 0,
+        "dynamic_replanning_percentage": (dynamic_replanning_count / len(step_metrics) * 100) if step_metrics else 0,
         "duration_seconds": episode_duration,
         "avg_step_time": episode_duration / len(step_metrics) if step_metrics else 0,
         "avg_inference_time_ms": np.mean([m["inference_time_ms"] for m in step_metrics]) if step_metrics else 0,
@@ -1700,6 +1869,7 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
     logging.info(f"Episode {episode_id} completed: {status}")
     logging.info(f"  Steps: {len(step_metrics)}, Duration: {episode_duration:.2f}s")
     logging.info(f"  Final distance: {final_distance:.2f}m, Collisions: {collisions}")
+    logging.info(f"  Dynamic replanning events: {dynamic_replanning_count}")
     
     return step_metrics, episode_summary
 
@@ -1831,233 +2001,6 @@ def run_experiment(config: Dict[str, Any]) -> None:
     
     logging.info(f"Experiment completed. Results saved to {experiment_dir}")
 
-def plot_metrics(metrics_file, output_dir):
-    """Create plots for the experiment metrics
-    
-    Args:
-        metrics_file: Path to the CSV file with metrics
-        output_dir: Directory to save the plots
-    """
-    try:
-        # Create output directory
-        os.makedirs(output_dir, exist_ok=True)
-        
-        # Load metrics data
-        df = pd.read_csv(metrics_file)
-        
-        # Load episode summaries if available
-        summary_file = metrics_file.replace("metrics.csv", "episode_summaries.csv")
-        if os.path.exists(summary_file):
-            summary_df = pd.read_csv(summary_file)
-        else:
-            # Generate summary from metrics if needed
-            episode_stats = df.groupby("episode_id").agg({
-                "distance_to_target": ["first", "last", "min"],
-                "step": "max",
-                "collision": "sum",
-                "inference_time_ms": "mean"
-            })
-            episode_stats.columns = ["initial_distance", "final_distance", "min_distance", 
-                                    "steps_taken", "collisions", "avg_inference_time_ms"]
-            
-            # Calculate if target was reached
-            target_threshold = 2.0  # Assume this is the arrival threshold
-            episode_stats["target_reached"] = episode_stats["min_distance"] < target_threshold
-            
-            # Calculate normalized improvement
-            episode_stats["distance_improvement"] = episode_stats["initial_distance"] - episode_stats["final_distance"]
-            episode_stats["normalized_improvement"] = episode_stats["distance_improvement"] / episode_stats["initial_distance"]
-            
-            summary_df = episode_stats.reset_index()
-        
-        # Create output directory
-        os.makedirs(output_dir, exist_ok=True)
-        
-        # 1. Plot trajectory for each episode (if position data available)
-        if "drone_x" in df.columns and "drone_y" in df.columns:
-            for episode_id in df["episode_id"].unique():
-                episode_data = df[df["episode_id"] == episode_id]
-                
-                fig, ax = plt.subplots(figsize=(8, 8))
-                ax.plot(episode_data["drone_x"], episode_data["drone_y"], 'b-', label="Trajectory")
-                ax.scatter(episode_data["drone_x"].iloc[0], episode_data["drone_y"].iloc[0], 
-                        c='green', s=100, marker='^', label="Start")
-                
-                # Plot target if available
-                if "target_x" in episode_data.columns and "target_y" in episode_data.columns:
-                    target_x = episode_data["target_x"].iloc[0]
-                    target_y = episode_data["target_y"].iloc[0]
-                    ax.scatter(target_x, target_y, c='red', s=100, marker='*', label="Target")
-                
-                # Plot end position
-                ax.scatter(episode_data["drone_x"].iloc[-1], episode_data["drone_y"].iloc[-1], 
-                        c='orange', s=100, marker='o', label="End")
-                
-                # Add grid, legend, and labels
-                ax.grid(True)
-                ax.legend()
-                ax.set_title(f"Episode {episode_id} Trajectory")
-                ax.set_xlabel("X Position (m)")
-                ax.set_ylabel("Y Position (m)")
-                ax.axis('equal')
-                
-                # Save figure
-                plt.savefig(os.path.join(output_dir, f"trajectory_episode_{episode_id}.png"))
-                plt.close(fig)
-        
-        # 2. Plot episode summaries and overall statistics
-        if not summary_df.empty:
-            # Create summary figure
-            fig, axes = plt.subplots(2, 2, figsize=(12, 10))
-            
-            # Success rate calculation
-            successful = summary_df[summary_df["target_reached"] == True]
-            success_rate = len(successful) / len(summary_df) if len(summary_df) > 0 else 0
-            
-            # Plot 1: Success rate over episodes
-            rolling_success = summary_df["target_reached"].astype(int).rolling(
-                window=min(5, len(summary_df)), min_periods=1
-            ).mean()
-            axes[0, 0].plot(rolling_success.index, rolling_success)
-            axes[0, 0].set_title(f"Success Rate: {success_rate:.1%}")
-            axes[0, 0].set_xlabel("Episode")
-            axes[0, 0].set_ylabel("Rolling Success Rate (5-ep window)")
-            axes[0, 0].set_ylim(0, 1.1)
-            
-            # Plot 2: Steps per episode
-            axes[0, 1].bar(summary_df["episode_id"], summary_df["steps_taken"])
-            axes[0, 1].set_title("Steps per Episode")
-            axes[0, 1].set_xlabel("Episode")
-            axes[0, 1].set_ylabel("Step Count")
-            
-            # Plot 3: Average inference time
-            axes[1, 0].plot(summary_df["episode_id"], summary_df["avg_inference_time_ms"])
-            axes[1, 0].set_title("Average Inference Time")
-            axes[1, 0].set_xlabel("Episode")
-            axes[1, 0].set_ylabel("Time (ms)")
-            
-            # Plot 4: Performance by distance
-            if "normalized_improvement" in summary_df.columns:
-                scatter = axes[1, 1].scatter(
-                    summary_df["initial_distance"], 
-                    summary_df["normalized_improvement"],
-                    c=summary_df["target_reached"].astype(bool).map({True: 'green', False: 'red'}),
-                    alpha=0.7
-                )
-                axes[1, 1].set_title("Performance by Initial Distance")
-                axes[1, 1].set_xlabel("Initial Distance (m)")
-                axes[1, 1].set_ylabel("Normalized Improvement")
-                
-                # Add legend for target reached status
-                from matplotlib.lines import Line2D
-                legend_elements = [
-                    Line2D([0], [0], marker='o', color='w', markerfacecolor='green', 
-                        markersize=10, label='Target Reached'),
-                    Line2D([0], [0], marker='o', color='w', markerfacecolor='red', 
-                        markersize=10, label='Target Not Reached')
-                ]
-                axes[1, 1].legend(handles=legend_elements)
-            
-            plt.tight_layout()
-            plt.savefig(os.path.join(output_dir, "episode_summary.png"))
-            plt.close(fig)
-            
-            # Additional plot: Collision count per episode
-            if "collisions" in summary_df.columns:
-                plt.figure(figsize=(10, 5))
-                plt.bar(summary_df["episode_id"], summary_df["collisions"])
-                plt.title("Collisions per Episode")
-                plt.xlabel("Episode")
-                plt.ylabel("Collision Count")
-                plt.savefig(os.path.join(output_dir, "collision_count.png"))
-                plt.close()
-        
-        # 3. Plot metrics across all episodes
-        # Distance to target over time for all episodes
-        plt.figure(figsize=(12, 6))
-        for episode_id in df["episode_id"].unique():
-            episode_data = df[df["episode_id"] == episode_id]
-            plt.plot(episode_data["step"], episode_data["distance_to_target"], 
-                    label=f"Episode {episode_id}")
-        
-        plt.title("Distance to Target Over Time")
-        plt.xlabel("Step")
-        plt.ylabel("Distance (m)")
-        plt.grid(True)
-        
-        # Add custom legend or remove if too many episodes
-        if len(df["episode_id"].unique()) <= 10:
-            plt.legend()
-        
-        plt.savefig(os.path.join(output_dir, "distance_to_target.png"))
-        plt.close()
-        
-        # 4. Create raycast visualization summary if debug data exists
-        debug_dir = os.path.join(os.path.dirname(metrics_file), "debug_raycasts")
-        if os.path.exists(debug_dir):
-            raycast_files = [f for f in os.listdir(debug_dir) if f.endswith('.json')]
-            
-            if raycast_files:
-                # Create a summary of raycast success rates
-                raycast_stats = []
-                
-                for raycast_file in raycast_files:
-                    try:
-                        with open(os.path.join(debug_dir, raycast_file), 'r') as f:
-                            data = json.load(f)
-                            
-                            # Extract episode number
-                            episode_id = int(raycast_file.split('_')[-1].split('.')[0].replace('ep', ''))
-                            
-                            # Calculate success rate
-                            valid_tests = sum(1 for test in data.get("ray_tests", []) if test.get("valid", False))
-                            total_tests = len(data.get("ray_tests", []))
-                            
-                            if total_tests > 0:
-                                raycast_stats.append({
-                                    "episode_id": episode_id,
-                                    "valid_tests": valid_tests,
-                                    "total_tests": total_tests,
-                                    "success_rate": valid_tests / total_tests,
-                                    "failures": len(data.get("failures", [])),
-                                    "valid_targets": len(data.get("valid_targets", []))
-                                })
-                    except Exception as e:
-                        logging.warning(f"Failed to process raycast file {raycast_file}: {e}")
-                
-                if raycast_stats:
-                    # Create a DataFrame from the stats
-                    raycast_df = pd.DataFrame(raycast_stats)
-                    
-                    # Plot raycast success rate by episode
-                    plt.figure(figsize=(10, 6))
-                    plt.bar(raycast_df["episode_id"], raycast_df["success_rate"] * 100)
-                    plt.title("Raycast Success Rate by Episode")
-                    plt.xlabel("Episode ID")
-                    plt.ylabel("Success Rate (%)")
-                    plt.ylim(0, 100)
-                    plt.grid(True, axis='y')
-                    plt.savefig(os.path.join(output_dir, "raycast_success_rate.png"))
-                    plt.close()
-                    
-                    # Plot valid targets found by episode
-                    plt.figure(figsize=(10, 6))
-                    plt.bar(raycast_df["episode_id"], raycast_df["valid_targets"], color='green')
-                    plt.title("Valid Targets Found by Episode")
-                    plt.xlabel("Episode ID")
-                    plt.ylabel("Valid Target Count")
-                    plt.grid(True, axis='y')
-                    plt.savefig(os.path.join(output_dir, "valid_targets_count.png"))
-                    plt.close()
-        
-        logging.info(f"Created metrics plots in {output_dir}")
-        return True
-        
-    except Exception as e:
-        logging.error(f"Error creating plots: {e}")
-        traceback.print_exc()
-        return False
-
 def main():
     """Main entry point with experiment configuration"""
     print("\n==== Autonomous Drone Navigation Experiment with Active Inference ====")
@@ -2072,6 +2015,629 @@ def main():
     
     # Run the experiment
     run_experiment(config)
+
+def sample_visible_target(current_pos: List[float], distance_range: Tuple[float, float], 
+                          client: airsim.MultirotorClient, max_attempts: int = 150,
+                          episode_id: int = 0, seed: int = None, 
+                          ray_checks: int = 7) -> List[float]:
+    """Sample a random target position within distance bounds that is visible to the drone
+    
+    Args:
+        current_pos: Current drone position [x, y, z]
+        distance_range: (min_distance, max_distance) in meters
+        client: AirSim client instance
+        max_attempts: Maximum sampling attempts before giving up
+        episode_id: Current episode ID to influence randomization
+        seed: Random seed for deterministic behavior
+        ray_checks: Number of rays to use for validating each target
+        
+    Returns:
+        List[float]: Target position [x, y, z] in NED coordinates
+        
+    Raises:
+        ValueError: If no valid target is found within max_attempts
+    """
+    min_dist, max_dist = distance_range
+    
+    # Create a separate random generator for deterministic target generation
+    if seed is not None:
+        # Use episode_id to get different but deterministic targets for each episode
+        target_rng = random.Random(seed + episode_id)
+    else:
+        target_rng = random.Random()
+    
+    # Adapt the distance range based on the episode
+    # This creates a progression of targets with varying distances
+    if episode_id > 0:
+        # The early episodes get shorter distances, later episodes get longer distances
+        episode_factor = min(1.0, episode_id / 10)  # Scales from 0.1 to 1.0 over first 10 episodes
+        
+        # Adjust the distance range
+        min_dist = min_dist + (episode_factor * 5)  # Gradually increase minimum distance
+        max_dist = min(max_dist, min_dist + 20 + (episode_factor * 30))  # Gradually increase range span
+    
+    logging.info(f"Target distance range for episode {episode_id}: {min_dist:.1f}m - {max_dist:.1f}m")
+    
+    # Verify the drone's position is valid for sampling
+    if current_pos[2] > -1.0:  # NED coordinates: Z is negative for altitude
+        logging.warning(f"Sampling target with drone too close to ground (alt: {current_pos[2]:.2f}m)")
+        # Force a minimum altitude for reliable sampling
+        current_pos = [current_pos[0], current_pos[1], -5.0]
+        logging.info(f"Adjusted sampling position to ensure minimum altitude: {current_pos}")
+    
+    valid_targets = []  # Track all valid targets for potential selection
+    best_target = None  # Best target based on obstacle clearance
+    best_obstacle_clearance = 0.0  # Track the best clearance found
+    
+    # Distribution of attempts to improve sampling efficiency
+    # Start with wider distribution, then focus more narrowly if needed
+    attempt_phase = 0
+    phase_attempts = [max_attempts // 3, max_attempts // 3, max_attempts // 3 + max_attempts % 3]
+    attempted_directions = set()
+    
+    for attempt in range(max_attempts):
+        # Determine which phase we're in based on attempt number
+        if attempt >= phase_attempts[0] + phase_attempts[1] and attempt_phase < 2:
+            attempt_phase = 2  # Final phase - more targeted sampling
+        elif attempt >= phase_attempts[0] and attempt_phase < 1:
+            attempt_phase = 1  # Second phase - medium distribution
+            
+            # If we already have some valid targets, try to refine them instead of new random sampling
+            if len(valid_targets) > 0:
+                logging.info(f"Phase 2: Found {len(valid_targets)} valid targets, focusing on refining these")
+        
+        # Sampling strategy based on phase
+        if attempt_phase == 0:
+            # Phase 1: Wide sampling across all directions
+            theta = target_rng.uniform(0, 2 * math.pi)  # Azimuth angle
+            phi = target_rng.uniform(math.pi/6, math.pi/2.5)  # Between ~30° and ~70° from vertical
+        elif attempt_phase == 1 and valid_targets:
+            # Phase 2: Refine existing valid targets
+            base_target = target_rng.choice(valid_targets)
+            base_direction = np.array(base_target) - np.array(current_pos)
+            base_distance = np.linalg.norm(base_direction)
+            
+            if base_distance > 0:
+                # Perturb the direction slightly
+                base_direction = base_direction / base_distance
+                perturb_angle = target_rng.uniform(-math.pi/6, math.pi/6)  # ±30° perturbation
+                
+                # Create perturbed direction - rotate around vertical axis
+                cos_angle = math.cos(perturb_angle)
+                sin_angle = math.sin(perturb_angle)
+                
+                # Simple rotation around vertical axis (approximation)
+                x = base_direction[0] * cos_angle - base_direction[1] * sin_angle
+                y = base_direction[0] * sin_angle + base_direction[1] * cos_angle
+                z = base_direction[2]
+                
+                # Normalize direction
+                direction = np.array([x, y, z])
+                direction = direction / np.linalg.norm(direction)
+                
+                # Convert back to spherical for consistent processing
+                theta = math.atan2(direction[1], direction[0])
+                phi = math.acos(direction[2])
+            else:
+                # Fallback to random sampling if base distance is too small
+                theta = target_rng.uniform(0, 2 * math.pi)
+                phi = target_rng.uniform(math.pi/6, math.pi/2.5)
+        else:
+            # Phase 3 or fallback: Try evenly spaced directions to cover more space efficiently
+            # Generate points roughly evenly distributed on a sphere using golden spiral method
+            n_points = 20  # Number of points for spiral distribution
+            i = attempt % n_points
+            golden_ratio = (1 + 5**0.5) / 2
+            
+            theta = 2 * math.pi * i / golden_ratio
+            phi = math.acos(1 - 2 * (i + 0.5) / n_points)
+            
+            # Skip directions too close to already attempted ones
+            direction_key = f"{round(theta, 1)}_{round(phi, 1)}"
+            if direction_key in attempted_directions:
+                continue
+            attempted_directions.add(direction_key)
+        
+        # Convert spherical to cartesian coordinates
+        x = math.sin(phi) * math.cos(theta)
+        y = math.sin(phi) * math.sin(theta)
+        z = math.cos(phi)
+        
+        # Sample random distance within range
+        if attempt_phase < 2:
+            # Normal random distance sampling for early phases
+            distance = target_rng.uniform(min_dist, max_dist)
+        else:
+            # In the final phase, try strategic distances
+            # For every third attempt, try the middle of the range which often works well
+            if attempt % 3 == 0:
+                distance = (min_dist + max_dist) / 2
+            # For other attempts, still use random sampling
+            else:
+                distance = target_rng.uniform(min_dist, max_dist)
+        
+        # Scale direction vector by distance
+        direction = np.array([x, y, z]) * distance
+        
+        # Calculate target position in NED coordinates
+        target_pos = np.array(current_pos) + direction
+        
+        # Ensure z-coordinate is negative (below ground level in NED)
+        target_pos[2] = min(target_pos[2], -2.0)  # Keep at least 2m below ground level
+        
+        # Convert to Vector3r for line of sight test
+        start_vector = airsim.Vector3r(current_pos[0], current_pos[1], current_pos[2])
+        target_vector = airsim.Vector3r(target_pos[0], target_pos[1], target_pos[2])
+        
+        # Flag to track if this target is valid across all ray checks
+        target_valid = True
+        valid_ray_count = 0
+        
+        # Use multiple rays with slight perturbations to verify line of sight
+        # Adaptive ray pattern based on which phase we're in
+        actual_ray_checks = ray_checks
+        if attempt_phase == 2:
+            # Use more rays in the final phase for more thorough testing
+            actual_ray_checks = ray_checks + 2
+            
+        for ray_idx in range(actual_ray_checks):
+            try:
+                # For the first ray, test direct line of sight
+                if ray_idx == 0:
+                    # Use simTestLineOfSightBetweenPoints for better reliability
+                    los_result = client.simTestLineOfSightBetweenPoints(start_vector, target_vector)
+                else:
+                    # For additional rays, add small perturbation with increasing radius
+                    # Scale perturbation with ray index for better coverage
+                    perturb_base = 0.1  # Base 10cm perturbation
+                    perturb_scale = 1.0 + (ray_idx * 0.15)  # Scale up for later rays
+                    perturb = perturb_base * perturb_scale
+                    
+                    # Use spiral pattern for better spatial coverage
+                    golden_angle = math.pi * (3 - math.sqrt(5))  # Golden angle
+                    theta_offset = ray_idx * golden_angle
+                    z_offset = ray_idx / (actual_ray_checks - 1) * 2 - 1  # -1 to 1
+                    
+                    # Calculate offsets in a spiral pattern
+                    r_xy = math.sqrt(1 - z_offset**2) * perturb
+                    x_offset = r_xy * math.cos(theta_offset)
+                    y_offset = r_xy * math.sin(theta_offset)
+                    z_offset = z_offset * perturb * 0.5  # Reduce vertical perturbation
+                    
+                    offset = np.array([x_offset, y_offset, z_offset])
+                    
+                    # Create slightly perturbed start and end points
+                    perturbed_start = airsim.Vector3r(
+                        current_pos[0] + offset[0], 
+                        current_pos[1] + offset[1], 
+                        current_pos[2] + offset[2]
+                    )
+                    perturbed_target = airsim.Vector3r(
+                        target_pos[0] + offset[0], 
+                        target_pos[1] + offset[1], 
+                        target_pos[2] + offset[2]
+                    )
+                    
+                    # Check line of sight with perturbed rays
+                    los_result = client.simTestLineOfSightBetweenPoints(perturbed_start, perturbed_target)
+                
+                if los_result:
+                    valid_ray_count += 1
+                    # For faster testing, consider success early if most rays pass
+                    if valid_ray_count >= min(5, actual_ray_checks * 0.7):
+                        break
+                # If any ray test fails, mark the target as invalid
+                else:
+                    target_valid = False
+                    break
+                
+            except Exception as e:
+                logging.warning(f"Error in line of sight test for ray {ray_idx}: {e}")
+                target_valid = False
+                break
+                
+        # Consider target valid only if enough rays were valid
+        target_valid = target_valid and (valid_ray_count >= min(3, actual_ray_checks * 0.5))
+                
+        # If target passed ray checks, proceed with validation
+        if target_valid:
+            # Target is visible - add to valid targets
+            valid_targets.append(target_pos.tolist())
+            
+            # Check obstacle clearance around target
+            try:
+                # Use simplified clearance check with line of sight tests in multiple directions
+                clearance_dirs = [
+                    np.array([1, 0, 0]), np.array([-1, 0, 0]),
+                    np.array([0, 1, 0]), np.array([0, -1, 0]),
+                    np.array([0, 0, 1]), np.array([0, 0, -1])
+                ]
+                
+                min_obstacle_dist = float('inf')
+                
+                for direction in clearance_dirs:
+                    # Check line of sight in this direction from target
+                    # Try distances from 1m to 10m
+                    for dist in range(1, 11):
+                        check_point = target_pos + (direction * dist)
+                        check_vector = airsim.Vector3r(check_point[0], check_point[1], check_point[2])
+                        
+                        # If line of sight fails, we found the obstacle distance
+                        if not client.simTestLineOfSightBetweenPoints(target_vector, check_vector):
+                            if dist < min_obstacle_dist:
+                                min_obstacle_dist = dist
+                            break
+                
+                # If we found a valid obstacle distance
+                if min_obstacle_dist < float('inf'):
+                    # If this target has better clearance than our previous best, update it
+                    if min_obstacle_dist > best_obstacle_clearance:
+                        best_obstacle_clearance = min_obstacle_dist
+                        best_target = target_pos.tolist()
+                        logging.debug(f"Better target found with {min_obstacle_dist:.2f}m obstacle clearance")
+                
+                # If we found a really good target (>5m clearance), stop early
+                if best_obstacle_clearance > 5.0:
+                    logging.info(f"Found excellent target with {best_obstacle_clearance:.2f}m obstacle clearance")
+                    return best_target
+            except Exception as e:
+                logging.debug(f"Error checking obstacle clearance near target: {e}")
+            
+            # Log that we found a valid target
+            logging.debug(f"Found valid target at {[round(p, 2) for p in target_pos.tolist()]} (attempt {attempt+1})")
+            
+            # If this is the first valid target, we'll use it as our initial best
+            if best_target is None:
+                best_target = target_pos.tolist()
+                logging.info(f"Found first valid target at {[round(p, 2) for p in best_target]}")
+            
+            # If we've found several valid targets, we can start being selective
+            if len(valid_targets) >= 5 and attempt > max_attempts // 2:
+                # Return the best target we've found so far
+                if best_target:
+                    logging.info(f"Found {len(valid_targets)} valid targets, selecting best with {best_obstacle_clearance:.2f}m clearance")
+                    return best_target
+                # Or just return the last valid target
+                return valid_targets[-1]
+    
+    # After all attempts, return the best target if found
+    if best_target:
+        logging.info(f"Using best target found with {best_obstacle_clearance:.2f}m clearance")
+        return best_target
+    
+    # Or return any valid target we found
+    if valid_targets:
+        logging.info(f"No ideal target found, using one of {len(valid_targets)} valid targets")
+        return target_rng.choice(valid_targets)  # Random choice from valid targets
+    
+    # If we couldn't find ANY valid target, try one last direct check with a fixed target
+    logging.warning("No valid targets found with random sampling, trying fixed fallback targets")
+    
+    # Try several fallback directions in priority order
+    fallback_directions = [
+        np.array([1.0, 0.0, 0.0]),   # Forward
+        np.array([0.0, 1.0, 0.0]),   # Right
+        np.array([0.0, -1.0, 0.0]),  # Left
+        np.array([-1.0, 0.0, 0.0]),  # Behind
+        np.array([0.7, 0.7, 0.0]),   # Forward-right
+        np.array([0.7, -0.7, 0.0]),  # Forward-left
+    ]
+    
+    # Try multiple distances for each direction
+    fallback_distances = [min_dist, (min_dist + max_dist) / 2, max_dist * 0.8]
+    
+    for direction in fallback_directions:
+        for distance in fallback_distances:
+            try:
+                # Create fallback target
+                fallback_target_pos = np.array(current_pos) + (direction * distance)
+                fallback_target_pos[2] = min(fallback_target_pos[2], -2.0)  # Keep below ground level
+                
+                # Check if this fallback target is valid
+                fallback_vector3r = airsim.Vector3r(fallback_target_pos[0], fallback_target_pos[1], fallback_target_pos[2])
+                fallback_los_result = client.simTestLineOfSightBetweenPoints(start_vector, fallback_vector3r)
+                
+                if fallback_los_result:
+                    logging.info(f"Using fallback target at {[round(p, 2) for p in fallback_target_pos.tolist()]}")
+                    return fallback_target_pos.tolist()
+            except Exception as e:
+                logging.warning(f"Error checking fallback target: {e}")
+    
+    # Last resort - just return the default target position
+    logging.error("Failed to find any valid target, returning default position")
+    default_target = [current_pos[0] + 10.0, current_pos[1], current_pos[2]]
+    return default_target
+
+def visualize_raycasts(client, raycast_data_file, duration=60.0):
+    """Visualize the results of raycasting tests by drawing lines in the AirSim environment
+    
+    Args:
+        client: AirSim client instance
+        raycast_data_file: Path to a JSON file containing raycast debug information
+        duration: Duration in seconds for visualization markers to remain visible
+    """
+    try:
+        # Load raycast debug data
+        with open(raycast_data_file, 'r') as f:
+            raycast_data = json.load(f)
+        
+        # Clear previous visualizations
+        client.simFlushPersistentMarkers()
+        
+        # Draw drone position
+        drone_pos = raycast_data.get("drone_pos", [0, 0, 0])
+        client.simAddMarker(
+            airsim.Vector3r(drone_pos[0], drone_pos[1], drone_pos[2]),
+            1.0,  # size
+            [0, 0, 255, 255],  # blue
+            "drone_position",
+            duration  # duration in seconds
+        )
+        
+        # Draw successful rays in green
+        for test_result in raycast_data.get("ray_tests", []):
+            if test_result.get("valid", False):
+                target = test_result.get("target", [0, 0, 0])
+                # Draw successful target
+                client.simAddMarker(
+                    airsim.Vector3r(target[0], target[1], target[2]),
+                    0.5,  # size
+                    [0, 255, 0, 255],  # green
+                    f"valid_target_{target[0]}_{target[1]}_{target[2]}",
+                    duration  # duration
+                )
+                
+                # Draw rays for this target
+                for ray in test_result.get("rays", []):
+                    if ray.get("result", False):
+                        origin = ray.get("origin", [0, 0, 0])
+                        end = ray.get("end", [0, 0, 0])
+                        # Draw successful ray
+                        client.simDrawLine(
+                            airsim.Vector3r(origin[0], origin[1], origin[2]),
+                            airsim.Vector3r(end[0], end[1], end[2]),
+                            0.05,  # thickness
+                            [0, 255, 0, 255],  # green
+                            duration  # duration
+                        )
+        
+        # Draw failed rays in red
+        for test_result in raycast_data.get("ray_tests", []):
+            if not test_result.get("valid", True):
+                target = test_result.get("target", [0, 0, 0])
+                # Draw failed target
+                client.simAddMarker(
+                    airsim.Vector3r(target[0], target[1], target[2]),
+                    0.5,  # size
+                    [255, 0, 0, 255],  # red
+                    f"invalid_target_{target[0]}_{target[1]}_{target[2]}",
+                    duration  # duration
+                )
+                
+                # Draw rays for this target
+                for ray in test_result.get("rays", []):
+                    origin = ray.get("origin", [0, 0, 0])
+                    end = ray.get("end", [0, 0, 0])
+                    color = [255, 0, 0, 255] if not ray.get("result", True) else [0, 255, 0, 255]
+                    # Draw ray
+                    client.simDrawLine(
+                        airsim.Vector3r(origin[0], origin[1], origin[2]),
+                        airsim.Vector3r(end[0], end[1], end[2]),
+                        0.05,  # thickness
+                        color,
+                        duration  # duration
+                    )
+        
+        # Draw all failed targets
+        for failed_target in raycast_data.get("failures", []):
+            client.simAddMarker(
+                airsim.Vector3r(failed_target[0], failed_target[1], failed_target[2]),
+                0.3,  # size
+                [255, 0, 0, 128],  # red with some transparency
+                f"failed_{failed_target[0]}_{failed_target[1]}_{failed_target[2]}",
+                duration  # duration
+            )
+        
+        logging.info(f"Visualized raycast debug data from {raycast_data_file} (visible for {duration}s)")
+        return True
+    except Exception as e:
+        logging.error(f"Failed to visualize raycasts: {e}")
+        traceback.print_exc()
+        return False
+
+def plot_metrics(metrics_file, output_dir):
+    """Create visualizations of experiment metrics
+    
+    Args:
+        metrics_file: Path to the CSV file containing metrics data
+        output_dir: Directory to save plot images
+    """
+    try:
+        # Ensure output directory exists
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # Load metrics
+        df = pd.read_csv(metrics_file)
+        
+        # Group data by episode
+        episode_groups = df.groupby('episode_id')
+        num_episodes = len(episode_groups)
+        
+        # Plot 1: Distance to target over steps for each episode
+        plt.figure(figsize=(12, 8))
+        for episode_id, group in episode_groups:
+            plt.plot(group['step'], group['distance_to_target'], label=f'Episode {episode_id}')
+        
+        plt.title('Distance to Target vs. Steps')
+        plt.xlabel('Step')
+        plt.ylabel('Distance (m)')
+        plt.grid(True, alpha=0.3)
+        
+        # Only show legend if not too many episodes
+        if num_episodes <= 10:
+            plt.legend()
+        
+        plt.savefig(os.path.join(output_dir, 'distance_vs_steps.png'), dpi=150)
+        plt.close()
+        
+        # Plot 2: Normalized distance to target
+        plt.figure(figsize=(12, 8))
+        for episode_id, group in episode_groups:
+            plt.plot(group['step'], group['normalized_distance'], label=f'Episode {episode_id}')
+        
+        plt.title('Normalized Distance to Target vs. Steps')
+        plt.xlabel('Step')
+        plt.ylabel('Normalized Distance')
+        plt.grid(True, alpha=0.3)
+        
+        # Add a reference line at 0
+        plt.axhline(y=0, color='r', linestyle='--', alpha=0.5)
+        
+        # Only show legend if not too many episodes
+        if num_episodes <= 10:
+            plt.legend()
+        
+        plt.savefig(os.path.join(output_dir, 'normalized_distance_vs_steps.png'), dpi=150)
+        plt.close()
+        
+        # Plot 3: Obstacle count over steps
+        plt.figure(figsize=(12, 8))
+        for episode_id, group in episode_groups:
+            plt.plot(group['step'], group['obstacles_count'], label=f'Episode {episode_id}')
+        
+        plt.title('Obstacle Count vs. Steps')
+        plt.xlabel('Step')
+        plt.ylabel('Number of Obstacles')
+        plt.grid(True, alpha=0.3)
+        
+        # Only show legend if not too many episodes
+        if num_episodes <= 10:
+            plt.legend()
+        
+        plt.savefig(os.path.join(output_dir, 'obstacles_vs_steps.png'), dpi=150)
+        plt.close()
+        
+        # Plot 4: Inference time over steps
+        plt.figure(figsize=(12, 8))
+        for episode_id, group in episode_groups:
+            plt.plot(group['step'], group['inference_time_ms'], label=f'Episode {episode_id}')
+        
+        plt.title('Inference Time vs. Steps')
+        plt.xlabel('Step')
+        plt.ylabel('Inference Time (ms)')
+        plt.grid(True, alpha=0.3)
+        
+        # Only show legend if not too many episodes
+        if num_episodes <= 10:
+            plt.legend()
+        
+        plt.savefig(os.path.join(output_dir, 'inference_time_vs_steps.png'), dpi=150)
+        plt.close()
+        
+        # Plot 5: Action magnitude over steps
+        plt.figure(figsize=(12, 8))
+        for episode_id, group in episode_groups:
+            plt.plot(group['step'], group['action_magnitude'], label=f'Episode {episode_id}')
+        
+        plt.title('Action Magnitude vs. Steps')
+        plt.xlabel('Step')
+        plt.ylabel('Action Magnitude (m)')
+        plt.grid(True, alpha=0.3)
+        
+        # Only show legend if not too many episodes
+        if num_episodes <= 10:
+            plt.legend()
+        
+        plt.savefig(os.path.join(output_dir, 'action_magnitude_vs_steps.png'), dpi=150)
+        plt.close()
+        
+        # Plot 6: 2D trajectory for each episode (top-down view)
+        for episode_id, group in episode_groups:
+            plt.figure(figsize=(10, 10))
+            plt.plot(group['position_x'], group['position_y'], 'b-', linewidth=2)
+            plt.scatter(group['position_x'].iloc[0], group['position_y'].iloc[0], c='g', s=100, marker='o', label='Start')
+            plt.scatter(group['position_x'].iloc[-1], group['position_y'].iloc[-1], c='r', s=100, marker='x', label='End')
+            
+            # Add waypoints as dots
+            plt.scatter(group['waypoint_x'], group['waypoint_y'], c='gray', s=30, alpha=0.5, label='Waypoints')
+            
+            plt.title(f'Episode {episode_id} Trajectory (Top-Down View)')
+            plt.xlabel('X Position (m)')
+            plt.ylabel('Y Position (m)')
+            plt.grid(True, alpha=0.3)
+            plt.axis('equal')  # Equal aspect ratio
+            plt.legend()
+            
+            plt.savefig(os.path.join(output_dir, f'trajectory_episode_{episode_id}.png'), dpi=150)
+            plt.close()
+        
+        # Plot 7: Summary metrics across episodes
+        if num_episodes > 1:
+            # Collect episode summary metrics
+            episode_metrics = {
+                'episode_id': [],
+                'steps_taken': [],
+                'final_distance': [],
+                'success': []
+            }
+            
+            for episode_id, group in episode_groups:
+                episode_metrics['episode_id'].append(episode_id)
+                episode_metrics['steps_taken'].append(len(group))
+                episode_metrics['final_distance'].append(group['distance_to_target'].iloc[-1])
+                # Consider success as getting close to target (within ARRIVAL_THRESHOLD)
+                episode_metrics['success'].append(1 if group['distance_to_target'].iloc[-1] <= ARRIVAL_THRESHOLD else 0)
+            
+            summary_df = pd.DataFrame(episode_metrics)
+            
+            # Plot steps taken per episode
+            plt.figure(figsize=(12, 6))
+            bars = plt.bar(summary_df['episode_id'], summary_df['steps_taken'])
+            
+            # Color successful episodes differently
+            for i, success in enumerate(summary_df['success']):
+                bars[i].set_color('green' if success else 'orange')
+            
+            plt.title('Steps Taken per Episode')
+            plt.xlabel('Episode')
+            plt.ylabel('Steps')
+            plt.grid(True, alpha=0.3, axis='y')
+            plt.savefig(os.path.join(output_dir, 'steps_per_episode.png'), dpi=150)
+            plt.close()
+            
+            # Plot final distance per episode
+            plt.figure(figsize=(12, 6))
+            bars = plt.bar(summary_df['episode_id'], summary_df['final_distance'])
+            
+            # Color successful episodes differently
+            for i, success in enumerate(summary_df['success']):
+                bars[i].set_color('green' if success else 'orange')
+            
+            plt.title('Final Distance to Target per Episode')
+            plt.xlabel('Episode')
+            plt.ylabel('Distance (m)')
+            plt.grid(True, alpha=0.3, axis='y')
+            plt.savefig(os.path.join(output_dir, 'final_distance_per_episode.png'), dpi=150)
+            plt.close()
+            
+            # Plot success rate
+            success_rate = summary_df['success'].mean() * 100
+            plt.figure(figsize=(8, 6))
+            plt.pie([success_rate, 100 - success_rate], 
+                   labels=[f'Success ({success_rate:.1f}%)', f'Failure ({100-success_rate:.1f}%)'],
+                   colors=['green', 'orange'], autopct='%1.1f%%', startangle=90)
+            plt.title('Success Rate Across All Episodes')
+            plt.axis('equal')  # Equal aspect ratio ensures that pie is drawn as a circle
+            plt.savefig(os.path.join(output_dir, 'success_rate.png'), dpi=150)
+            plt.close()
+        
+        logging.info(f"Successfully created {5 + num_episodes + (3 if num_episodes > 1 else 0)} plots in {output_dir}")
+        return True
+        
+    except Exception as e:
+        logging.error(f"Error creating plots: {e}")
+        traceback.print_exc()
+        return False
 
 if __name__ == "__main__":
     main()
