@@ -140,9 +140,9 @@ Returns:
 - Suitability score (0-1)
 """
 function calculate_suitability(obstacle_distance::Float64, obstacle_density::Float64; 
-                             obstacle_weight::Float64=0.7, density_weight::Float64=0.3,
-                             cutoff_distance::Float64=2.5, steepness_distance::Float64=3.0,
-                             cutoff_density::Float64=0.2, steepness_density::Float64=10.0)::Float64
+                             obstacle_weight::Float64=0.8, density_weight::Float64=0.4,  # Increased weights for safety
+                             cutoff_distance::Float64=3.0, steepness_distance::Float64=4.0,  # Increased cutoff distance and steepness
+                             cutoff_density::Float64=0.15, steepness_density::Float64=12.0)::Float64  # More sensitive to density
     # Safety factor using sigmoid-like function for more predictable transition
     # 1 / (1 + e^(-steepness * (distance - cutoff)))
     # When distance equals cutoff, value is 0.5
@@ -156,6 +156,16 @@ function calculate_suitability(obstacle_distance::Float64, obstacle_density::Flo
     # As density decreases, approaches 1.0
     # As density increases, approaches 0.0
     density_factor = 1.0 / (1.0 + exp(steepness_density * (obstacle_density - cutoff_density)))
+    
+    # Hard cutoff for very close obstacles - safety override
+    if obstacle_distance < 1.2  # Absolute minimum safe distance
+        safety_factor *= (obstacle_distance / 1.2)^2  # Square relation for sharper dropoff
+    end
+    
+    # Hard cutoff for very high density areas
+    if obstacle_density > 0.4  # Very cluttered environment
+        density_factor *= max(0.2, 1.0 - (obstacle_density - 0.4) * 2.0)  # Linear reduction
+    end
     
     # Combine factors with relative weights - both should be high for good suitability
     # Ensure weights sum to 1.0 for proper scaling

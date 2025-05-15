@@ -1,0 +1,20 @@
+2025-05-13 22:17:12,301 - INFO - Using random seed: 42
+2025-05-13 22:17:12,302 - INFO - Starting experiment with configuration:
+2025-05-13 22:17:12,302 - INFO -   num_episodes: 10
+2025-05-13 22:17:12,303 - INFO -   target_distance_range: (15.0, 50.0)
+2025-05-13 22:17:12,303 - INFO -   random_seed: 42
+2025-05-13 22:17:12,303 - INFO -   max_steps_per_episode: 100
+2025-05-13 22:17:12,304 - INFO -   output_dir: experiment_results
+2025-05-13 22:17:12,304 - INFO -   stuck_timeout: 15.0
+2025-05-13 22:17:12,305 - INFO -   stuck_check_interval: 3.0
+2025-05-13 22:17:12,305 - INFO -   episode_timeout: 120
+2025-05-13 22:17:12,306 - INFO -   precompile_julia: True
+2025-05-13 22:17:12,306 - INFO -   zmq_port: 5555
+2025-05-13 22:17:12,306 - INFO -   debug_raycasting: False
+2025-05-13 22:17:12,306 - INFO -   min_ray_checks: 3
+2025-05-13 22:17:12,307 - INFO -   max_ray_checks: 7
+2025-05-13 22:17:12,307 - INFO -   visualize_raycasts: False
+2025-05-13 22:17:12,307 - INFO -   visualization_duration: 60.0
+2025-05-13 22:18:33,808 - INFO - === Starting Episode 0 ===
+2025-05-13 22:18:33,812 - INFO - Episode 0: Taking off...
+2025-05-13 22:18:55,876 - WARNING - Episode 0: Drone altitude too low (0.05), adjusting height

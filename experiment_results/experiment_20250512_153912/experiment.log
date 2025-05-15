@@ -1,0 +1,57 @@
+2025-05-12 15:39:12,966 - INFO - Using random seed: 42
+2025-05-12 15:39:12,967 - INFO - Starting experiment with configuration:
+2025-05-12 15:39:12,967 - INFO -   num_episodes: 10
+2025-05-12 15:39:12,968 - INFO -   target_distance_range: (15.0, 50.0)
+2025-05-12 15:39:12,968 - INFO -   random_seed: 42
+2025-05-12 15:39:12,968 - INFO -   max_steps_per_episode: 100
+2025-05-12 15:39:12,968 - INFO -   output_dir: experiment_results
+2025-05-12 15:39:12,968 - INFO -   stuck_timeout: 15.0
+2025-05-12 15:39:12,968 - INFO -   stuck_check_interval: 3.0
+2025-05-12 15:39:12,968 - INFO -   episode_timeout: 120
+2025-05-12 15:39:12,969 - INFO -   precompile_julia: True
+2025-05-12 15:39:12,969 - INFO -   zmq_port: 5555
+2025-05-12 15:39:12,970 - INFO -   debug_raycasting: False
+2025-05-12 15:39:12,970 - INFO -   min_ray_checks: 3
+2025-05-12 15:39:12,970 - INFO -   max_ray_checks: 7
+2025-05-12 15:39:12,970 - INFO -   visualize_raycasts: False
+2025-05-12 15:39:12,970 - INFO -   visualization_duration: 60.0
+2025-05-12 15:40:49,699 - INFO - === Starting Episode 0 ===
+2025-05-12 15:40:49,706 - INFO - Episode 0: Taking off...
+2025-05-12 15:40:55,132 - INFO - Target distance range for episode 0: 15.0m - 50.0m
+2025-05-12 15:40:55,232 - INFO - Found first valid target at [-8.13, -9.76, -2.0]
+2025-05-12 15:40:59,585 - INFO - Phase 2: Found 50 valid targets, focusing on refining these
+2025-05-12 15:41:02,017 - INFO - Found 77 valid targets, selecting best with 0.00m clearance
+2025-05-12 15:41:02,018 - INFO - Episode 0: Target sampling took 6.89s with 3 rays
+2025-05-12 15:41:02,019 - INFO - Episode 0: Initial position: [0.0, 0.0, -1.67]
+2025-05-12 15:41:02,019 - INFO - Episode 0: Target position: [-8.13, -9.76, -2.0]
+2025-05-12 15:41:02,020 - INFO - Episode 0: Initial distance: 12.71m
+2025-05-12 15:41:02,023 - INFO - Episode 0: Target verified with 3 rays
+2025-05-12 15:41:09,619 - WARNING - Episode 0: Step 0 took 7.60s (unusually long)
+2025-05-12 15:41:09,658 - WARNING - Pre-movement check: Obstacle detected on planned path at 3.30m distance
+2025-05-12 15:41:09,659 - INFO - Proceeding with movement and will replan if obstacle persists during execution
+2025-05-12 15:41:11,925 - WARNING - Pre-movement check: Obstacle detected on planned path at 2.70m distance
+2025-05-12 15:41:11,926 - INFO - Proceeding with movement and will replan if obstacle persists during execution
+2025-05-12 15:41:13,536 - WARNING - Obstacle detected at 2.07m during movement execution
+2025-05-12 15:41:13,537 - INFO - Episode 0: Obstacle detected during movement, triggering immediate replanning
+2025-05-12 15:41:13,557 - INFO - Adding newly detected obstacle at [np.float32(-6.98), np.float32(-5.63), np.float32(-1.71)] to planning data
+2025-05-12 15:41:13,557 - INFO - Episode 0: Triggering dynamic replanning due to detected obstacle
+2025-05-12 15:41:13,559 - INFO - Enhanced planning parameters for obstacle avoidance: safety_margin=3.75, waypoint_count=112, obstacle_priority=3.75
+2025-05-12 15:41:13,573 - WARNING - Episode 0: Planned waypoint would lead through obstacle at 3.91m
+2025-05-12 15:41:13,574 - INFO - Episode 0: Attempting to generate safer waypoint away from obstacles
+2025-05-12 15:41:13,574 - INFO - Episode 0: Generated safety waypoint to retreat from obstacle at direction [np.float64(1.0), np.float64(-0.04), np.float64(0.01)], distance 1.96m
+2025-05-12 15:41:13,576 - INFO - Episode 0: Executing replanned path to avoid obstacle
+2025-05-12 15:41:13,595 - WARNING - Pre-movement check: Obstacle detected on planned path at 2.70m distance
+2025-05-12 15:41:13,595 - INFO - Proceeding with movement and will replan if obstacle persists during execution
+2025-05-12 15:41:13,717 - WARNING - Obstacle detected at 1.86m during movement execution
+2025-05-12 15:41:13,920 - WARNING - Episode 0: Collision detected at step 3
+2025-05-12 15:41:13,954 - WARNING - Pre-movement check: Obstacle detected on planned path at 2.49m distance
+2025-05-12 15:41:13,954 - INFO - Proceeding with movement and will replan if obstacle persists during execution
+2025-05-12 15:41:21,429 - WARNING - Movement taking too long, cancelling and replanning
+2025-05-12 15:41:21,432 - INFO - Episode 0: Obstacle detected during movement, triggering immediate replanning
+2025-05-12 15:41:21,450 - INFO - Adding newly detected obstacle at [-8.44, -10.09, -2.01] to planning data
+2025-05-12 15:41:21,451 - INFO - Episode 0: Triggering dynamic replanning due to detected obstacle
+2025-05-12 15:41:21,455 - INFO - Enhanced planning parameters for obstacle avoidance: safety_margin=3.75, waypoint_count=112, obstacle_priority=3.00
+2025-05-12 15:41:21,468 - INFO - Episode 0: Executing replanned path to avoid obstacle
+2025-05-12 15:41:28,849 - WARNING - Movement taking too long, cancelling and replanning
+2025-05-12 15:41:29,051 - WARNING - Episode 0: Step 3 took 15.13s (unusually long)
+2025-05-12 15:41:29,052 - ERROR - Episode 0: Drone stuck for 15.1s (>= 15.0s), aborting episode

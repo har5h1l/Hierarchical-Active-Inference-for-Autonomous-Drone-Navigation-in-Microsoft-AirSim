@@ -1,0 +1,17 @@
+2025-05-12 17:03:58,189 - INFO - Using random seed: 42
+2025-05-12 17:03:58,191 - INFO - Starting experiment with configuration:
+2025-05-12 17:03:58,191 - INFO -   num_episodes: 10
+2025-05-12 17:03:58,191 - INFO -   target_distance_range: (15.0, 50.0)
+2025-05-12 17:03:58,191 - INFO -   random_seed: 42
+2025-05-12 17:03:58,191 - INFO -   max_steps_per_episode: 100
+2025-05-12 17:03:58,192 - INFO -   output_dir: experiment_results
+2025-05-12 17:03:58,192 - INFO -   stuck_timeout: 15.0
+2025-05-12 17:03:58,192 - INFO -   stuck_check_interval: 3.0
+2025-05-12 17:03:58,192 - INFO -   episode_timeout: 120
+2025-05-12 17:03:58,192 - INFO -   precompile_julia: True
+2025-05-12 17:03:58,192 - INFO -   zmq_port: 5555
+2025-05-12 17:03:58,193 - INFO -   debug_raycasting: False
+2025-05-12 17:03:58,193 - INFO -   min_ray_checks: 3
+2025-05-12 17:03:58,193 - INFO -   max_ray_checks: 7
+2025-05-12 17:03:58,193 - INFO -   visualize_raycasts: False
+2025-05-12 17:03:58,193 - INFO -   visualization_duration: 60.0

@@ -1,0 +1,59 @@
+2025-05-13 21:58:37,243 - INFO - Using random seed: 42
+2025-05-13 21:58:37,244 - INFO - Starting experiment with configuration:
+2025-05-13 21:58:37,244 - INFO -   num_episodes: 10
+2025-05-13 21:58:37,244 - INFO -   target_distance_range: (15.0, 50.0)
+2025-05-13 21:58:37,244 - INFO -   random_seed: 42
+2025-05-13 21:58:37,244 - INFO -   max_steps_per_episode: 100
+2025-05-13 21:58:37,244 - INFO -   output_dir: experiment_results
+2025-05-13 21:58:37,244 - INFO -   stuck_timeout: 15.0
+2025-05-13 21:58:37,245 - INFO -   stuck_check_interval: 3.0
+2025-05-13 21:58:37,245 - INFO -   episode_timeout: 120
+2025-05-13 21:58:37,245 - INFO -   precompile_julia: True
+2025-05-13 21:58:37,245 - INFO -   zmq_port: 5555
+2025-05-13 21:58:37,245 - INFO -   debug_raycasting: False
+2025-05-13 21:58:37,245 - INFO -   min_ray_checks: 3
+2025-05-13 21:58:37,245 - INFO -   max_ray_checks: 7
+2025-05-13 21:58:37,245 - INFO -   visualize_raycasts: False
+2025-05-13 21:58:37,245 - INFO -   visualization_duration: 60.0
+2025-05-13 21:59:19,420 - INFO - === Starting Episode 0 ===
+2025-05-13 21:59:19,427 - INFO - Episode 0: Taking off...
+2025-05-13 21:59:24,840 - INFO - Target distance range for episode 0: 15.0m - 50.0m
+2025-05-13 21:59:24,932 - INFO - Found first valid target at [-8.13, -9.76, -2.0]
+2025-05-13 21:59:29,371 - INFO - Phase 2: Found 50 valid targets, focusing on refining these
+2025-05-13 21:59:31,854 - INFO - Found 77 valid targets, selecting best with 0.00m clearance
+2025-05-13 21:59:31,854 - INFO - Episode 0: Target sampling took 7.01s with 3 rays
+2025-05-13 21:59:31,854 - INFO - Episode 0: Initial distance to target: 12.71m
+2025-05-13 21:59:31,855 - INFO - Episode 0: Initial position: [0.0, 0.0, -1.67]
+2025-05-13 21:59:31,855 - INFO - Episode 0: Target position: [-8.13, -9.76, -2.0]
+2025-05-13 21:59:31,855 - INFO - Episode 0: Initial distance: 12.71m
+2025-05-13 21:59:31,860 - INFO - Episode 0: Target verified with 3 rays
+2025-05-13 21:59:37,600 - ERROR - Error in move_to_waypoint: 'MultirotorClient' object has no attribute 'rotateToYaw'
+2025-05-13 21:59:37,804 - WARNING - Episode 0: Step 0 took 5.94s (unusually long)
+2025-05-13 21:59:37,822 - ERROR - Error in move_to_waypoint: 'MultirotorClient' object has no attribute 'rotateToYaw'
+2025-05-13 21:59:38,038 - ERROR - Error in move_to_waypoint: 'MultirotorClient' object has no attribute 'rotateToYaw'
+2025-05-13 21:59:38,252 - ERROR - Error in move_to_waypoint: 'MultirotorClient' object has no attribute 'rotateToYaw'
+2025-05-13 21:59:38,479 - ERROR - Error in move_to_waypoint: 'MultirotorClient' object has no attribute 'rotateToYaw'
+2025-05-13 21:59:38,703 - ERROR - Error in move_to_waypoint: 'MultirotorClient' object has no attribute 'rotateToYaw'
+2025-05-13 21:59:38,920 - ERROR - Error in move_to_waypoint: 'MultirotorClient' object has no attribute 'rotateToYaw'
+2025-05-13 21:59:39,148 - ERROR - Error in move_to_waypoint: 'MultirotorClient' object has no attribute 'rotateToYaw'
+2025-05-13 21:59:39,365 - ERROR - Error in move_to_waypoint: 'MultirotorClient' object has no attribute 'rotateToYaw'
+2025-05-13 21:59:39,588 - ERROR - Error in move_to_waypoint: 'MultirotorClient' object has no attribute 'rotateToYaw'
+2025-05-13 21:59:39,808 - ERROR - Error in move_to_waypoint: 'MultirotorClient' object has no attribute 'rotateToYaw'
+2025-05-13 21:59:40,025 - ERROR - Error in move_to_waypoint: 'MultirotorClient' object has no attribute 'rotateToYaw'
+2025-05-13 21:59:40,243 - ERROR - Error in move_to_waypoint: 'MultirotorClient' object has no attribute 'rotateToYaw'
+2025-05-13 21:59:40,471 - ERROR - Error in move_to_waypoint: 'MultirotorClient' object has no attribute 'rotateToYaw'
+2025-05-13 21:59:40,691 - ERROR - Error in move_to_waypoint: 'MultirotorClient' object has no attribute 'rotateToYaw'
+2025-05-13 21:59:40,893 - WARNING - Episode 0: No significant movement for 9.0s (timeout: 15.0s)
+2025-05-13 21:59:40,915 - ERROR - Error in move_to_waypoint: 'MultirotorClient' object has no attribute 'rotateToYaw'
+2025-05-13 21:59:41,135 - ERROR - Error in move_to_waypoint: 'MultirotorClient' object has no attribute 'rotateToYaw'
+2025-05-13 21:59:41,359 - ERROR - Error in move_to_waypoint: 'MultirotorClient' object has no attribute 'rotateToYaw'
+2025-05-13 21:59:41,584 - ERROR - Error in move_to_waypoint: 'MultirotorClient' object has no attribute 'rotateToYaw'
+2025-05-13 21:59:41,803 - ERROR - Error in move_to_waypoint: 'MultirotorClient' object has no attribute 'rotateToYaw'
+2025-05-13 21:59:42,019 - ERROR - Error in move_to_waypoint: 'MultirotorClient' object has no attribute 'rotateToYaw'
+2025-05-13 21:59:42,237 - ERROR - Error in move_to_waypoint: 'MultirotorClient' object has no attribute 'rotateToYaw'
+2025-05-13 21:59:42,454 - ERROR - Error in move_to_waypoint: 'MultirotorClient' object has no attribute 'rotateToYaw'
+2025-05-13 21:59:42,673 - ERROR - Error in move_to_waypoint: 'MultirotorClient' object has no attribute 'rotateToYaw'
+2025-05-13 21:59:42,893 - ERROR - Error in move_to_waypoint: 'MultirotorClient' object has no attribute 'rotateToYaw'
+2025-05-13 22:00:29,180 - ERROR - Error in move_to_waypoint: 'MultirotorClient' object has no attribute 'rotateToYaw'
+2025-05-13 22:00:29,383 - WARNING - Episode 0: Step 25 took 46.29s (unusually long)
+2025-05-13 22:00:29,385 - WARNING - Episode 0: Collision detected at step 26

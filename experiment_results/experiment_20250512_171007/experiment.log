@@ -1,0 +1,30 @@
+2025-05-12 17:10:07,484 - INFO - Using random seed: 42
+2025-05-12 17:10:07,485 - INFO - Starting experiment with configuration:
+2025-05-12 17:10:07,485 - INFO -   num_episodes: 10
+2025-05-12 17:10:07,487 - INFO -   target_distance_range: (15.0, 50.0)
+2025-05-12 17:10:07,487 - INFO -   random_seed: 42
+2025-05-12 17:10:07,488 - INFO -   max_steps_per_episode: 100
+2025-05-12 17:10:07,489 - INFO -   output_dir: experiment_results
+2025-05-12 17:10:07,489 - INFO -   stuck_timeout: 15.0
+2025-05-12 17:10:07,490 - INFO -   stuck_check_interval: 3.0
+2025-05-12 17:10:07,490 - INFO -   episode_timeout: 120
+2025-05-12 17:10:07,491 - INFO -   precompile_julia: True
+2025-05-12 17:10:07,492 - INFO -   zmq_port: 5555
+2025-05-12 17:10:07,492 - INFO -   debug_raycasting: False
+2025-05-12 17:10:07,493 - INFO -   min_ray_checks: 3
+2025-05-12 17:10:07,493 - INFO -   max_ray_checks: 7
+2025-05-12 17:10:07,494 - INFO -   visualize_raycasts: False
+2025-05-12 17:10:07,494 - INFO -   visualization_duration: 60.0
+2025-05-12 17:11:43,850 - INFO - === Starting Episode 0 ===
+2025-05-12 17:11:43,859 - INFO - Episode 0: Taking off...
+2025-05-12 17:11:49,290 - INFO - Target distance range for episode 0: 15.0m - 50.0m
+2025-05-12 17:11:49,390 - INFO - Found first valid target at [-8.13, -9.76, -2.0]
+2025-05-12 17:11:53,915 - INFO - Phase 2: Found 50 valid targets, focusing on refining these
+2025-05-12 17:11:56,426 - INFO - Found 77 valid targets, selecting best with 0.00m clearance
+2025-05-12 17:11:56,427 - INFO - Episode 0: Target sampling took 7.14s with 3 rays
+2025-05-12 17:11:56,427 - INFO - Episode 0: Initial distance to target: 12.71m
+2025-05-12 17:11:56,428 - INFO - Episode 0: Initial position: [0.0, 0.0, -1.67]
+2025-05-12 17:11:56,429 - INFO - Episode 0: Target position: [-8.13, -9.76, -2.0]
+2025-05-12 17:11:56,429 - INFO - Episode 0: Initial distance: 12.71m
+2025-05-12 17:11:56,434 - INFO - Episode 0: Target verified with 3 rays
+2025-05-12 17:12:12,666 - WARNING - Episode 0: Step 0 took 16.23s (unusually long)

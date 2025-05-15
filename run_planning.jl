@@ -129,6 +129,11 @@ function main()
     local obstacle_repulsion_weight = 0.0
     local direct_path_clear = true
     local direct_path_suitability = 1.0
+    local high_density_area = false
+    local critical_obstacle_avoidance = false
+    local exploration_factor = 0.5
+    local obstacle_priority = 1.0
+    local dynamic_replanning = false
     
     if isfile(OBS_INPUT_PATH)
         try
@@ -138,9 +143,19 @@ function main()
             obstacle_repulsion_weight = get(obs_data, "obstacle_repulsion_weight", 0.0)
             direct_path_clear = get(obs_data, "direct_path_clear", true)
             direct_path_suitability = get(obs_data, "direct_path_suitability", 1.0)
+            high_density_area = get(obs_data, "high_density_area", false)
+            critical_obstacle_avoidance = get(obs_data, "critical_obstacle_avoidance", false)
+            exploration_factor = get(obs_data, "exploration_factor", 0.5)
+            obstacle_priority = get(obs_data, "obstacle_priority", 1.0)
+            dynamic_replanning = get(obs_data, "dynamic_replanning", false)
             
             println("Retrieved obstacle repulsion weight: $obstacle_repulsion_weight")
             println("Direct path clear: $direct_path_clear, suitability: $direct_path_suitability")
+            println("High density area: $high_density_area")
+            println("Critical obstacle avoidance: $critical_obstacle_avoidance")
+            println("Exploration factor: $exploration_factor")
+            println("Obstacle priority: $obstacle_priority")
+            println("Dynamic replanning: $dynamic_replanning")
         catch e
             println("Warning: Could not read observation file: $e")
         end
@@ -223,34 +238,145 @@ function main()
     # 2. Very close to target
     # 3. Low obstacle repulsion
     
-    target_preference_weight = 0.6  # Base weight
+    # Start with a balanced base weight 
+    target_preference_weight = 0.5
     
-    # Adjust based on distance to target
-    if current_to_target_dist < 5.0
-        # When close to target, favor direct approach
-        target_preference_weight = 0.8
-    elseif current_to_target_dist > 20.0
-        # When far from target, more exploration is reasonable
-        target_preference_weight = 0.5
+    # Get initial distance for reference (if available) or use current as fallback
+    initial_distance = if haskey(data, "initial_distance")
+        data["initial_distance"]
+    else
+        current_to_target_dist * 1.2  # Add 20% if not provided
+    end
+    # Calculate percentage of distance to target (how close we are)
+    distance_percentage = (current_to_target_dist / initial_distance) * 100.0
+    
+    println("Planning: Distance percentage to target: $(round(distance_percentage, digits=1))% of initial $(round(initial_distance, digits=2))m")
+    
+    # Enhanced distance-based scaling using percentages rather than fixed distances
+    if distance_percentage < 5.0  # Very close to target (within final 5% of journey)
+        # When very close to target (final 5%), strongly favor direct approach
+        target_preference_weight = 0.8  # High target preference
+        println("Planning: Very close to target (<5% remaining), strongly prioritizing target approach: $(round(target_preference_weight, digits=2))")
+    elseif distance_percentage < 15.0  # Close to target (5-15% of journey remaining)
+        # Close to target but not final approach
+        target_preference_weight = 0.7
+        println("Planning: Close to target (5-15% remaining), prioritizing target approach: $(round(target_preference_weight, digits=2))")
+    elseif distance_percentage < 33.0  # Approaching target (final third of journey)
+        # In the final third of journey, gradually increase target preference
+        # Scale from 0.5 to 0.65 as percentage decreases from 33% to 15%
+        target_preference_weight = 0.5 + (0.15 * (33.0 - distance_percentage) / 18.0)
+        println("Planning: Approaching target ($(round(distance_percentage, digits=1))% remaining), balanced weights: $(round(target_preference_weight, digits=2))")
+    elseif distance_percentage > 75.0  # Still far from target (>75% of journey remaining)
+        # When far from target, maintain higher obstacle avoidance (lower target preference)
+        target_preference_weight = 0.4
+        println("Planning: Far from target (>75% remaining), focusing on safe navigation: $(round(target_preference_weight, digits=2))")
+    else
+        # In the middle range (33-75%), use a moderate balanced approach
+        # Scale from 0.4 to 0.5 as percentage decreases from 75% to 33%
+        target_preference_weight = 0.4 + (0.1 * (75.0 - distance_percentage) / 42.0)
+        println("Planning: Steady progress toward target ($(round(distance_percentage, digits=1))% remaining): $(round(target_preference_weight, digits=2))")
     end
     
-    # Adjust based on obstacle factors
+    # Adjust based on obstacle density - less dramatic effect when close to target
+    if high_density_area
+        if distance_percentage < 5.0
+            # When close to target, reduce penalty for high density
+            target_preference_weight -= 0.1  # Reduced from 0.15
+            println("High density area near target, small reduction: -0.1")
+        else
+            target_preference_weight -= 0.15
+            println("High density area, standard reduction: -0.15")
+        end
+    end
+    
+    # Reduced impact of obstacle priority when close to target
+    if obstacle_priority > 1.0
+        if distance_percentage < 5.0
+            # Less reduction when close to target
+            reduction = min(0.15, (obstacle_priority - 1.0) * 0.08)
+            target_preference_weight -= reduction
+            println("Obstacle priority near target, reduced impact: -$(round(reduction, digits=2))")
+        else
+            reduction = min(0.2, (obstacle_priority - 1.0) * 0.1)
+            target_preference_weight -= reduction
+            println("Obstacle priority impact: -$(round(reduction, digits=2))")
+        end
+    end
+    
+    # Adjust based on direct path clearance
     if direct_path_clear && direct_path_suitability > 0.8
-        # Clear path, strongly prefer direct route
-        target_preference_weight += 0.15
+        # Clear path bonus
+        bonus = direct_path_suitability * 0.2  # Scale bonus based on path quality
+        target_preference_weight += bonus
+        println("Clear direct path ($(round(direct_path_suitability, digits=2))), bonus: +$(round(bonus, digits=2))")
     elseif !direct_path_clear || direct_path_suitability < 0.5
-        # Blocked path, need more obstacle avoidance
-        target_preference_weight -= 0.15
+        # Blocked path penalty - reduced when very close to target
+        if distance_percentage < 5.0
+            target_preference_weight -= 0.1  # Reduced penalty when very close
+            println("Blocked path very near target, reduced penalty: -0.1")
+        else
+            target_preference_weight -= 0.15
+            println("Blocked path, standard penalty: -0.15")
+        end
     end
     
-    # Factor in explicit obstacle repulsion setting
-    target_preference_weight -= obstacle_repulsion_weight * 0.05
+    # Factor in explicit obstacle repulsion - less impact when close to target
+    if distance_percentage < 5.0
+        target_preference_weight -= obstacle_repulsion_weight * 0.05  # Half effect when close
+        println("Obstacle repulsion near target, reduced impact: -$(round(obstacle_repulsion_weight * 0.05, digits=2))")
+    else
+        target_preference_weight -= obstacle_repulsion_weight * 0.1
+        println("Obstacle repulsion impact: -$(round(obstacle_repulsion_weight * 0.1, digits=2))")
+    end    # Handle critical avoidance scenarios - reduced impact when close to target
+    if critical_obstacle_avoidance || dynamic_replanning
+        # Determine if we're in final approach to target (extremely close)
+        final_approach = distance_percentage < 3.0 && high_density_area
+        
+        if final_approach
+            # Special handling for final approach to prevent excessive obstacle avoidance
+            # Allow higher target preference to ensure the drone can reach the goal
+            target_preference_weight = min(max(target_preference_weight, 0.6), 0.75)
+            println("🎯 Final approach in critical scenario, ensuring high target preference: $(round(target_preference_weight, digits=2))")
+        elseif distance_percentage < 5.0
+            # Higher cap when very close to target
+            target_preference_weight = min(target_preference_weight, 0.45)  # Decreased from 0.5
+            println("Critical scenario very near target, capping at 0.45")
+        elseif distance_percentage < 8.0
+            # Moderate cap when somewhat close
+            target_preference_weight = min(target_preference_weight, 0.35)  # Decreased from 0.4
+            println("Critical scenario near target, capping at 0.35")
+        else
+            target_preference_weight = min(target_preference_weight, 0.3)  # Decreased from 0.35
+            println("Critical scenario, standard cap at 0.3")
+        end
+    end
+      # Clamp to reasonable range - with higher minimum and maximum when closer to target
+    if distance_percentage < 5.0
+        # Higher minimum and maximum when close to target
+        if high_density_area
+            # Significantly increase target preference in high-density areas when very close to target
+            # This ensures the drone will prioritize reaching the target over excessive obstacle avoidance
+            target_preference_weight = max(0.5, min(0.9, target_preference_weight))
+            println("Very close to target in high-density area, using elevated preference weight")
+        else
+            # Standard close-to-target adjustment in normal areas
+            target_preference_weight = max(0.3, min(0.85, target_preference_weight))
+        end
+    else
+        target_preference_weight = max(0.25, min(0.8, target_preference_weight))
+    end
     
-    # Clamp to reasonable range
-    target_preference_weight = max(0.3, min(0.9, target_preference_weight))
+    # Additional target preference boost when extremely close to target in high-density areas
+    target_preference_boost = get(data, "target_preference_boost", 0.0)
+    if target_preference_boost > 0.0
+        # Apply the boost from Python
+        original_weight = target_preference_weight
+        target_preference_weight += target_preference_boost * 0.2  # Apply 20% of the requested boost
+        println("🎯 Final approach boost applied: +$(round(target_preference_boost * 0.2, digits=2)) (from $(round(original_weight, digits=2)) to $(round(target_preference_weight, digits=2)))")
+    end
     
-    println("Target preference weight: $(round(target_preference_weight, digits=2))")
-    println("Obstacle avoidance weight: $(round(1.0 - target_preference_weight, digits=2))")
+    println("Final target preference weight: $(round(target_preference_weight, digits=2))")
+    println("Final obstacle avoidance weight: $(round(1.0 - target_preference_weight, digits=2))")
     
     # Create planner with preference model
     preference_model = PreferenceModel(
@@ -258,25 +384,99 @@ function main()
         path_preference = 1.0 - target_preference_weight  # Balance between these two primary preferences
     )
     
+    # Determine safety margin based on context
+    adaptive_safety_margin = MARGIN
+      # Increase safety margin when in high density areas or with high obstacle priority
+    if high_density_area
+        adaptive_safety_margin *= 1.8  # Increased from 1.5
+        println("Increased safety margin for high density area: $(adaptive_safety_margin)")
+    end
+    
+    if obstacle_priority > 1.5
+        adaptive_safety_margin *= (1.0 + (obstacle_priority - 1.0) * 0.3)  # Increased from 0.2
+        println("Increased safety margin for high obstacle priority: $(adaptive_safety_margin)")
+    end
+    
+    # Further increase for critical situations
+    if critical_obstacle_avoidance || dynamic_replanning
+        adaptive_safety_margin = max(adaptive_safety_margin * 1.5, 3.5)  # Increased values
+        println("Increased safety margin for critical avoidance: $(adaptive_safety_margin)")
+    end
+    
     planner = ActionPlanner(preference_model)
+    
+    # Adjust waypoint sampling based on context
+    adaptive_waypoint_count = WAYPOINT_SAMPLE_COUNT
+    
+    if high_density_area || obstacle_priority > 1.5
+        # Use more samples in complex environments
+        adaptive_waypoint_count = Int(WAYPOINT_SAMPLE_COUNT * 1.3)
+        println("Increased waypoint sampling for complex environment: $(adaptive_waypoint_count)")
+    end
+    
+    if critical_obstacle_avoidance || dynamic_replanning
+        # Use significantly more samples during critical planning
+        adaptive_waypoint_count = Int(WAYPOINT_SAMPLE_COUNT * 1.5)
+        println("Increased waypoint sampling for critical planning: $(adaptive_waypoint_count)")
+    end
     
     # Select the next waypoint using active inference
     println("\nSelecting next waypoint...")
     next_waypoint = select_action(
         planner, 
         beliefs, 
-        num_samples=WAYPOINT_SAMPLE_COUNT, 
-        safety_margin=MARGIN,
+        num_samples=adaptive_waypoint_count, 
+        safety_margin=adaptive_safety_margin,
         policy_length=POLICY_LENGTH,
-        density_radius=get(data, "density_radius", 5.0)
+        density_radius=get(data, "density_radius", 5.0),
+        suitability_threshold=0.5  # Explicitly set high suitability threshold
     )
     
-    # Calculate waypoint in global coordinates
+    # If we didn't get a good waypoint, try again with slightly lower threshold but still higher than default
+    if isnothing(next_waypoint) || length(next_waypoint) < 3
+        println("❌ Failed to find waypoint with high suitability, retrying with adjusted parameters")
+        
+        # Retry with lower threshold but still much higher than original
+        next_waypoint = select_action(
+            planner, 
+            beliefs,
+            num_samples=adaptive_waypoint_count * 2,  # Double the samples to find more alternatives
+            safety_margin=adaptive_safety_margin * 0.85,  # Slightly reduced safety margin
+            policy_length=POLICY_LENGTH,
+            density_radius=get(data, "density_radius", 5.0),
+            suitability_threshold=0.4  # Fallback threshold still higher than default
+        )
+        
+        if isnothing(next_waypoint) || length(next_waypoint) < 3
+            println("⚠️ Second attempt failed, using lower threshold in emergency mode")
+            
+            # Last resort - use a lower threshold but still enforce suitability
+            next_waypoint = select_action(
+                planner, 
+                beliefs,
+                num_samples=adaptive_waypoint_count * 3,  # Triple the samples as last resort
+                safety_margin=adaptive_safety_margin * 0.7,  # Reduced safety margin for more options
+                policy_length=POLICY_LENGTH,
+                density_radius=get(data, "density_radius", 5.0),
+                suitability_threshold=0.3  # Emergency fallback threshold, still above minimum
+            )
+        end
+    end
+      # Calculate waypoint in global coordinates
     global_waypoint = try
-        if length(next_waypoint) >= 3
-            next_waypoint
+        if !isnothing(next_waypoint) && !isempty(next_waypoint) && isa(next_waypoint[1], Tuple) && length(next_waypoint[1][1]) == 3
+            # Extract the first action (best by EFE) and convert it to a waypoint
+            best_action = next_waypoint[1][1]
+            action_magnitude = norm(best_action)
+            
+            # Calculate and log the action magnitude
+            println("Selected action magnitude: $(round(action_magnitude, digits=2))m")
+            
+            # Convert action to waypoint by adding to current position
+            drone_position + best_action
         else
-            # If we didn't get a valid waypoint, move slightly towards target
+            println("⚠️ No valid actions received from planner, using fallback")
+            # Fallback: move towards target
             normalized_to_target = current_to_target / norm(current_to_target)
             safe_step = normalized_to_target * 2.0  # 2-meter step
             drone_position + safe_step
@@ -287,6 +487,24 @@ function main()
         normalized_to_target = current_to_target / norm(current_to_target)
         safe_step = normalized_to_target * 1.0  # 1-meter step
         drone_position + safe_step
+    end
+      # Check if there's a clear path to target and not too far away
+    target_in_range = current_to_target_dist < 25.0  # Only try direct path when within reasonable range
+    direct_path_clear = get(data, "direct_path_clear", false)
+    direct_path_suitability = get(data, "direct_path_suitability", 0.0)
+      # If direct path is clear, has good suitability, and not too distant, prioritize it
+    if target_in_range && direct_path_clear && direct_path_suitability > 0.6
+        println("✅ Direct path to target is clear! Using optimized path")
+        
+        # Calculate a direct waypoint toward target
+        # Use a step size based on distance: longer steps when farther away, shorter when close
+        step_size = min(current_to_target_dist * 0.5, 5.0)  # 50% of distance or max 5 meters
+        step_size = max(step_size, 1.5)  # Ensure minimum step size of 1.5 meters
+        
+        # Create direct waypoint
+        normalized_to_target = current_to_target / current_to_target_dist
+        direct_waypoint = drone_position + normalized_to_target * step_size
+        global_waypoint = direct_waypoint
     end
     
     # Print the selected waypoint

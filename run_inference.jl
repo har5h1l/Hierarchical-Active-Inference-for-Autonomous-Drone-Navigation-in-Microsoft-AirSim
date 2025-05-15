@@ -152,6 +152,135 @@ function main()
         0.0
     end
     
+    # Calculate distance to target for adaptive behaviors
+    distance_to_target = try
+        norm(target_location - drone_position)
+    catch
+        10.0  # Default if calculation fails
+    end
+    
+    # Determine if we're in a high density obstacle area
+    obstacles_count = try
+        if haskey(obs_data, "obstacles_count")
+            obs_data["obstacles_count"]
+        elseif haskey(obs_data, "obstacle_positions")
+            length(obs_data["obstacle_positions"])
+        elseif haskey(obs_data, "voxel_grid")
+            length(obs_data["voxel_grid"])
+        else
+            0
+        end
+    catch
+        0
+    end
+    
+    # Calculate closest obstacle distance
+    closest_obstacle = try
+        if !isempty(nearest_obstacle_distances)
+            minimum(nearest_obstacle_distances)
+        else
+            100.0  # Default large value if no obstacles
+        end
+    catch
+        100.0
+    end
+    
+    # Determine if we're in a high density area
+    high_density_area = (obstacles_count > 10 || closest_obstacle < 3.0 || obstacle_density > 0.5)
+    
+    # Calculate obstacle avoidance factor based on context
+    # Higher values = more obstacle avoidance priority
+    obstacle_avoidance_factor = 1.5  # Base value
+    
+    # Get initial distance for reference (if available) or use current as fallback
+    initial_distance = if haskey(obs_data, "initial_distance")
+        obs_data["initial_distance"]
+    else
+        distance_to_target * 1.2  # Add 20% if not provided
+    end
+    # Calculate percentage of distance to target (how close we are)
+    distance_percentage = (distance_to_target / initial_distance) * 100.0
+    
+    println("Distance percentage to target: $(round(distance_percentage, digits=1))% of initial $(round(initial_distance, digits=2))m")
+    
+    # Dynamic adjustment based on percentage of distance to target instead of fixed distances
+    if distance_percentage < 10.0  # Very close (last 10% of journey)
+        # When very close to target, reduce obstacle avoidance to prioritize reaching target
+        # But maintain a minimum safety factor that scales with remaining distance
+        target_proximity_scale = max(0.5, distance_percentage / 10.0)  # Scale from 0.5-1.0 based on percentage
+        obstacle_avoidance_factor = 1.0 * target_proximity_scale
+        println("Very close to target ($(round(distance_percentage, digits=1))%): Reduced obstacle avoidance to $(round(obstacle_avoidance_factor, digits=2))")
+    elseif distance_percentage < 25.0  # Moderately close (10-25% of journey remaining)
+        # When moderately close, gradual reduction
+        target_proximity_scale = 0.8 + (0.2 * distance_percentage / 25.0)  # Scale from 0.8-1.0
+        obstacle_avoidance_factor = 1.2 * target_proximity_scale
+        println("Approaching target ($(round(distance_percentage, digits=1))%): Adjusted obstacle avoidance to $(round(obstacle_avoidance_factor, digits=2))")
+    elseif distance_percentage > 75.0  # Still far from target (>75% of journey remaining)
+        # When far from target, maintain higher obstacle avoidance
+        obstacle_avoidance_factor = 1.8
+    else
+        # Linear interpolation between 25-75% with balanced values
+        obstacle_avoidance_factor = 1.2 + (0.6 * (distance_percentage - 25.0) / 50.0)
+    end
+    
+    # Special case: if direct path to target appears clear (from sensor data)
+    # further reduce obstacle avoidance to encourage more direct approach
+    direct_path_clear = get(obs_data, "direct_path_clear", false)
+    direct_path_suitability = get(obs_data, "direct_path_suitability", 0.0)
+    
+    if direct_path_clear && direct_path_suitability > 0.6 && distance_percentage < 50.0
+        # Clear path and closer than halfway - reduce obstacle avoidance further
+        obstacle_avoidance_factor *= 0.8
+        println("Clear direct path detected: Further reduced obstacle avoidance to $(round(obstacle_avoidance_factor, digits=2))")
+    end
+    
+    # Adjustment in high density areas - less aggressive when close to target
+    if high_density_area
+        if distance_percentage < 10.0
+            # Moderate increase when close to target in high density
+            obstacle_avoidance_factor *= 1.3
+            println("High density area near target: moderate increase to $(round(obstacle_avoidance_factor, digits=2))")
+        else
+            obstacle_avoidance_factor *= 1.5
+        end
+    end
+    
+    # For dynamic replanning scenarios, scale based on distance to target
+    if get(obs_data, "dynamic_replanning", false)
+        if distance_percentage < 10.0
+            # Less aggressive replanning near target
+            obstacle_avoidance_factor *= 1.5  # Reduced from 2.0
+            println("Dynamic replanning near target: moderate increase to $(round(obstacle_avoidance_factor, digits=2))")
+        else
+            obstacle_avoidance_factor *= 2.0
+            println("Dynamic replanning: Increased obstacle avoidance factor to $(obstacle_avoidance_factor)")
+        end
+    end
+      # Critical obstacle avoidance - still maintain safety but scale based on target proximity
+    if get(obs_data, "critical_obstacle_avoidance", false)
+        if distance_percentage < 10.0
+            # Even in critical situations, be more willing to take risks when very close to target
+            obstacle_avoidance_factor *= 2.5  # Increased from 2.0
+            println("CRITICAL OBSTACLE AVOIDANCE NEAR TARGET: factor = $(obstacle_avoidance_factor)")
+        else
+            obstacle_avoidance_factor *= 3.0  # Increased from 2.5
+            println("CRITICAL OBSTACLE AVOIDANCE MODE: factor = $(obstacle_avoidance_factor)")
+        end
+    end
+      # Adjust obstacle sensitivity based on obstacle avoidance factor
+    # This directly impacts the weight given to obstacle density and distance in suitability calculation
+    obstacle_distance_weight = 1.0 * obstacle_avoidance_factor  # Increased from 0.8 
+    obstacle_density_weight = 0.4 * obstacle_avoidance_factor   # Increased from 0.3
+    
+    # Special case: if we're very close to target (<3m), slightly reduce obstacle weights
+    # to allow reaching difficult targets, but never below a safe minimum
+    if distance_percentage < 3.0 && !high_density_area
+        minimum_obstacle_weight = 0.9  # Increased from 0.8
+        obstacle_distance_weight = max(minimum_obstacle_weight, obstacle_distance_weight * 0.8)
+        obstacle_density_weight = max(minimum_obstacle_weight * 0.6, obstacle_density_weight * 0.8)  # Increased from 0.5
+        println("Close to target: Adjusted obstacle weights to $(obstacle_distance_weight) / $(obstacle_density_weight)")
+    end
+    
     # Handle obstacle positions with better key detection and error handling
     voxel_grid = Vector{SVector{3, Float64}}()
     try
@@ -182,15 +311,22 @@ function main()
     println("\nInitial Positions (Global Coordinates):")
     println("Drone:  [$(round(drone_position[1], digits=2)), $(round(drone_position[2], digits=2)), $(round(drone_position[3], digits=2))]")
     println("Target: [$(round(target_location[1], digits=2)), $(round(target_location[2], digits=2)), $(round(target_location[3], digits=2))]")
+    println("Distance to target: $(round(distance_to_target, digits=2)) meters")
+    println("Obstacle density: $(round(obstacle_density, digits=2))")
+    println("Obstacle avoidance factor: $(round(obstacle_avoidance_factor, digits=2))")
+    println("High density area: $high_density_area")
 
-    # Create DroneObservation object
+    # Create DroneObservation object with enhanced obstacle awareness parameters
     observation = DroneObservation(
         drone_position = drone_position,
         drone_orientation = drone_orientation,
         target_position = target_location,
         nearest_obstacle_distances = nearest_obstacle_distances,
         voxel_grid = voxel_grid,
-        obstacle_density = obstacle_density
+        obstacle_density = obstacle_density * obstacle_avoidance_factor,  # Scale density by avoidance factor
+        high_density_area = high_density_area,
+        obstacle_avoidance_factor = obstacle_avoidance_factor,
+        distance_to_target = distance_to_target
     )
 
     # Create current state from observation
@@ -206,17 +342,25 @@ function main()
             end
             prev_beliefs = haskey(prev_beliefs_json, "beliefs") ? 
                           deserialize_beliefs(prev_beliefs_json["beliefs"]) :
-                          initialize_beliefs(current_state, voxel_grid=voxel_grid, obstacle_density=obstacle_density)
-            update_beliefs!(prev_beliefs, current_state; voxel_grid=voxel_grid, obstacle_density=obstacle_density)
+                          initialize_beliefs(current_state, voxel_grid=voxel_grid, 
+                                           obstacle_density=obstacle_density * obstacle_avoidance_factor)
+            update_beliefs!(prev_beliefs, current_state; 
+                          voxel_grid=voxel_grid, 
+                          obstacle_density=obstacle_density * obstacle_avoidance_factor,
+                          obstacle_weight=obstacle_avoidance_factor)
         else
             println("No existing inferred state file, initializing new beliefs")
-            initialize_beliefs(current_state, voxel_grid=voxel_grid, obstacle_density=obstacle_density)
+            initialize_beliefs(current_state, 
+                             voxel_grid=voxel_grid, 
+                             obstacle_density=obstacle_density * obstacle_avoidance_factor)
         end
     catch e
         println("Error loading previous beliefs: $e")
         println("Initializing new beliefs")
         # If there's any error reading/parsing previous beliefs, initialize new ones
-        initialize_beliefs(current_state, voxel_grid=voxel_grid, obstacle_density=obstacle_density)
+        initialize_beliefs(current_state, 
+                         voxel_grid=voxel_grid, 
+                         obstacle_density=obstacle_density * obstacle_avoidance_factor)
     end
     
     # Get expected state from beliefs
@@ -228,7 +372,7 @@ function main()
     println("Current azimuth to target: $(round(rad2deg(current_state.azimuth), digits=2))°")
     println("Current elevation to target: $(round(rad2deg(current_state.elevation), digits=2))°")
     println("Path suitability: $(round(current_state.suitability, digits=2))")
-    println("Obstacle density: $(round(obstacle_density, digits=2))")
+    println("Obstacle density: $(round(obstacle_density, digits=2)) (scaled: $(round(obstacle_density * obstacle_avoidance_factor, digits=2)))")
     println("Nearest obstacle: $(isempty(nearest_obstacle_distances) ? "None" : "$(round(minimum(nearest_obstacle_distances), digits=2)) meters")")
     
     # Save updated beliefs to output file
@@ -245,7 +389,10 @@ function main()
             "drone_position" => [drone_position[1], drone_position[2], drone_position[3]],
             "target_position" => [target_location[1], target_location[2], target_location[3]],
             "nearest_obstacle_distances" => nearest_obstacle_distances,
-            "obstacle_density" => obstacle_density,
+            "obstacle_density" => obstacle_density * obstacle_avoidance_factor,  # Use scaled density
+            "distance_to_target" => distance_to_target,
+            "high_density_area" => high_density_area,
+            "obstacle_avoidance_factor" => obstacle_avoidance_factor,
             "beliefs" => serialize_beliefs(beliefs)
         )
         

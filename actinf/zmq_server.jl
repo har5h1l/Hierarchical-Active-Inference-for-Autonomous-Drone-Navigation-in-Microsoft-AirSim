@@ -135,13 +135,26 @@ function handle_interrupt(sig)
     exit(0)
 end
 
-# Register signal handler for Ctrl+C
+# Register signal handler for Ctrl+C using a modern approach
 try
-    Base.sigatomic_begin()
-    Base.signal_hook(Base.SIGINT, handle_interrupt)
-    Base.sigatomic_end()
+    # Modern way to handle signals in Julia
+    if isdefined(Base, :handler_hooks)
+        # Julia 1.7+ approach
+        Base.handler_hooks[] = Base.handler_hooks[] ∪ [handle_interrupt]
+    else
+        # Fallback for compatibility with various Julia versions
+        Base.sigatomic_begin()
+        sig_handled = ccall(:jl_exit_on_sigint, Int32, (Int32,), 0) == 0
+        if sig_handled
+            # Direct call without using signal_hook
+            Base.SIGINT_handler[] = handle_interrupt
+        end
+        Base.sigatomic_end()
+    end
+    println("✓ Signal handler registered successfully")
 catch e
     println("Warning: Could not register signal handler: $e")
+    # Continue execution even if we can't register the handler
 end
 
 # Process observation function
@@ -244,7 +257,9 @@ function process_observation(observation_data::Dict)
             drone_position,
             target_position,
             obstacle_distance=isempty(obstacle_distances) ? 10.0 : minimum(obstacle_distances),
-            obstacle_density=obstacle_density
+            obstacle_density=obstacle_density,
+            obstacle_weight=get(observation_data, "obstacle_distance_weight", 0.8),
+            suitability_threshold=get(observation_data, "suitability_threshold", 0.5)
         )
         
         # Extract the best action (first in the returned list)

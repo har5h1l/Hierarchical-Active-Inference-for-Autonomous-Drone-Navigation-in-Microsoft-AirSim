@@ -1,0 +1,48 @@
+2025-05-13 22:19:31,793 - INFO - Using random seed: 42
+2025-05-13 22:19:31,794 - INFO - Starting experiment with configuration:
+2025-05-13 22:19:31,794 - INFO -   num_episodes: 10
+2025-05-13 22:19:31,794 - INFO -   target_distance_range: (15.0, 50.0)
+2025-05-13 22:19:31,794 - INFO -   random_seed: 42
+2025-05-13 22:19:31,794 - INFO -   max_steps_per_episode: 100
+2025-05-13 22:19:31,795 - INFO -   output_dir: experiment_results
+2025-05-13 22:19:31,795 - INFO -   stuck_timeout: 15.0
+2025-05-13 22:19:31,795 - INFO -   stuck_check_interval: 3.0
+2025-05-13 22:19:31,795 - INFO -   episode_timeout: 120
+2025-05-13 22:19:31,796 - INFO -   precompile_julia: True
+2025-05-13 22:19:31,796 - INFO -   zmq_port: 5555
+2025-05-13 22:19:31,796 - INFO -   debug_raycasting: False
+2025-05-13 22:19:31,797 - INFO -   min_ray_checks: 3
+2025-05-13 22:19:31,797 - INFO -   max_ray_checks: 7
+2025-05-13 22:19:31,798 - INFO -   visualize_raycasts: False
+2025-05-13 22:19:31,798 - INFO -   visualization_duration: 60.0
+2025-05-13 22:20:38,811 - INFO - === Starting Episode 0 ===
+2025-05-13 22:20:38,814 - INFO - Episode 0: Taking off...
+2025-05-13 22:20:44,233 - INFO - Target distance range for episode 0: 15.0m - 50.0m
+2025-05-13 22:20:44,324 - INFO - Found first valid target at [-8.13, -9.76, -2.0]
+2025-05-13 22:20:48,898 - INFO - Phase 2: Found 50 valid targets, focusing on refining these
+2025-05-13 22:20:51,371 - INFO - Found 77 valid targets, selecting best with 0.00m clearance
+2025-05-13 22:20:51,371 - INFO - Episode 0: Target sampling took 7.14s with 3 rays
+2025-05-13 22:20:51,371 - INFO - Episode 0: Initial distance to target: 12.71m
+2025-05-13 22:20:51,372 - INFO - Episode 0: Initial position: [0.0, 0.0, -1.67]
+2025-05-13 22:20:51,372 - INFO - Episode 0: Target position: [-8.13, -9.76, -2.0]
+2025-05-13 22:20:51,372 - INFO - Episode 0: Initial distance: 12.71m
+2025-05-13 22:20:51,377 - INFO - Episode 0: Target verified with 3 rays
+2025-05-13 22:20:51,399 - ERROR - Error in scan_path_for_obstacles: name 'closest_point' is not defined
+2025-05-13 22:21:03,700 - ERROR - Error in scan_path_for_obstacles: name 'closest_point' is not defined
+2025-05-13 22:21:03,809 - ERROR - Error in scan_path_for_obstacles: name 'closest_point' is not defined
+2025-05-13 22:21:03,913 - ERROR - Error in scan_path_for_obstacles: name 'closest_point' is not defined
+2025-05-13 22:21:04,018 - ERROR - Error in scan_path_for_obstacles: name 'closest_point' is not defined
+2025-05-13 22:21:04,121 - ERROR - Error in scan_path_for_obstacles: name 'closest_point' is not defined
+2025-05-13 22:21:04,223 - ERROR - Error in scan_path_for_obstacles: name 'closest_point' is not defined
+2025-05-13 22:21:04,329 - ERROR - Error in scan_path_for_obstacles: name 'closest_point' is not defined
+2025-05-13 22:21:04,432 - ERROR - Error in scan_path_for_obstacles: name 'closest_point' is not defined
+2025-05-13 22:21:04,538 - ERROR - Error in scan_path_for_obstacles: name 'closest_point' is not defined
+2025-05-13 22:21:04,640 - ERROR - Error in scan_path_for_obstacles: name 'closest_point' is not defined
+2025-05-13 22:21:04,746 - ERROR - Error in scan_path_for_obstacles: name 'closest_point' is not defined
+2025-05-13 22:21:04,848 - ERROR - Error in scan_path_for_obstacles: name 'closest_point' is not defined
+2025-05-13 22:21:06,204 - WARNING - Episode 0: Step 0 took 14.83s (unusually long)
+2025-05-13 22:21:06,222 - ERROR - Error in scan_path_for_obstacles: name 'closest_point' is not defined
+2025-05-13 22:21:06,249 - ERROR - Error in scan_path_for_obstacles: name 'closest_point' is not defined
+2025-05-13 22:21:06,374 - ERROR - Error in scan_path_for_obstacles: name 'closest_point' is not defined
+2025-05-13 22:21:06,478 - ERROR - Error in scan_path_for_obstacles: name 'closest_point' is not defined
+2025-05-13 22:21:06,691 - ERROR - Error in scan_path_for_obstacles: name 'closest_point' is not defined

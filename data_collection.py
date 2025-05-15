@@ -914,8 +914,7 @@ class Scanner:
                 
                 # Project obstacle vector onto path direction
                 projection = np.dot(obstacle_vector, path_direction)
-                
-                # Only consider obstacles that are ahead of us along the path
+                  # Only consider obstacles that are ahead of us along the path
                 # and within the path length (not past the destination)
                 if 0 <= projection <= path_length:
                     # Calculate perpendicular distance from obstacle to path
@@ -923,6 +922,7 @@ class Scanner:
                     perpendicular_dist = np.linalg.norm(np.array(obstacle_pos) - closest_point)
                     
                     # If obstacle is within safety radius of path
+                    # Increased safety radius significantly for denser environments
                     if perpendicular_dist <= safety_radius:
                         return True, obstacle_pos, obstacle_distances[i]
             
@@ -952,7 +952,7 @@ class Scanner:
             if not all_positions:
                 return [], []
                 
-            # Get current drone position
+            # Get current drone position and orientation
             try:
                 drone_state = self.client.getMultirotorState().kinematics_estimated
                 drone_pos = np.array([
@@ -960,8 +960,73 @@ class Scanner:
                     drone_state.position.y_val,
                     drone_state.position.z_val
                 ])
-            except:
-                return [], []  # Can't determine position
+                
+                # Get drone orientation quaternion
+                drone_quat = np.array([
+                    drone_state.orientation.w_val,
+                    drone_state.orientation.x_val, 
+                    drone_state.orientation.y_val,
+                    drone_state.orientation.z_val
+                ])
+                
+                # Calculate forward vector from drone's actual orientation
+                # Assuming NED coordinates where forward is along the x-axis (North) when the drone's yaw is 0
+                # This vector represents the local "forward" direction of the drone before any rotation
+                local_forward = np.array([1.0, 0.0, 0.0])  
+                
+                # Helper functions to rotate vectors using quaternions
+                def quaternion_multiply(q1, q2):
+                    w1, x1, y1, z1 = q1
+                    w2, x2, y2, z2 = q2
+                    w = w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2
+                    x = w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2
+                    y = w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2
+                    z = w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2
+                    return np.array([w, x, y, z])
+                
+                def quaternion_conjugate(q):
+                    w, x, y, z = q
+                    return np.array([w, -x, -y, -z])
+                
+                def rotate_vector_by_quaternion(v, q):
+                    # Convert vector to quaternion form (w=0)
+                    v_quat = np.array([0.0, v[0], v[1], v[2]])
+                    q_conj = quaternion_conjugate(q)
+                    # Apply rotation: q * v * q^-1
+                    rotated = quaternion_multiply(
+                        quaternion_multiply(q, v_quat),
+                        q_conj
+                    )
+                    # Extract vector part
+                    return rotated[1:4]
+                
+                # Calculate actual forward direction based on drone's orientation
+                drone_forward = rotate_vector_by_quaternion(local_forward, drone_quat)
+                
+                # Normalize drone forward vector
+                drone_forward_norm = np.linalg.norm(drone_forward)
+                if drone_forward_norm > 0.001:
+                    drone_forward = drone_forward / drone_forward_norm
+                    
+                # Use a weighted combination of the provided direction and drone's forward vector
+                # This ensures we primarily use the intended movement direction but
+                # also account for the drone's actual orientation
+                combined_direction = 0.7 * np.array(direction) + 0.3 * drone_forward
+                
+                # Normalize the combined direction
+                combined_norm = np.linalg.norm(combined_direction)
+                if combined_norm > 0.001:  # Avoid division by zero
+                    direction = combined_direction / combined_norm
+                else:
+                    # If normalization fails, fall back to drone's forward direction
+                    direction = drone_forward
+                    
+                logging.debug(f"Using combined direction vector for forward scanning: {direction}")
+                
+            except Exception as e:
+                logging.warning(f"Error getting drone orientation for directional scan: {e}")
+                # Fall back to just using the provided direction vector
+                direction = np.array(direction)
             
             # Normalize direction vector
             direction = np.array(direction)
@@ -1010,7 +1075,7 @@ class Scanner:
             traceback.print_exc()
             return [], []
 
-def move_to_waypoint(client, current_pos, waypoint, velocity=2):
+def move_to_waypoint(client, current_pos, waypoint, velocity=2, distance_to_target=None, high_density=False):
     """Move to waypoint with calculated yaw so drone faces direction of travel
     
     Args:
@@ -1018,6 +1083,8 @@ def move_to_waypoint(client, current_pos, waypoint, velocity=2):
         current_pos: Current drone position [x, y, z]
         waypoint: Target waypoint [x, y, z]
         velocity: Movement velocity in m/s
+        distance_to_target: Optional distance to final target (for adaptive behavior)
+        high_density: Whether we're in a high density obstacle area
         
     Returns:
         tuple: (obstacle_detected, obstacle_pos, obstacle_dist) - 
@@ -1027,9 +1094,36 @@ def move_to_waypoint(client, current_pos, waypoint, velocity=2):
         # Calculate movement vector and distance
         movement_vector = np.array(waypoint) - np.array(current_pos)
         distance = np.linalg.norm(movement_vector)
+          # Adjust velocity based on context
+        adaptive_velocity = velocity
+        if high_density:
+            # More conservative velocity in high density areas
+            adaptive_velocity = min(velocity, 1.5)
         
-        # Enforce minimum movement distance
-        min_movement_distance = 0.2  # Reduced minimum movement to 0.2m for finer control in dense areas
+        # If we're close to target, reduce velocity for more precise control
+        near_goal = distance_to_target is not None and distance_to_target < 5.0
+        if near_goal:
+            adaptive_velocity = min(adaptive_velocity, 1.5)
+        
+        # If velocity was adjusted, log it
+        if adaptive_velocity != velocity:
+            logging.debug(f"Adjusted velocity from {velocity:.1f} to {adaptive_velocity:.1f} m/s based on environment")
+          # Create scanner for obstacle detection during movement (needed before checking minimum distance)
+        scanner = Scanner(client, scan_range=8.0)  # Use a shorter scan range for immediate obstacles
+          
+        # Enforce minimum movement distance - with adaptive behavior based on context
+        # Base minimum movement distance
+        min_movement_distance = 1.0  # Default minimum to ensure significant movement
+        
+        # Reduce minimum distance when close to target for more precise positioning
+        if distance_to_target is not None and distance_to_target < 2.0:
+            min_movement_distance = 0.2  # Much smaller minimum when very close to target
+            logging.debug(f"Very close to target ({distance_to_target:.2f}m) - allowing smaller movements (min: {min_movement_distance}m)")
+        # Also reduce minimum distance in high-density areas for more precise obstacle avoidance
+        elif high_density:
+            min_movement_distance = 0.5  # Smaller minimum in obstacle-dense areas
+            logging.debug(f"In high density area - allowing smaller movements (min: {min_movement_distance}m)")
+        
         if distance < min_movement_distance:
             logging.warning(f"Waypoint too close ({distance:.2f}m), extending to minimum distance {min_movement_distance}m")
             # Extend the waypoint in the same direction to meet minimum distance
@@ -1044,11 +1138,56 @@ def move_to_waypoint(client, current_pos, waypoint, velocity=2):
             else:
                 # If distance is effectively zero, create movement in a default direction
                 logging.warning("Movement distance effectively zero, creating default movement direction")
-                waypoint = [current_pos[0] + min_movement_distance, current_pos[1], current_pos[2]]
+                # Add movement in multiple directions as options
+                possible_directions = [
+                    [1.0, 0.0, 0.0],  # Forward
+                    [0.0, 1.0, 0.0],  # Right
+                    [-1.0, 0.0, 0.0], # Backward
+                    [0.0, -1.0, 0.0]  # Left
+                ]
+                
+                # Try to find a direction that moves toward the target if possible
+                if distance_to_target is not None:
+                    # Calculate direction to target
+                    to_target = np.array(waypoint) - np.array(current_pos)
+                    if np.linalg.norm(to_target) > 0.001:
+                        to_target = to_target / np.linalg.norm(to_target)
+                        possible_directions.insert(0, to_target.tolist())  # Add target direction as first option
+                
+                # Use the first valid direction that doesn't immediately lead to an obstacle
+                valid_direction_found = False
+                for direction in possible_directions:
+                    test_waypoint = [
+                        current_pos[0] + direction[0] * min_movement_distance,
+                        current_pos[1] + direction[1] * min_movement_distance, 
+                        current_pos[2] + direction[2] * min_movement_distance
+                    ]
+                    
+                    # Check if this direction is obstacle-free
+                    obstacle_check = scanner.scan_path_for_obstacles(
+                        current_pos, test_waypoint, safety_radius=2.0
+                    )
+                    
+                    if not obstacle_check[0]:  # No obstacle detected
+                        waypoint = test_waypoint
+                        logging.info(f"Using alternative direction: {direction}")
+                        valid_direction_found = True
+                        break
+                
+                # If no valid direction found, just use the first one
+                if not valid_direction_found:
+                    direction = possible_directions[0]
+                    waypoint = [
+                        current_pos[0] + direction[0] * min_movement_distance,
+                        current_pos[1] + direction[1] * min_movement_distance, 
+                        current_pos[2] + direction[2] * min_movement_distance
+                    ]
+                    logging.warning(f"No obstacle-free direction found, using default: {direction}")
+                
+                # Recalculate movement vector and distance
                 movement_vector = np.array(waypoint) - np.array(current_pos)
                 distance = np.linalg.norm(movement_vector)
-        
-        # Calculate yaw angle in radians
+          # Calculate yaw angle in radians
         # In NED coordinates, yaw is measured from North (x-axis) and increases clockwise
         # atan2(y, x) will give us the angle in the standard math frame, but we need to ensure
         # it's properly mapped to the NED coordinate system
@@ -1064,26 +1203,118 @@ def move_to_waypoint(client, current_pos, waypoint, velocity=2):
         elif yaw_degrees > 180:
             yaw_degrees -= 360
             
-        logging.debug(f"Moving with yaw: {yaw_degrees:.1f}° at velocity: {velocity} m/s")
+        # Get current drone orientation quaternion for sensor orientation correction
+        drone_orientation = client.simGetVehiclePose().orientation
+        current_yaw = airsim.to_eularian_angles(drone_orientation)[2]
+        current_yaw_degrees = math.degrees(current_yaw)
+          # Calculate the difference between desired yaw and current yaw
+        # This is just for logging purposes now
+        yaw_difference = yaw_degrees - current_yaw_degrees
+        
+        # Normalize to -180 to 180 range for smallest rotation
+        if yaw_difference > 180:
+            yaw_difference -= 360
+        elif yaw_difference < -180:
+            yaw_difference += 360
+            
+        # No pre-rotation step - we'll rely only on the YawMode in moveToPositionAsync 
+        # to ensure the drone faces the correct direction during movement
+        logging.debug(f"Moving with yaw: {yaw_degrees:.1f}° at velocity: {adaptive_velocity} m/s")
         logging.debug(f"Movement vector: [{movement_vector[0]:.2f}, {movement_vector[1]:.2f}, {movement_vector[2]:.2f}]")
+          # Create scanner for obstacle detection during movement
+        scanner = Scanner(client, scan_range=10.0)  # Increased range for better forward planning
         
-        # Create scanner for obstacle detection during movement
-        scanner = Scanner(client, scan_range=8.0)  # Use a shorter scan range for immediate obstacles
+        # Determine safety radius based on context
+        # More conservative in high density areas or when far from goal
+        safety_radius = 2.5  # Default safety radius
+        if high_density:
+            safety_radius = 3.5  # Increased safety in high density areas
+            
+        # When close to target but in a high-density environment, use sector scanning
+        # to find potential passages to the target
+        if high_density and distance_to_target and distance_to_target < 10.0:
+            logging.info("Close to target in high-density area, performing sector scanning")
+            
+            # Determine direction to target
+            if distance_to_target > 0.2:  # Only if target is not right under us
+                target_vector = np.array(waypoint) - np.array(current_pos)
+                if np.linalg.norm(target_vector) > 0.001:
+                    target_vector = target_vector / np.linalg.norm(target_vector)
+                    
+                    # Scan in sectors focusing toward target direction
+                    sector_results = []
+                    sector_angles = [-30, -15, 0, 15, 30]  # Angles to check in degrees
+                    
+                    for angle in sector_angles:
+                        # Create rotated direction vector
+                        angle_rad = math.radians(angle)
+                        rotated_x = target_vector[0] * math.cos(angle_rad) - target_vector[1] * math.sin(angle_rad)
+                        rotated_y = target_vector[0] * math.sin(angle_rad) + target_vector[1] * math.cos(angle_rad)
+                        rotated_direction = np.array([rotated_x, rotated_y, target_vector[2]])
+                        
+                        # Normalize direction
+                        if np.linalg.norm(rotated_direction) > 0.001:
+                            rotated_direction = rotated_direction / np.linalg.norm(rotated_direction)
+                            
+                            # Check distance to obstacles in this direction
+                            obstacles, distances = scanner.scan_in_direction(
+                                rotated_direction, max_distance=8.0, cone_angle=10.0
+                            )
+                            
+                            min_distance = 100.0 if not distances else min(distances)
+                            sector_results.append((angle, min_distance, rotated_direction))
+                    
+                    # Prefer sectors with greater obstacle clearance
+                    if sector_results:
+                        # Sort by distance (descending)
+                        sector_results.sort(key=lambda x: x[1], reverse=True)
+                        
+                        # If best sector has good clearance, use it
+                        best_sector = sector_results[0]
+                        if best_sector[1] > 3.0:  # Good clearance threshold
+                            # Update movement vector based on best sector
+                            best_direction = best_sector[2]
+                            movement_vector = best_direction * distance
+                            logging.info(f"Using sector scan to find clearer path: {best_sector[0]}° with {best_sector[1]:.2f}m clearance")
+                            
+                            # Recalculate waypoint
+                            waypoint = [
+                                current_pos[0] + movement_vector[0],
+                                current_pos[1] + movement_vector[1],
+                                current_pos[2] + movement_vector[2]
+                            ]
+                            
+                            # Calculate new yaw angle based on adjusted direction
+                            yaw = math.atan2(movement_vector[1], movement_vector[0])
+                            yaw_degrees = math.degrees(yaw)
         
-        # Perform a pre-check for obstacles on the planned path
+        # Perform a pre-check for obstacles on the planned path (FOR INFORMATION ONLY)
         obstacle_detected, obstacle_pos, obstacle_dist = scanner.scan_path_for_obstacles(
-            current_pos, waypoint, safety_radius=2.5
+            current_pos, waypoint, safety_radius=safety_radius
         )
-        
-        # If obstacle detected before movement starts, return immediately to trigger replanning
+          # Log the pre-check result but DO NOT trigger replanning yet
         if obstacle_detected:
-            logging.warning(f"Obstacle detected on planned path before movement at {obstacle_dist:.2f}m distance")
-            return True, obstacle_pos, obstacle_dist
+            logging.warning(f"Pre-movement check: Obstacle detected on planned path at {obstacle_dist:.2f}m distance")
+            logging.info(f"Proceeding with movement and will replan if obstacle persists during execution")
+            # DO NOT return here - continue with movement instead of immediately triggering replanning
         
-        # Start drone movement without waiting for completion
+        # STEP 1: First rotate the drone to face the direction of travel
+        logging.debug(f"Rotating drone to yaw: {yaw_degrees:.1f}° before moving")
+        
+        # Execute the rotation as a separate step
+        rotate_task = client.rotateToYawAsync(yaw_degrees, timeout_sec=5.0)
+        
+        # Wait for rotation to complete before starting movement
+        try:
+            rotate_task.join()
+        except Exception as e:
+            logging.warning(f"Rotation operation timed out or failed: {e}")
+            # Continue with movement anyway, the moveToPosition will handle the yaw
+        
+        # STEP 2: After rotation is complete, start the movement
         move_task = client.moveToPositionAsync(
             waypoint[0], waypoint[1], waypoint[2],
-            velocity,
+            adaptive_velocity,
             drivetrain=airsim.DrivetrainType.ForwardOnly,
             yaw_mode=airsim.YawMode(is_rate=False, yaw_or_rate=yaw_degrees)
         )
@@ -1092,13 +1323,15 @@ def move_to_waypoint(client, current_pos, waypoint, velocity=2):
         if distance > 0:
             direction = movement_vector / distance
         else:
-            direction = np.array([1.0, 0.0, 0.0])  # Default to forward direction
-            
-        # Parameters for obstacle monitoring
+            direction = np.array([1.0, 0.0, 0.0])  # Default to forward direction            # Parameters for obstacle monitoring
         check_interval = 0.1  # Check for obstacles every 100ms
-        safety_radius = 2.5  # Consider obstacles dangerous if within 2.5 meters of path
         start_time = time.time()
-        progress_timeout = max(5.0, distance / velocity * 3)  # Timeout is 3x expected travel time, minimum 5 seconds
+        progress_timeout = max(5.0, distance / adaptive_velocity * 3)  # Timeout is 3x expected travel time, minimum 5 seconds
+        
+        # More aggressive monitoring in high density areas
+        if high_density:
+            check_interval = 0.05  # More frequent checks in high density areas (50ms)
+            progress_timeout = max(5.0, distance / adaptive_velocity * 2)  # Shorter timeout in dense areas
         
         # Monitor movement and check for obstacles
         obstacle_detected = False
@@ -1109,6 +1342,15 @@ def move_to_waypoint(client, current_pos, waypoint, velocity=2):
         # Use a timeout-based polling approach instead of relying on done() method
         movement_complete = False
         timeout_per_check = 0.05  # 50ms timeout for each join attempt
+        
+        # Set up adaptive obstacle detection parameters
+        safety_scan_radius = safety_radius
+        safety_threshold = 2.0  # Default obstacle distance threshold to trigger replanning
+        
+        if high_density:
+            # In high density areas, use more aggressive scanning parameters
+            safety_scan_radius = safety_radius * 1.2  # Increase scan radius
+            safety_threshold = 2.5  # Higher threshold to trigger earlier replanning
         
         while not movement_complete:
             current_time = time.time()
@@ -1121,8 +1363,7 @@ def move_to_waypoint(client, current_pos, waypoint, velocity=2):
                 obstacle_pos = waypoint
                 obstacle_dist = distance * 0.5  # Assume obstacle is halfway along path
                 return True, obstacle_pos, obstacle_dist
-                
-            # Only check for obstacles at specified intervals to avoid overloading
+                      # Only check for obstacles at specified intervals to avoid overloading
             if current_time - last_check_time < check_interval:
                 # Short sleep to prevent CPU hogging, but periodically check task status
                 try:
@@ -1154,6 +1395,18 @@ def move_to_waypoint(client, current_pos, waypoint, velocity=2):
             # Check remaining distance to waypoint
             remaining_dist = np.linalg.norm(np.array(waypoint) - drone_pos)
             if remaining_dist < 0.5:  # Almost at waypoint, just let it complete
+                # Even when close to waypoint, still do a final safety check
+                obs_check, _, obs_dist = scanner.scan_path_for_obstacles(
+                    drone_pos.tolist(), waypoint, safety_radius=safety_scan_radius * 0.8
+                )
+                
+                # If an obstacle is detected very close, stop anyway
+                if obs_check and obs_dist is not None and obs_dist < 1.0:
+                    logging.warning(f"Obstacle detected at {obs_dist:.2f}m when approaching waypoint")
+                    client.cancelLastTask()
+                    obstacle_detected = True
+                    break
+                
                 try:
                     # Wait for the movement to actually complete
                     move_task.join()
@@ -1161,13 +1414,26 @@ def move_to_waypoint(client, current_pos, waypoint, velocity=2):
                 except:
                     # If the join fails, we'll continue - the drone is close enough anyway
                     pass
-                break
-                
-            # Use the optimized scanner methods to check for obstacles
+                break            # Use the optimized scanner methods to check for obstacles
             # First check directly along the path
             obstacle_detected, detected_obstacle_pos, detected_obstacle_dist = scanner.scan_path_for_obstacles(
-                drone_pos.tolist(), waypoint, safety_radius
+                drone_pos.tolist(), waypoint, safety_scan_radius
             )
+            
+            # Get the current drone orientation to properly scan in the direction of travel
+            try:
+                drone_orientation = client.simGetVehiclePose().orientation
+                current_yaw = airsim.to_eularian_angles(drone_orientation)[2]
+                # Create direction vector from current yaw
+                forward_direction = np.array([
+                    math.cos(current_yaw),
+                    math.sin(current_yaw),
+                    0.0  # Keep scanning in horizontal plane
+                ])
+            except Exception as e:
+                logging.warning(f"Failed to get drone orientation: {e}")
+                # Fallback to using direction to waypoint
+                forward_direction = direction
             
             if obstacle_detected:
                 obstacle_pos = detected_obstacle_pos
@@ -1175,23 +1441,102 @@ def move_to_waypoint(client, current_pos, waypoint, velocity=2):
                 
                 if obstacle_dist is not None:
                     logging.warning(f"Obstacle detected at {obstacle_dist:.2f}m during movement execution")
+                    
+                    # In high density areas, avoid obstacles more conservatively
+                    if high_density or obstacle_dist < safety_threshold:
+                        # Cancel the movement and signal replanning
+                        client.cancelLastTask()
+                        break
+                    else:
+                        # For distant obstacles in low-density areas, log but continue
+                        # (we may get past them or they'll trigger cone detection if needed)
+                        logging.info("Obstacle not imminent, continuing with caution")
                 else:
                     logging.warning("Obstacle detected during movement execution (distance unknown)")
-                    
-                # Cancel the movement and signal replanning
-                client.cancelLastTask()
-                break
-                
-            # Also check in the forward direction with a cone scan (can detect dynamic obstacles better)
-            cone_obstacles, cone_distances = scanner.scan_in_direction(
-                direction, max_distance=6.0, cone_angle=35.0
-            )
+                    # Cancel the movement and signal replanning
+                    client.cancelLastTask()
+                    break            # Also check in the forward direction with a cone scan (can detect dynamic obstacles better)
+            # Adapt cone parameters based on context
+            cone_angle = 45.0  # Increased from 35.0 for wider field of view
+            forward_scan_distance = 8.0  # Increased from 6.0 for longer range detection
+              # Initialize variables to avoid UnboundLocalError
+            cone_obstacles = []
+            cone_distances = []
+            closest_idx = 0
             
+            # Set up thresholds for obstacle detection
+            cone_threshold = 2.5  # Default threshold
+            if high_density:
+                cone_angle = 60.0  # Increased from 45.0 for much wider detection in complex environments
+                forward_scan_distance = 10.0  # Increased from 8.0 for longer detection range
+                cone_threshold = 3.5  # Increased threshold for high density areas# Multi-cone scanning for high density environments
+            if high_density:
+                # Use multiple overlapping cones to better detect passages and gaps
+                cone_angles = [-30, -15, 0, 15, 30]  # Angles in degrees
+                min_overall_dist = float('inf')
+                min_cone_obstacles = None
+                min_cone_idx = None
+                
+                # Scan in multiple directions to build a more comprehensive picture
+                for angle_offset in cone_angles:
+                    # Create rotated direction vector based on current yaw (forward direction)
+                    angle_rad = math.radians(angle_offset)
+                    rotated_x = forward_direction[0] * math.cos(angle_rad) - forward_direction[1] * math.sin(angle_rad)
+                    rotated_y = forward_direction[0] * math.sin(angle_rad) + forward_direction[1] * math.cos(angle_rad)
+                    rotated_direction = np.array([rotated_x, rotated_y, forward_direction[2]])
+                    
+                    # Normalize the rotated direction
+                    if np.linalg.norm(rotated_direction) > 0.001:
+                        rotated_direction = rotated_direction / np.linalg.norm(rotated_direction)
+                        
+                        # Perform cone scan in this direction
+                        cone_obs, cone_dists = scanner.scan_in_direction(
+                            rotated_direction, max_distance=forward_scan_distance, 
+                            cone_angle=cone_angle/2  # Smaller angle for each sub-cone
+                        )
+                        
+                        # Track closest obstacle across all cones
+                        if cone_obs and cone_dists:
+                            min_cone_dist = min(cone_dists)
+                            if min_cone_dist < min_overall_dist:
+                                min_overall_dist = min_cone_dist
+                                min_cone_obstacles = cone_obs
+                                min_cone_idx = cone_dists.index(min_cone_dist)
+                
+                # Use the minimum distance found in any cone direction
+                if min_overall_dist < float('inf'):
+                    cone_obstacles = min_cone_obstacles
+                    cone_distances = [min_overall_dist]
+                    closest_idx = 0
+                    
+                    # Check against threshold for high density areas
+                    if min_overall_dist < cone_threshold:
+                        obstacle_pos = min_cone_obstacles[min_cone_idx]
+                        obstacle_dist = min_overall_dist
+                        logging.warning(f"Forward obstacle detected at {min_overall_dist:.2f}m during movement (multi-cone scan)")
+                        logging.debug(f"Obstacle position: {obstacle_pos}")
+                        
+                        # Cancel movement and signal replanning needed
+                        client.cancelLastTask()
+                        obstacle_detected = True
+                        break
+                else:
+                    cone_obstacles = []
+                    cone_distances = []
+            else:                # Standard single cone scan for lower density environments
+                cone_obstacles, cone_distances = scanner.scan_in_direction(
+                    forward_direction, max_distance=forward_scan_distance, cone_angle=cone_angle
+                )
+            
+            # Initialize min_cone_dist for safety
+            min_cone_dist = float('inf')
+            
+            # Process obstacles if any were detected
             if cone_obstacles and cone_distances:
                 min_cone_dist = min(cone_distances)
                 
                 # If obstacle is very close in forward direction, halt movement
-                if min_cone_dist < 2.0:
+                if min_cone_dist < cone_threshold:
                     closest_idx = cone_distances.index(min_cone_dist)
                     obstacle_pos = cone_obstacles[closest_idx]
                     obstacle_dist = min_cone_dist
@@ -1329,6 +1674,10 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
     if config.get("debug_raycasting", False) and episode_id % 5 == 0:
         logging.getLogger().setLevel(original_log_level)
     
+    # Calculate initial distance to target (for percentage-based proximity calculations)
+    initial_distance_to_target = np.linalg.norm(np.array(target_pos) - np.array(drone_pos))
+    logging.info(f"Episode {episode_id}: Initial distance to target: {initial_distance_to_target:.2f}m")
+    
     # Initialize episode tracking
     step_metrics = []
     collisions = 0
@@ -1347,8 +1696,7 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
     time_since_movement = 0.0  # Initialize time_since_movement to avoid UnboundLocalError
     
     # Initial distance to target
-    distance_to_target = np.linalg.norm(np.array(target_pos) - np.array(drone_pos))
-    initial_distance = distance_to_target
+    distance_to_target = initial_distance_to_target
     
     logging.info(f"Episode {episode_id}: Initial position: {[round(p, 2) for p in drone_pos]}")
     logging.info(f"Episode {episode_id}: Target position: {[round(p, 2) for p in target_pos]}")
@@ -1504,12 +1852,70 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
                               
             # Update the time_since_movement for metrics
             step_data["time_since_movement"] = time_since_movement
-        
-        # Check for collisions
+          # Check for collisions
         collision_info = client.simGetCollisionInfo()
         if collision_info.has_collided:
             collisions += 1
             logging.warning(f"Episode {episode_id}: Collision detected at step {step}")
+            
+            # Execute collision recovery movement (move backward away from collision)
+            try:
+                # Get current drone state for orientation information
+                drone_state = client.getMultirotorState().kinematics_estimated
+                drone_orientation = client.simGetVehiclePose().orientation
+                current_yaw = airsim.to_eularian_angles(drone_orientation)[2]
+                
+                # Calculate backward direction (opposite of current orientation)
+                backward_direction = np.array([
+                    -math.cos(current_yaw),  # Negative of forward x component
+                    -math.sin(current_yaw),  # Negative of forward y component
+                    0.0  # Keep altitude constant
+                ])
+                
+                # Scale to create a small backward movement (1-2 meters)
+                recovery_distance = 3  # meters
+                backward_vector = backward_direction * recovery_distance
+                
+                # Calculate recovery position
+                recovery_position = [
+                    drone_pos[0] + backward_vector[0],
+                    drone_pos[1] + backward_vector[1],
+                    drone_pos[2]  # Maintain current altitude
+                ]
+                
+                logging.info(f"Episode {episode_id}: Executing collision recovery - moving backward {recovery_distance}m")
+                
+                # Execute the backward movement at low velocity
+                recovery_task = client.moveToPositionAsync(
+                    recovery_position[0], recovery_position[1], recovery_position[2],
+                    velocity=1.0,  # Slower velocity for careful movement
+                    timeout_sec=3.0  # Short timeout to prevent getting stuck
+                )
+                
+                # Wait briefly but don't block indefinitely
+                try:
+                    recovery_task.join(timeout=2.0)  # 2-second timeout
+                except:
+                    # If timeout occurs, cancel the task and continue
+                    client.cancelLastTask()
+                
+                # Refresh drone position after recovery attempt
+                drone_state = client.getMultirotorState().kinematics_estimated
+                drone_pos = [
+                    drone_state.position.x_val,
+                    drone_state.position.y_val,
+                    drone_state.position.z_val
+                ]
+                
+                logging.info(f"Episode {episode_id}: Collision recovery complete, new position: {[round(p, 2) for p in drone_pos]}")
+                
+                # Adding a short hover to stabilize
+                client.hoverAsync().join()
+                time.sleep(0.5)  # Brief pause to fully stabilize
+                
+            except Exception as e:
+                logging.error(f"Episode {episode_id}: Error during collision recovery: {e}")
+                # Continue even if recovery failed
         
         # Get obstacle data
         obstacle_positions, obstacle_distances = scanner.fetch_density_distances()
@@ -1524,6 +1930,41 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
         # Calculate proximity to goal for adaptive behavior
         near_goal = distance_to_target < 5.0  # Consider 5m to target as "near goal"
         
+        # Calculate exploration vs exploitation balance based on distance to target
+        # When far from goal, prioritize safety/exploration
+        # When near goal, prioritize exploitation/goal-seeking
+        exploration_factor = min(1.0, distance_to_target / 25.0)  # Scale from 0-1 based on distance
+        exploration_factor = max(0.3, exploration_factor)  # Ensure minimum exploration of 0.3
+        
+        # Dynamically adjust obstacle avoidance priorities based on context
+        obstacle_priority = 1.0  # Default priority
+        
+        # Increase obstacle priority when in dense areas or when far from goal
+        if high_density_area:
+            obstacle_priority = 2.0  # Double obstacle priority in dense areas
+        
+        # Further increase priority when both far from goal and in dense areas
+        if high_density_area and not near_goal:
+            obstacle_priority = 2.5  # Even higher priority for obstacle avoidance
+            
+        # Safety margin increases with obstacle density and distance from goal
+        # (further from goal = prioritize safety)
+        base_safety_margin = MARGIN
+        if high_density_area:
+            # Higher margin in dense areas
+            base_safety_margin = max(2.5, MARGIN * 1.5)
+        
+        # When near goal, slightly reduce safety margin to allow closer approach
+        # but only if not in a high-density area
+        adaptive_safety_margin = base_safety_margin
+        if near_goal and not high_density_area:
+            # Slightly reduce margin near goal but maintain safety
+            adaptive_safety_margin = max(0.8, base_safety_margin * 0.85) 
+            logging.debug(f"Episode {episode_id}: Near goal - adjusted safety margin to {adaptive_safety_margin:.1f}m")
+        elif near_goal and high_density_area:
+            # Near goal but in high density, maintain higher safety
+            logging.debug(f"Episode {episode_id}: Near goal in high density area - maintaining higher safety margin at {adaptive_safety_margin:.1f}m")
+        
         # Modify the DENSITY_RADIUS parameter based on obstacle density and goal proximity
         adaptive_density_radius = DENSITY_RADIUS
         if high_density_area:
@@ -1531,19 +1972,13 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
             adaptive_density_radius = max(2.0, DENSITY_RADIUS * 0.6)
             logging.debug(f"Episode {episode_id}: High obstacle density area - reduced density radius to {adaptive_density_radius:.1f}m")
         
-        # Modify safety margin based on goal proximity - allow slightly closer approach near goal
-        adaptive_safety_margin = MARGIN
-        if near_goal:
-            # Slightly reduce margin near goal but maintain safety
-            adaptive_safety_margin = max(0.8, MARGIN * 0.85) 
-            logging.debug(f"Episode {episode_id}: Near goal - adjusted safety margin to {adaptive_safety_margin:.1f}m")
-
         # Log obstacle detection info for debugging
         if step % 10 == 0 or high_density_area:  # Log more frequently in high-density areas
             logging.debug(f"Episode {episode_id}: Detected {len(obstacle_positions)} obstacles")
             if len(obstacle_positions) > 0:
                 min_dist = min(obstacle_distances) if obstacle_distances else "N/A"
                 logging.debug(f"Episode {episode_id}: Closest obstacle at {min_dist}m")
+                logging.debug(f"Episode {episode_id}: Planning with exploration_factor={exploration_factor:.2f}, obstacle_priority={obstacle_priority:.2f}")
         
         # Main planning function - will be used for initial planning and dynamic replanning
         def get_next_waypoint(needs_replanning=False):
@@ -1566,27 +2001,118 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
                 "density_radius": adaptive_density_radius,
                 "near_goal": near_goal,  # Add flag to inform planner we're near the goal
                 "distance_to_target": distance_to_target,  # Explicitly include distance to target
-                "dynamic_replanning": needs_replanning  # Flag to inform planner this is a dynamic replanning request
+                "initial_distance": initial_distance_to_target,  # Provide initial distance for percentage calculations
+                "dynamic_replanning": needs_replanning,  # Flag to inform planner this is a dynamic replanning request
+                "exploration_factor": exploration_factor,  # Add balance factor to guide exploration vs. exploitation
+                "obstacle_priority": obstacle_priority,  # Add obstacle priority factor for weighting
+                "high_density_area": high_density_area,  # Explicitly flag if we're in a high-density area
+                "obstacles_count": len(obstacle_positions),  # Pass the exact count of detected obstacles
+                "closest_obstacle": closest_obstacle_dist if obstacle_distances else float('inf'),  # Pass distance to closest obstacle
+                "critical_obstacle_avoidance": False  # Default to normal mode (may be updated if replanning)
             }
             
-            # If we're replanning due to obstacle detection, enhance the obstacle data
+            # Add enhanced obstacle awareness based on context
+            if distance_to_target > 15.0:
+                # When far from target, increase obstacle repulsion weight
+                observation["obstacle_repulsion_weight"] = 0.3
+                logging.debug(f"Far from target ({distance_to_target:.2f}m), increasing obstacle repulsion")
+            elif distance_to_target < 5.0:            # When close to target, slightly reduce obstacle repulsion to allow approach
+                observation["obstacle_repulsion_weight"] = 0.1
+                logging.debug(f"Close to target ({distance_to_target:.2f}m), optimizing for goal approach")
+                
+                # When very close to target (last 2 meters) in high-density area, drastically increase target preference
+                if distance_to_target < 2.0 and high_density_area:
+                    observation["target_preference_boost"] = 0.7  # Signal to Julia planner to boost target preference
+                    logging.info(f"Very close to target ({distance_to_target:.2f}m) in dense area - boosting target preference")
+                else:
+                    observation["target_preference_boost"] = 0.0  # Normal behavior
+            else:
+                # Linear scaling for intermediate distances
+                repulsion_weight = 0.1 + (0.2 * (distance_to_target - 5.0) / 10.0)
+                observation["obstacle_repulsion_weight"] = repulsion_weight
+                logging.debug(f"Medium distance ({distance_to_target:.2f}m), scaled obstacle repulsion: {repulsion_weight:.2f}")
+            
+            # Assess if direct path to goal is clear
+            if obstacle_positions and len(obstacle_positions) > 0:
+                direct_path_clear = True
+                direct_path_suitability = 1.0
+                
+                # Use scanner to check if direct path to target is clear
+                obstacle_detected, obstacle_pos, obstacle_dist = scanner.scan_path_for_obstacles(
+                    drone_pos, target_pos, safety_radius=3.0
+                )
+                
+                if obstacle_detected:
+                    direct_path_clear = False
+                    if obstacle_dist is not None:
+                        # Calculate a suitability between 0-1 based on obstacle distance
+                        # Close obstacles severely reduce suitability
+                        direct_path_suitability = min(1.0, max(0.1, obstacle_dist / 15.0))
+                    else:
+                        direct_path_suitability = 0.3  # Default moderate-low suitability when obstacle distance unknown
+                    
+                    logging.debug(f"Direct path to target is blocked. Path suitability: {direct_path_suitability:.2f}")
+                else:
+                    logging.debug("Direct path to target appears clear")
+                
+                observation["direct_path_clear"] = direct_path_clear
+                observation["direct_path_suitability"] = direct_path_suitability
+            
+            # Adjust waypoint sampling based on context
+            if high_density_area:
+                # Use more samples in complex environments
+                observation["waypoint_count"] = int(WAYPOINT_SAMPLE_COUNT * 1.3)
+                
+            # Adjust policy length based on distance to target
+            if near_goal:
+                # Shorter policy horizon near goal for more precise control
+                observation["policy_length"] = max(1, POLICY_LENGTH - 1)
+            elif distance_to_target > 20.0:
+                # Longer policy horizon when far away for better long-term planning
+                observation["policy_length"] = min(5, POLICY_LENGTH + 1)
+              # If we're replanning due to obstacle detection, enhance the obstacle data
             # to ensure the planner gives it proper consideration
             if needs_replanning:
+                # Check if we're very close to target - adjust behavior accordingly
+                very_close_to_target = distance_to_target < 2.0
+                
                 # Increase the safety margin during replanning to be more cautious
-                observation["safety_margin"] = max(adaptive_safety_margin * 1.5, 3.0)
+                # But use a more moderate increase when extremely close to the target
+                if very_close_to_target and high_density_area:
+                    observation["safety_margin"] = max(adaptive_safety_margin * 1.5, 3.0)  # More moderate increase
+                    logging.info(f"Very close to target ({distance_to_target:.2f}m) - using moderate safety margin increase")
+                else:
+                    observation["safety_margin"] = max(adaptive_safety_margin * 2.0, 4.0)  # Standard substantial increase
                 
                 # Increase waypoint sampling to find more path options
-                observation["waypoint_count"] = WAYPOINT_SAMPLE_COUNT * 1.5
+                observation["waypoint_count"] = int(WAYPOINT_SAMPLE_COUNT * 2.0)  # Increased from 1.5
                 
                 # Add extra parameters to highlight obstacle importance
-                observation["obstacle_weight_factor"] = 2.0  # Double the weight of obstacles during planning
-                observation["replanning_obstacle_threshold"] = 4.0  # Consider obstacles within 4m as high priority
+                # Reduce obstacle weights when very close to target to prevent excessive avoidance
+                if very_close_to_target and high_density_area:
+                    observation["obstacle_weight_factor"] = 2.0  # Reduced for very close to target
+                    observation["obstacle_distance_weight"] = 2.0  # Reduced for very close to target
+                    observation["target_preference_boost"] = 0.8  # Higher boost during replanning near target
+                    logging.info(f"Final approach adjusted: reduced obstacle weights, increased target preference")
+                else:
+                    observation["obstacle_weight_factor"] = 3.0
+                    observation["obstacle_distance_weight"] = 3.0
+                
+                observation["obstacle_density_weight"] = 1.5  # Increased from 1.0
+                observation["replanning_obstacle_threshold"] = 5.0  # Increased from 4.0
+                observation["exploration_factor"] = min(1.0, exploration_factor * 2.0)  # Increased from 1.5
+                observation["obstacle_priority"] = max(3.0, obstacle_priority * 2.0)  # Increased from 2.0 and 1.5
+                observation["suitability_threshold"] = 0.6  # Increased from 0.5
                 
                 # Add flag to indicate this is a critical avoidance scenario
                 observation["critical_obstacle_avoidance"] = True
                 
                 logging.info(f"Enhanced planning parameters for obstacle avoidance: safety_margin={observation['safety_margin']:.2f}, " 
-                             f"waypoint_count={observation['waypoint_count']:.0f}")
+                             f"waypoint_count={observation['waypoint_count']}, "
+                             f"obstacle_priority={observation['obstacle_priority']:.2f}")
+            else:
+                # For normal planning, still ensure high suitability threshold
+                observation["suitability_threshold"] = 0.5
             
             # Verify the observation is valid before sending
             has_nans = any(np.isnan(np.array(drone_pos))) or any(np.isnan(np.array(target_pos)))
@@ -1733,7 +2259,7 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
             "episode_id": episode_id,
             "step": step,
             "distance_to_target": distance_to_target,
-            "normalized_distance": distance_to_target / initial_distance,
+            "normalized_distance": distance_to_target / initial_distance_to_target,
             "position_x": drone_pos[0],
             "position_y": drone_pos[1],
             "position_z": drone_pos[2],
@@ -1852,9 +2378,9 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
         "steps_taken": len(step_metrics),
         "target_reached": status == "success",
         "final_distance": final_distance,
-        "initial_distance": initial_distance,
-        "distance_improvement": initial_distance - final_distance,
-        "normalized_improvement": (initial_distance - final_distance) / initial_distance,
+        "initial_distance": initial_distance_to_target,
+        "distance_improvement": initial_distance_to_target - final_distance,
+        "normalized_improvement": (initial_distance_to_target - final_distance) / initial_distance_to_target,
         "collisions": collisions,
         "replanning_count": replanning_count,
         "dynamic_replanning_count": dynamic_replanning_count,

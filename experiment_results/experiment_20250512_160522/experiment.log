@@ -1,0 +1,29 @@
+2025-05-12 16:05:22,580 - INFO - Using random seed: 42
+2025-05-12 16:05:22,580 - INFO - Starting experiment with configuration:
+2025-05-12 16:05:22,581 - INFO -   num_episodes: 10
+2025-05-12 16:05:22,581 - INFO -   target_distance_range: (15.0, 50.0)
+2025-05-12 16:05:22,581 - INFO -   random_seed: 42
+2025-05-12 16:05:22,581 - INFO -   max_steps_per_episode: 100
+2025-05-12 16:05:22,583 - INFO -   output_dir: experiment_results
+2025-05-12 16:05:22,583 - INFO -   stuck_timeout: 15.0
+2025-05-12 16:05:22,584 - INFO -   stuck_check_interval: 3.0
+2025-05-12 16:05:22,584 - INFO -   episode_timeout: 120
+2025-05-12 16:05:22,585 - INFO -   precompile_julia: True
+2025-05-12 16:05:22,585 - INFO -   zmq_port: 5555
+2025-05-12 16:05:22,585 - INFO -   debug_raycasting: False
+2025-05-12 16:05:22,585 - INFO -   min_ray_checks: 3
+2025-05-12 16:05:22,586 - INFO -   max_ray_checks: 7
+2025-05-12 16:05:22,586 - INFO -   visualize_raycasts: False
+2025-05-12 16:05:22,586 - INFO -   visualization_duration: 60.0
+2025-05-12 16:06:38,105 - INFO - === Starting Episode 0 ===
+2025-05-12 16:06:38,110 - INFO - Episode 0: Taking off...
+2025-05-12 16:06:43,862 - INFO - Target distance range for episode 0: 15.0m - 50.0m
+2025-05-12 16:06:43,958 - INFO - Found first valid target at [-8.13, -9.76, -2.0]
+2025-05-12 16:06:48,584 - INFO - Phase 2: Found 50 valid targets, focusing on refining these
+2025-05-12 16:06:51,506 - INFO - Found 77 valid targets, selecting best with 0.00m clearance
+2025-05-12 16:06:51,507 - INFO - Episode 0: Target sampling took 7.64s with 3 rays
+2025-05-12 16:06:51,508 - INFO - Episode 0: Initial position: [0.0, 0.0, -1.67]
+2025-05-12 16:06:51,508 - INFO - Episode 0: Target position: [-8.13, -9.76, -2.0]
+2025-05-12 16:06:51,508 - INFO - Episode 0: Initial distance: 12.71m
+2025-05-12 16:06:51,515 - INFO - Episode 0: Target verified with 3 rays
+2025-05-12 16:07:00,748 - WARNING - Episode 0: Step 0 took 9.23s (unusually long)

@@ -1,0 +1,43 @@
+2025-05-14 17:42:08,415 - INFO - Using random seed: 42
+2025-05-14 17:42:08,415 - INFO - Starting experiment with configuration:
+2025-05-14 17:42:08,415 - INFO -   num_episodes: 10
+2025-05-14 17:42:08,415 - INFO -   target_distance_range: (15.0, 50.0)
+2025-05-14 17:42:08,415 - INFO -   random_seed: 42
+2025-05-14 17:42:08,416 - INFO -   max_steps_per_episode: 100
+2025-05-14 17:42:08,416 - INFO -   output_dir: experiment_results
+2025-05-14 17:42:08,416 - INFO -   stuck_timeout: 15.0
+2025-05-14 17:42:08,416 - INFO -   stuck_check_interval: 3.0
+2025-05-14 17:42:08,416 - INFO -   episode_timeout: 120
+2025-05-14 17:42:08,416 - INFO -   precompile_julia: True
+2025-05-14 17:42:08,416 - INFO -   zmq_port: 5555
+2025-05-14 17:42:08,417 - INFO -   debug_raycasting: False
+2025-05-14 17:42:08,417 - INFO -   min_ray_checks: 3
+2025-05-14 17:42:08,417 - INFO -   max_ray_checks: 7
+2025-05-14 17:42:08,417 - INFO -   visualize_raycasts: False
+2025-05-14 17:42:08,417 - INFO -   visualization_duration: 60.0
+2025-05-14 17:42:46,110 - INFO - === Starting Episode 0 ===
+2025-05-14 17:42:46,114 - INFO - Episode 0: Taking off...
+2025-05-14 17:42:51,537 - INFO - Target distance range for episode 0: 15.0m - 50.0m
+2025-05-14 17:42:51,622 - INFO - Found first valid target at [-8.13, -9.76, -2.0]
+2025-05-14 17:42:56,141 - INFO - Phase 2: Found 50 valid targets, focusing on refining these
+2025-05-14 17:42:58,606 - INFO - Found 77 valid targets, selecting best with 0.00m clearance
+2025-05-14 17:42:58,606 - INFO - Episode 0: Target sampling took 7.07s with 3 rays
+2025-05-14 17:42:58,607 - INFO - Episode 0: Initial distance to target: 12.71m
+2025-05-14 17:42:58,607 - INFO - Episode 0: Initial position: [0.0, 0.0, -1.67]
+2025-05-14 17:42:58,607 - INFO - Episode 0: Target position: [-8.13, -9.76, -2.0]
+2025-05-14 17:42:58,607 - INFO - Episode 0: Initial distance: 12.71m
+2025-05-14 17:42:58,610 - INFO - Episode 0: Target verified with 3 rays
+2025-05-14 17:43:08,052 - ERROR - Error in move_to_waypoint: cannot access local variable 'cone_obstacles' where it is not associated with a value
+2025-05-14 17:43:08,260 - WARNING - Episode 0: Step 0 took 9.65s (unusually long)
+2025-05-14 17:43:08,262 - WARNING - Episode 0: No significant movement for 9.7s (timeout: 15.0s)
+2025-05-14 17:43:10,339 - ERROR - Error in move_to_waypoint: cannot access local variable 'cone_obstacles' where it is not associated with a value
+2025-05-14 17:43:12,081 - ERROR - Error in move_to_waypoint: cannot access local variable 'cone_obstacles' where it is not associated with a value
+2025-05-14 17:43:12,286 - WARNING - Episode 0: No significant movement for 13.7s, attempting recovery maneuver
+2025-05-14 17:43:12,287 - INFO - Executing vertical recovery maneuver to position: [-0.43, -0.18, -3.57]
+2025-05-14 17:43:12,311 - INFO - Episode 0: Triggering dynamic replanning due to detected obstacle
+2025-05-14 17:43:12,315 - INFO - Enhanced planning parameters for obstacle avoidance: safety_margin=5.00, waypoint_count=150, obstacle_priority=5.00
+2025-05-14 17:43:14,420 - ERROR - Error in move_to_waypoint: cannot access local variable 'cone_obstacles' where it is not associated with a value
+2025-05-14 17:43:16,074 - ERROR - Error in move_to_waypoint: cannot access local variable 'cone_obstacles' where it is not associated with a value
+2025-05-14 17:43:18,334 - ERROR - Error in move_to_waypoint: cannot access local variable 'cone_obstacles' where it is not associated with a value
+2025-05-14 17:43:20,472 - ERROR - Error in move_to_waypoint: cannot access local variable 'cone_obstacles' where it is not associated with a value
+2025-05-14 17:43:22,785 - ERROR - Error in move_to_waypoint: cannot access local variable 'cone_obstacles' where it is not associated with a value
