@@ -1857,8 +1857,7 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
         if collision_info.has_collided:
             collisions += 1
             logging.warning(f"Episode {episode_id}: Collision detected at step {step}")
-            
-            # Execute collision recovery movement (move backward away from collision)
+              # Execute collision recovery movement (move backward and upward away from collision)
             try:
                 # Get current drone state for orientation information
                 drone_state = client.getMultirotorState().kinematics_estimated
@@ -1872,20 +1871,24 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
                     0.0  # Keep altitude constant
                 ])
                 
-                # Scale to create a small backward movement (1-2 meters)
+                # Scale to create a small backward movement
                 recovery_distance = 3  # meters
                 backward_vector = backward_direction * recovery_distance
                 
-                # Calculate recovery position
+                # Add upward movement of the same magnitude
+                # Note: In AirSim, negative z is upward
+                upward_vector = np.array([0.0, 0.0, -recovery_distance])
+                
+                # Calculate recovery position (backward and upward)
                 recovery_position = [
                     drone_pos[0] + backward_vector[0],
                     drone_pos[1] + backward_vector[1],
-                    drone_pos[2]  # Maintain current altitude
+                    drone_pos[2] + upward_vector[2]  # Move upward by recovery_distance
                 ]
                 
-                logging.info(f"Episode {episode_id}: Executing collision recovery - moving backward {recovery_distance}m")
+                logging.info(f"Episode {episode_id}: Executing collision recovery - moving backward and upward {recovery_distance}m")
                 
-                # Execute the backward movement at low velocity
+                # Execute the backward and upward movement at low velocity
                 recovery_task = client.moveToPositionAsync(
                     recovery_position[0], recovery_position[1], recovery_position[2],
                     velocity=1.0,  # Slower velocity for careful movement
@@ -1907,7 +1910,7 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
                     drone_state.position.z_val
                 ]
                 
-                logging.info(f"Episode {episode_id}: Collision recovery complete, new position: {[round(p, 2) for p in drone_pos]}")
+                logging.info(f"Episode {episode_id}: Collision recovery (backward & upward) complete, new position: {[round(p, 2) for p in drone_pos]}")
                 
                 # Adding a short hover to stabilize
                 client.hoverAsync().join()
