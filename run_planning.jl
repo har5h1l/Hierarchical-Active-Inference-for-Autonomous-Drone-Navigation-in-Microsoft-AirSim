@@ -429,7 +429,7 @@ function main()
         safety_margin=adaptive_safety_margin,
         policy_length=POLICY_LENGTH,
         density_radius=get(data, "density_radius", 5.0),
-        suitability_threshold=0.5  # Explicitly set high suitability threshold
+        suitability_threshold=0.75  # Increased to 0.75 for safer path selection
     )
     
     # If we didn't get a good waypoint, try again with slightly lower threshold but still higher than default
@@ -444,7 +444,7 @@ function main()
             safety_margin=adaptive_safety_margin * 0.85,  # Slightly reduced safety margin
             policy_length=POLICY_LENGTH,
             density_radius=get(data, "density_radius", 5.0),
-            suitability_threshold=0.4  # Fallback threshold still higher than default
+            suitability_threshold=0.65  # Fallback threshold still higher than default but lower than primary
         )
         
         if isnothing(next_waypoint) || length(next_waypoint) < 3
@@ -454,11 +454,10 @@ function main()
             next_waypoint = select_action(
                 planner, 
                 beliefs,
-                num_samples=adaptive_waypoint_count * 3,  # Triple the samples as last resort
-                safety_margin=adaptive_safety_margin * 0.7,  # Reduced safety margin for more options
+                num_samples=adaptive_waypoint_count * 3,  # Triple the samples as last resort                safety_margin=adaptive_safety_margin * 0.7,  # Reduced safety margin for more options
                 policy_length=POLICY_LENGTH,
                 density_radius=get(data, "density_radius", 5.0),
-                suitability_threshold=0.3  # Emergency fallback threshold, still above minimum
+                suitability_threshold=0.55  # Emergency fallback threshold, still above minimum
             )
         end
     end

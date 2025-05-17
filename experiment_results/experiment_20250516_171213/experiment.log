@@ -1,0 +1,76 @@
+2025-05-16 17:12:13,749 - INFO - Using random seed: 42
+2025-05-16 17:12:13,750 - INFO - Starting experiment with configuration:
+2025-05-16 17:12:13,750 - INFO -   num_episodes: 10
+2025-05-16 17:12:13,750 - INFO -   target_distance_range: (15.0, 50.0)
+2025-05-16 17:12:13,750 - INFO -   random_seed: 42
+2025-05-16 17:12:13,750 - INFO -   max_steps_per_episode: 100
+2025-05-16 17:12:13,750 - INFO -   output_dir: experiment_results
+2025-05-16 17:12:13,750 - INFO -   stuck_timeout: 15.0
+2025-05-16 17:12:13,751 - INFO -   stuck_check_interval: 3.0
+2025-05-16 17:12:13,751 - INFO -   episode_timeout: 120
+2025-05-16 17:12:13,761 - INFO -   precompile_julia: True
+2025-05-16 17:12:13,761 - INFO -   zmq_port: 5555
+2025-05-16 17:12:13,761 - INFO -   debug_raycasting: False
+2025-05-16 17:12:13,761 - INFO -   min_ray_checks: 3
+2025-05-16 17:12:13,761 - INFO -   max_ray_checks: 7
+2025-05-16 17:12:13,761 - INFO -   visualize_raycasts: False
+2025-05-16 17:12:13,761 - INFO -   visualization_duration: 60.0
+2025-05-16 17:12:57,690 - INFO - === Starting Episode 0 ===
+2025-05-16 17:12:57,694 - INFO - Episode 0: Taking off...
+2025-05-16 17:13:03,100 - INFO - Target distance range for episode 0: 15.0m - 50.0m
+2025-05-16 17:13:03,197 - INFO - Found first valid target at [-8.13, -9.76, -2.0]
+2025-05-16 17:13:07,447 - INFO - Phase 2: Found 50 valid targets, focusing on refining these
+2025-05-16 17:13:09,796 - INFO - Found 77 valid targets, selecting best with 0.00m clearance
+2025-05-16 17:13:09,796 - INFO - Episode 0: Target sampling took 6.70s with 3 rays
+2025-05-16 17:13:09,797 - INFO - Episode 0: Initial distance to target: 12.71m
+2025-05-16 17:13:09,797 - INFO - Episode 0: Initial position: [0.0, 0.0, -1.67]
+2025-05-16 17:13:09,797 - INFO - Episode 0: Target position: [-8.13, -9.76, -2.0]
+2025-05-16 17:13:09,798 - INFO - Episode 0: Initial distance: 12.71m
+2025-05-16 17:13:09,802 - INFO - Episode 0: Target verified with 3 rays
+2025-05-16 17:13:22,605 - WARNING - Episode 0: Step 0 took 12.80s (unusually long)
+2025-05-16 17:13:25,465 - WARNING - Pre-movement check: Obstacle detected on planned path at 3.46m distance
+2025-05-16 17:13:25,466 - INFO - Proceeding with movement and will replan if obstacle persists during execution
+2025-05-16 17:13:25,583 - WARNING - Obstacle detected at 2.82m during movement execution
+2025-05-16 17:13:25,583 - INFO - Obstacle not imminent, continuing with caution
+2025-05-16 17:13:25,586 - WARNING - Forward obstacle detected at 1.60m during movement
+2025-05-16 17:13:25,587 - INFO - Episode 0: Obstacle detected during movement, triggering immediate replanning
+2025-05-16 17:13:25,597 - INFO - Episode 0: Triggering dynamic replanning due to detected obstacle
+2025-05-16 17:13:25,599 - INFO - Enhanced planning parameters for obstacle avoidance: safety_margin=5.00, waypoint_count=150, obstacle_priority=5.00
+2025-05-16 17:13:25,609 - WARNING - Episode 0: Planned waypoint would lead through obstacle at 4.38m
+2025-05-16 17:13:25,610 - INFO - Episode 0: Attempting to generate safer waypoint away from obstacles
+2025-05-16 17:13:25,610 - INFO - Episode 0: Generated safety waypoint to retreat from obstacle at direction [np.float64(0.33), np.float64(0.94), np.float64(-0.04)], distance 2.19m
+2025-05-16 17:13:25,610 - INFO - Episode 0: Executing replanned path to avoid obstacle
+2025-05-16 17:13:25,839 - WARNING - Obstacle detected at 1.54m during movement execution
+2025-05-16 17:13:26,070 - WARNING - Pre-movement check: Obstacle detected on planned path at 3.30m distance
+2025-05-16 17:13:26,070 - INFO - Proceeding with movement and will replan if obstacle persists during execution
+2025-05-16 17:13:26,185 - WARNING - Obstacle detected at 2.80m during movement execution
+2025-05-16 17:13:26,186 - INFO - Obstacle not imminent, continuing with caution
+2025-05-16 17:13:31,075 - WARNING - Movement taking too long, cancelling and replanning
+2025-05-16 17:13:31,076 - INFO - Episode 0: Obstacle detected during movement, triggering immediate replanning
+2025-05-16 17:13:31,086 - INFO - Adding newly detected obstacle at [-6.62, -7.52, -2.09] to planning data
+2025-05-16 17:13:31,086 - INFO - Episode 0: Triggering dynamic replanning due to detected obstacle
+2025-05-16 17:13:31,089 - INFO - Enhanced planning parameters for obstacle avoidance: safety_margin=5.00, waypoint_count=150, obstacle_priority=5.00
+2025-05-16 17:13:31,100 - WARNING - Episode 0: Planned waypoint would lead through obstacle at 1.50m
+2025-05-16 17:13:31,100 - INFO - Episode 0: Attempting to generate safer waypoint away from obstacles
+2025-05-16 17:13:31,100 - INFO - Episode 0: Generated safety waypoint to retreat from obstacle at direction [np.float64(0.53), np.float64(0.85), np.float64(-0.07)], distance 1.16m
+2025-05-16 17:13:31,101 - INFO - Episode 0: Executing replanned path to avoid obstacle
+2025-05-16 17:13:36,121 - WARNING - Movement taking too long, cancelling and replanning
+2025-05-16 17:13:36,324 - WARNING - Episode 0: Step 3 took 10.28s (unusually long)
+2025-05-16 17:13:36,325 - WARNING - Episode 0: Collision detected at step 4
+2025-05-16 17:13:36,326 - INFO - Episode 0: Executing collision recovery - moving backward and upward 3m
+2025-05-16 17:13:36,327 - WARNING - Collision recovery movement timed out: Future.join() got an unexpected keyword argument 'timeout'
+2025-05-16 17:13:37,328 - INFO - Episode 0: Collision recovery (backward & upward) complete, new position: [-5.19, -5.36, -2.79]
+2025-05-16 17:13:42,033 - WARNING - Episode 0: Step 4 took 5.71s (unusually long)
+2025-05-16 17:13:42,035 - WARNING - Episode 0: Collision detected at step 5
+2025-05-16 17:13:42,037 - INFO - Episode 0: Executing collision recovery - moving backward and upward 3m
+2025-05-16 17:13:42,037 - WARNING - Collision recovery movement timed out: Future.join() got an unexpected keyword argument 'timeout'
+2025-05-16 17:13:43,038 - INFO - Episode 0: Collision recovery (backward & upward) complete, new position: [-7.54, -8.16, -3.39]
+2025-05-16 17:13:43,549 - INFO - Very close to target (1.60m) in dense area - boosting target preference
+2025-05-16 17:13:47,534 - WARNING - Episode 0: Step 5 took 5.50s (unusually long)
+2025-05-16 17:13:47,535 - INFO - Episode 0: Target reached at step 6
+2025-05-16 17:13:56,220 - INFO - Episode 0 completed: success
+2025-05-16 17:13:56,220 - INFO -   Steps: 6, Duration: 37.74s
+2025-05-16 17:13:56,221 - INFO -   Final distance: 1.03m, Collisions: 2
+2025-05-16 17:13:56,221 - INFO -   Dynamic replanning events: 2
+2025-05-16 17:13:56,248 - INFO - === Starting Episode 1 ===
+2025-05-16 17:13:56,250 - INFO - Episode 1: Taking off...

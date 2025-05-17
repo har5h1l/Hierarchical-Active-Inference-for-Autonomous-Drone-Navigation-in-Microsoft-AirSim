@@ -1,0 +1,2 @@
+episode_id,status,steps_taken,target_reached,final_distance,initial_distance,distance_improvement,normalized_improvement,collisions,replanning_count,dynamic_replanning_count,replanning_percentage,dynamic_replanning_percentage,duration_seconds,avg_step_time,avg_inference_time_ms,stuck_detected
+0,success,6,True,1.032255919413006,12.70630621208945,11.674050292676444,0.9187603460688786,2,2,2,33.33333333333333,33.33333333333333,37.73824453353882,6.28970742225647,1172.843098640442,False

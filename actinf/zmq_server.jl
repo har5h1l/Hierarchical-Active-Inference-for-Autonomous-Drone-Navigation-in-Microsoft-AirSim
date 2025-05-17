@@ -259,7 +259,7 @@ function process_observation(observation_data::Dict)
             obstacle_distance=isempty(obstacle_distances) ? 10.0 : minimum(obstacle_distances),
             obstacle_density=obstacle_density,
             obstacle_weight=get(observation_data, "obstacle_distance_weight", 0.8),
-            suitability_threshold=get(observation_data, "suitability_threshold", 0.5)
+            suitability_threshold=get(observation_data, "suitability_threshold", 0.75)
         )
         
         # Extract the best action (first in the returned list)

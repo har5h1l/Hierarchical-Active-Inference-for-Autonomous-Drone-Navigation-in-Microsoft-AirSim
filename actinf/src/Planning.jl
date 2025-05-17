@@ -11,7 +11,7 @@ using ..Inference
 
 # Constants for suitability calculation and filtering
 # Make SUITABILITY_THRESHOLD global and mutable so it can be updated from zmq_server.jl
-global SUITABILITY_THRESHOLD = 0.6  # Increased from 0.5 for safer path selection
+global SUITABILITY_THRESHOLD = 0.75  # Increased from 0.6 to 0.75 for safer path selection
 const DEFAULT_OBSTACLE_WEIGHT = 0.8  # Increased from 0.7
 const DEFAULT_DENSITY_WEIGHT = 0.4   # Increased from 0.3
 const CUTOFF_DISTANCE = 3.0  # Increased from 2.5 Meters
@@ -56,7 +56,7 @@ function PreferenceModel(;
     angle_weight = 0.5,           # Reduced from 0.8 to prioritize distance over angle
     angle_sharpness = 3.0,        # Reduced from 5.0 for smoother angle preferences
     suitability_weight = 1.0,      # Reduced from 1.5 to prioritize distance
-    suitability_threshold = 0.3,
+    suitability_threshold = 0.55,
     max_distance = 50.0
 )
     return PreferenceModel(
@@ -615,7 +615,7 @@ end
                  current_position::SVector{3, Float64}, target_position::SVector{3, Float64};
                  obstacle_distance::Float64 = 10.0, obstacle_density::Float64 = 0.0, 
                  num_policies::Int = 5, obstacle_weight::Float64 = DEFAULT_OBSTACLE_WEIGHT,
-                 suitability_threshold::Float64 = 0.5)
+                 suitability_threshold::Float64 = 0.75)
 
 Select the best actions by first filtering out unsafe paths based on suitability,
 then evaluating Expected Free Energy on remaining safe candidates.
@@ -625,7 +625,7 @@ function select_action(state::StateSpace.DroneState, beliefs::Inference.DroneBel
                      current_position::SVector{3, Float64}, target_position::SVector{3, Float64};
                      obstacle_distance::Float64 = 10.0, obstacle_density::Float64 = 0.0, 
                      num_policies::Int = 5, obstacle_weight::Float64 = DEFAULT_OBSTACLE_WEIGHT,
-                     suitability_threshold::Float64 = 0.5)  # Add explicit parameter with strong default
+                     suitability_threshold::Float64 = 0.75)  # Add explicit parameter with strong default
       MIN_RADIUS = 1.0  # Increased from 0.5 to ensure minimum action length of 1 meter
     MAX_RADIUS = 3.5  # Slightly increased maximum radius for more exploration
     MIN_POLICY_LEN = 2
