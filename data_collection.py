@@ -1759,10 +1759,21 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
     """
     logging.info(f"=== Starting Episode {episode_id} ===")
     
+    # Check AirSim connection before starting episode
+    try:
+        client.ping()
+    except Exception as e:
+        logging.error(f"Unable to connect to AirSim at start of episode {episode_id}: {e}")
+        raise ConnectionError(f"AirSim connection failed: {e}")
+    
     # Reset the drone
-    client.reset()
-    client.enableApiControl(True)
-    client.armDisarm(True)
+    try:
+        client.reset()
+        client.enableApiControl(True)
+        client.armDisarm(True)
+    except Exception as e:
+        logging.error(f"Error resetting drone state: {e}")
+        raise ConnectionError(f"AirSim reset failed: {e}")
     
     # Takeoff - CRITICAL: We must take off before checking target visibility
     logging.info(f"Episode {episode_id}: Taking off...")
@@ -1929,13 +1940,33 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
             status = "timeout"
             break
         
+        # Periodically check AirSim connection
+        if step % 5 == 0:  # Check every 5 steps
+            try:
+                client.ping()
+            except Exception as e:
+                logging.error(f"Lost connection to AirSim during episode {episode_id} at step {step}: {e}")
+                status = "airsim_crash"
+                raise ConnectionError(f"AirSim connection lost during episode: {e}")
+            
+        
         # Get current drone position
-        drone_state = client.getMultirotorState().kinematics_estimated
-        drone_pos = [
-            drone_state.position.x_val,
-            drone_state.position.y_val,
-            drone_state.position.z_val
-        ]
+        try:
+            drone_state = client.getMultirotorState().kinematics_estimated
+            drone_pos = [
+                drone_state.position.x_val,
+                drone_state.position.y_val,
+                drone_state.position.z_val
+            ]
+        except Exception as e:
+            logging.error(f"Failed to get drone position at step {step}: {e}")
+            if "Connection" in str(e) or "not responding" in str(e) or "timed out" in str(e):
+                status = "airsim_crash"
+                raise ConnectionError(f"AirSim connection lost while getting drone position: {e}")
+            else:
+                # For other errors, try to continue
+                logging.warning("Attempting to continue episode despite error")
+                continue
         
         # Calculate distance to target
         distance_to_target = np.linalg.norm(np.array(target_pos) - np.array(drone_pos))
@@ -2793,27 +2824,40 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
         step_duration = time.time() - step_start_time
         if step_duration > 5.0:  # If a step takes more than 5 seconds, it might indicate issues
             logging.warning(f"Episode {episode_id}: Step {step} took {step_duration:.2f}s (unusually long)")
-    
-    # Episode ended - calculate final metrics
+      # Episode ended - calculate final metrics
     episode_duration = time.time() - start_time
 
     # Final position and distance
-    drone_state = client.getMultirotorState().kinematics_estimated
-    final_pos = [
-        drone_state.position.x_val,
-        drone_state.position.y_val,
-        drone_state.position.z_val
-    ]
-    final_distance = np.linalg.norm(np.array(target_pos) - np.array(final_pos))
+    try:
+        drone_state = client.getMultirotorState().kinematics_estimated
+        final_pos = [
+            drone_state.position.x_val,
+            drone_state.position.y_val,
+            drone_state.position.z_val
+        ]
+        final_distance = np.linalg.norm(np.array(target_pos) - np.array(final_pos))
+    except Exception as e:
+        logging.error(f"Error getting final drone position: {e}")
+        # Use the last known position if available, otherwise use initial position
+        if 'drone_pos' in locals() and drone_pos:
+            final_pos = drone_pos
+        else:
+            final_pos = current_pos
+        final_distance = np.linalg.norm(np.array(target_pos) - np.array(final_pos))
+        logging.info(f"Using last known position for final metrics: {[round(p, 2) for p in final_pos]}")
     
     # Land the drone
-    land_task = client.landAsync()
     try:
-        land_task.join()  # Wait for landing to complete
+        land_task = client.landAsync()
+        try:
+            land_task.join()  # Wait for landing to complete
+        except Exception as e:
+            logging.error(f"Error during landing: {e}")
+            # We'll continue even if landing failed
+        client.armDisarm(False)
     except Exception as e:
-        logging.error(f"Error during landing: {e}")
-        # We'll continue even if landing failed
-    client.armDisarm(False)
+        logging.error(f"Error attempting to land drone: {e}")
+        # Continue with metrics even if landing fails
     
     # Compile episode summary
     episode_summary = {
@@ -2828,12 +2872,12 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
         "collisions": collisions,
         "replanning_count": replanning_count,        "dynamic_replanning_count": dynamic_replanning_count,
         "replanning_percentage": (replanning_count / len(step_metrics) * 100) if step_metrics else 0,
-        "dynamic_replanning_percentage": (dynamic_replanning_count / len(step_metrics) * 100) if step_metrics else 0,
-        "duration_seconds": episode_duration,
+        "dynamic_replanning_percentage": (dynamic_replanning_count / len(step_metrics) * 100) if step_metrics else 0,        "duration_seconds": episode_duration,
         "avg_step_time": episode_duration / len(step_metrics) if step_metrics else 0,
         "avg_inference_time_ms": np.mean([m["inference_time_ms"] for m in step_metrics]) if step_metrics else 0,
         "stuck_detected": status == "stuck",
-        "oscillation_detected": status == "oscillation"
+        "oscillation_detected": status == "oscillation",
+        "airsim_crash": status == "airsim_crash"
     }
     
     logging.info(f"Episode {episode_id} completed: {status}")
@@ -2852,11 +2896,82 @@ def run_experiment(config: Dict[str, Any]) -> None:
     # Merge with default config
     full_config = {**DEFAULT_CONFIG, **config}
     
-    # Set up logging for this experiment
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_dir = full_config.get("output_dir", "experiment_results")
-    experiment_dir = os.path.join(output_dir, f"experiment_{timestamp}")
-    os.makedirs(experiment_dir, exist_ok=True)
+    # Check for recovery data
+    recovery_file = os.path.join("experiment_results", "recovery_data.json")
+    resuming = False
+    experiment_dir = None
+    start_episode = 0
+    all_episodes_metrics = []
+    episode_summaries = []
+    
+    if os.path.exists(recovery_file):
+        try:
+            with open(recovery_file, 'r') as f:
+                recovery_data = json.load(f)
+            
+            # Check if recovery data is valid and ask user if they want to resume
+            if recovery_data.get("experiment_dir") and os.path.exists(recovery_data.get("experiment_dir")):
+                print("\nFound previous experiment recovery data:")
+                print(f"  Experiment directory: {recovery_data.get('experiment_dir')}")
+                print(f"  Last completed episode: {recovery_data.get('last_episode', 0)}")
+                print(f"  Timestamp: {recovery_data.get('timestamp', 'unknown')}")
+                
+                # Ask user if they want to resume
+                resume_input = input("\nDo you want to resume this experiment? (y/n): ").strip().lower()
+                if resume_input == 'y' or resume_input == 'yes':
+                    resuming = True
+                    experiment_dir = recovery_data.get("experiment_dir")
+                    start_episode = recovery_data.get("last_episode", 0) + 1
+                    
+                    # Load existing metrics and summaries
+                    metrics_file = os.path.join(experiment_dir, "metrics.csv")
+                    summary_file = os.path.join(experiment_dir, "episode_summaries.csv")
+                    
+                    if os.path.exists(metrics_file):
+                        try:
+                            metrics_df = pd.read_csv(metrics_file)
+                            all_episodes_metrics = metrics_df.to_dict('records')
+                            logging.info(f"Loaded {len(all_episodes_metrics)} existing metrics records")
+                        except Exception as e:
+                            logging.error(f"Error loading existing metrics: {e}")
+                    
+                    if os.path.exists(summary_file):
+                        try:
+                            summary_df = pd.read_csv(summary_file)
+                            episode_summaries = summary_df.to_dict('records')
+                            logging.info(f"Loaded {len(episode_summaries)} existing episode summaries")
+                        except Exception as e:
+                            logging.error(f"Error loading existing summaries: {e}")
+                    
+                    # Load config from the experiment
+                    config_file = os.path.join(experiment_dir, "config.json")
+                    if os.path.exists(config_file):
+                        try:
+                            with open(config_file, 'r') as f:
+                                saved_config = json.load(f)
+                                # Update the full_config with the saved configuration
+                                full_config.update(saved_config)
+                                logging.info(f"Loaded configuration from previous experiment")
+                        except Exception as e:
+                            logging.error(f"Error loading saved configuration: {e}")
+                    
+                    logging.info(f"Resuming experiment from episode {start_episode}")
+                    print(f"\nResuming experiment from episode {start_episode}...")
+                else:
+                    # User chose not to resume, remove recovery file
+                    os.remove(recovery_file)
+                    print("\nStarting new experiment...")
+        except Exception as e:
+            logging.error(f"Error reading recovery data: {e}")
+            # Proceed with a new experiment
+    
+    # Set up a new experiment if not resuming
+    if not resuming:
+        # Set up logging for this experiment
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_dir = full_config.get("output_dir", "experiment_results")
+        experiment_dir = os.path.join(output_dir, f"experiment_{timestamp}")
+        os.makedirs(experiment_dir, exist_ok=True)
     
     # Configure log file
     log_file = os.path.join(experiment_dir, "experiment.log")
@@ -2885,95 +3000,176 @@ def run_experiment(config: Dict[str, Any]) -> None:
     config_file = os.path.join(experiment_dir, "config.json")
     with open(config_file, 'w') as f:
         json.dump(full_config, f, cls=NumpyJSONEncoder, indent=2)
+      # Create all episode metrics lists if not resuming
+    if not resuming:
+        all_episodes_metrics = []
+        episode_summaries = []
     
-    # Initialize AirSim client
-    client = airsim.MultirotorClient()
-    client.confirmConnection()
-    client.enableApiControl(True)
-    client.armDisarm(True)
+    # Define a function to save recovery data
+    def save_recovery_data(ep_id):
+        recovery_data = {
+            "experiment_dir": experiment_dir,
+            "last_episode": ep_id,
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "total_episodes": full_config["num_episodes"]
+        }
+        try:
+            with open(os.path.join("experiment_results", "recovery_data.json"), 'w') as f:
+                json.dump(recovery_data, f, indent=2)
+            logging.info(f"Saved recovery data for episode {ep_id}")
+        except Exception as e:
+            logging.error(f"Failed to save recovery data: {e}")
     
-    # Initialize scanner
-    scanner = Scanner(client)
+    # Function to initialize AirSim connection with retry
+    def initialize_airsim_with_retry(max_retries=3, retry_delay=5):
+        for attempt in range(max_retries):
+            try:
+                client = airsim.MultirotorClient()
+                client.confirmConnection()
+                client.enableApiControl(True)
+                client.armDisarm(True)
+                logging.info("AirSim connection established successfully")
+                return client
+            except Exception as e:
+                logging.error(f"Failed to connect to AirSim (attempt {attempt+1}/{max_retries}): {e}")
+                if attempt < max_retries - 1:
+                    logging.info(f"Retrying in {retry_delay} seconds...")
+                    time.sleep(retry_delay)
+                else:
+                    logging.error("Maximum retry attempts reached. Please ensure AirSim is running.")
+                    raise ConnectionError("Failed to connect to AirSim after multiple attempts")
     
-    # Start the Julia server
-    julia_server = JuliaServer()
-    
-    # Precompile Julia packages (only if needed)
-    if full_config.get("precompile_julia", True):
-        julia_server.precompile_packages()
-    
-    # Start the server
-    server_port = full_config.get("zmq_port", DEFAULT_ZMQ_PORT)
-    julia_server.start_server(port=server_port)
-    
-    # Initialize ZMQ interface
-    zmq_interface = ZMQInterface(server_port=server_port)
-    
-    # Create all episode metrics lists
-    all_episodes_metrics = []
-    episode_summaries = []
-    
-    # Run episodes
-    for episode_id in range(full_config["num_episodes"]):
-        # Run episode
-        step_metrics, episode_summary = run_episode(
-            episode_id, client, zmq_interface, scanner, full_config
-        )
+    try:
+        # Initialize AirSim client with retry
+        client = initialize_airsim_with_retry()
         
-        # Track metrics
-        if step_metrics:
-            all_episodes_metrics.extend(step_metrics)
-            episode_summaries.append(episode_summary)
-            
-            # Visualize debug data if enabled and available
-            if full_config.get("debug_raycasting", False):
-                debug_file = os.path.join("debug_raycasts", f"raycast_debug_ep{episode_id}.json")
-                if os.path.exists(debug_file):
-                    # Move the debug file to the experiment directory
-                    experiment_debug_dir = os.path.join(experiment_dir, "debug_raycasts")
-                    os.makedirs(experiment_debug_dir, exist_ok=True)
-                    experiment_debug_file = os.path.join(experiment_debug_dir, f"raycast_debug_ep{episode_id}.json")
-                    try:
-                        os.rename(debug_file, experiment_debug_file)
-                    except Exception:
-                        pass
+        # Initialize scanner
+        scanner = Scanner(client)
+        
+        # Start the Julia server
+        julia_server = JuliaServer()
+        
+        # Precompile Julia packages (only if needed)
+        if full_config.get("precompile_julia", True):
+            julia_server.precompile_packages()
+        
+        # Start the server
+        server_port = full_config.get("zmq_port", DEFAULT_ZMQ_PORT)
+        julia_server.start_server(port=server_port)
+        
+        # Initialize ZMQ interface
+        zmq_interface = ZMQInterface(server_port=server_port)
+        
+        # Run episodes
+        for episode_id in range(start_episode, full_config["num_episodes"]):
+            try:
+                # Check AirSim connection before each episode
+                try:
+                    client.ping()
+                except Exception as e:
+                    logging.error(f"Lost connection to AirSim before episode {episode_id}: {e}")
+                    logging.info("Attempting to reconnect to AirSim...")
+                    client = initialize_airsim_with_retry()
+                    scanner = Scanner(client)  # Reinitialize scanner with new client
+                
+                logging.info(f"Starting episode {episode_id} of {full_config['num_episodes']}")
+                
+                # Run episode
+                step_metrics, episode_summary = run_episode(
+                    episode_id, client, zmq_interface, scanner, full_config
+                )
+                
+                # Track metrics
+                if step_metrics:
+                    all_episodes_metrics.extend(step_metrics)
+                    episode_summaries.append(episode_summary)
                     
-                    # Visualize raycasts if requested
-                    if full_config.get("visualize_raycasts", False) and episode_id % 3 == 0:
-                        visualization_duration = full_config.get("visualization_duration", 60.0)
-                        visualize_raycasts(client, experiment_debug_file, duration=visualization_duration)
+                    # Visualize debug data if enabled and available
+                    if full_config.get("debug_raycasting", False):
+                        debug_file = os.path.join("debug_raycasts", f"raycast_debug_ep{episode_id}.json")
+                        if os.path.exists(debug_file):
+                            # Move the debug file to the experiment directory
+                            experiment_debug_dir = os.path.join(experiment_dir, "debug_raycasts")
+                            os.makedirs(experiment_debug_dir, exist_ok=True)
+                            experiment_debug_file = os.path.join(experiment_debug_dir, f"raycast_debug_ep{episode_id}.json")
+                            try:
+                                os.rename(debug_file, experiment_debug_file)
+                            except Exception:
+                                pass
+                            
+                            # Visualize raycasts if requested
+                            if full_config.get("visualize_raycasts", False) and episode_id % 3 == 0:
+                                visualization_duration = full_config.get("visualization_duration", 60.0)
+                                visualize_raycasts(client, experiment_debug_file, duration=visualization_duration)
+                
+                # Export metrics after each episode (to avoid data loss in case of crash)
+                if all_episodes_metrics:
+                    metrics_file = os.path.join(experiment_dir, "metrics.csv")
+                    pd.DataFrame(all_episodes_metrics).to_csv(metrics_file, index=False)
+                    
+                    summary_file = os.path.join(experiment_dir, "episode_summaries.csv")
+                    pd.DataFrame(episode_summaries).to_csv(summary_file, index=False)
+                
+                # Save recovery data after each successful episode
+                save_recovery_data(episode_id)
+                
+            except Exception as episode_error:
+                logging.error(f"Error in episode {episode_id}: {episode_error}")
+                logging.error(traceback.format_exc())
+                
+                # Save recovery data to allow resuming from next episode
+                save_recovery_data(episode_id - 1)  # Save the last successful episode
+                
+                # Check if this is an AirSim connection issue
+                if "Connection" in str(episode_error) or "confirmConnection" in str(episode_error) or "ping" in str(episode_error):
+                    logging.error("AirSim connection issue detected - experiment will be paused")
+                    print("\nAirSim connection lost. The experiment has been paused.")
+                    print("You can restart AirSim and run the script again to resume from this point.\n")
+                    # Exit the experiment loop but allow for clean shutdown
+                    break
         
-        # Export metrics after each episode (to avoid data loss in case of crash)
+        # Shut down Julia server
+        julia_server.shutdown()
+        
+        # Final export of all metrics
         if all_episodes_metrics:
             metrics_file = os.path.join(experiment_dir, "metrics.csv")
             pd.DataFrame(all_episodes_metrics).to_csv(metrics_file, index=False)
             
             summary_file = os.path.join(experiment_dir, "episode_summaries.csv")
             pd.DataFrame(episode_summaries).to_csv(summary_file, index=False)
-    
-    # Shut down Julia server
-    julia_server.shutdown()
-    
-    # Final export of all metrics
-    if all_episodes_metrics:
-        metrics_file = os.path.join(experiment_dir, "metrics.csv")
-        pd.DataFrame(all_episodes_metrics).to_csv(metrics_file, index=False)
+            
+            # Create plots
+            try:
+                plot_metrics(metrics_file, os.path.join(experiment_dir, "metrics_plots"))
+                logging.info(f"Metrics plots saved to {os.path.join(experiment_dir, 'metrics_plots')}")
+            except Exception as e:
+                logging.error(f"Failed to create plots: {e}")
         
-        summary_file = os.path.join(experiment_dir, "episode_summaries.csv")
-        pd.DataFrame(episode_summaries).to_csv(summary_file, index=False)
-        
-        # Create plots
-        try:
-            plot_metrics(metrics_file, os.path.join(experiment_dir, "metrics_plots"))
-            logging.info(f"Metrics plots saved to {os.path.join(experiment_dir, 'metrics_plots')}")
-        except Exception as e:
-            logging.error(f"Failed to create plots: {e}")
+        # Remove recovery file if experiment completed successfully
+        recovery_file = os.path.join("experiment_results", "recovery_data.json")
+        if os.path.exists(recovery_file) and episode_id >= full_config["num_episodes"] - 1:
+            try:
+                os.remove(recovery_file)
+                logging.info("Experiment completed successfully, removed recovery data")
+            except Exception as e:
+                logging.error(f"Failed to remove recovery file: {e}")
+    
+    except Exception as e:
+        logging.error(f"Experiment error: {e}")
+        logging.error(traceback.format_exc())
+        # Save recovery data in case of crash
+        if 'episode_id' in locals():
+            save_recovery_data(episode_id - 1)
     
     logging.info(f"Experiment completed. Results saved to {experiment_dir}")
 
 def main():
     """Main entry point with experiment configuration"""
     print("\n==== Autonomous Drone Navigation Experiment with Active Inference ====")
+    
+    # Ensure recovery directory exists
+    os.makedirs("experiment_results", exist_ok=True)
     
     # Define experiment configuration (could be loaded from a file)
     config = DEFAULT_CONFIG.copy()
