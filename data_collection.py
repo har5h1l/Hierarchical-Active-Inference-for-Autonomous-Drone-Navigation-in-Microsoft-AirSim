@@ -1832,7 +1832,7 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
         logging.warning(f"Episode {episode_id}: {str(e)}")
         
         # Restore original log level if it was changed
-        if config.get("debug_raycasting", False) and episode_id % 5 == 0:
+        if config.get("debug_rayca+sting", False) and episode_id % 5 == 0:
             logging.getLogger().setLevel(original_log_level)
             
         return [], {
