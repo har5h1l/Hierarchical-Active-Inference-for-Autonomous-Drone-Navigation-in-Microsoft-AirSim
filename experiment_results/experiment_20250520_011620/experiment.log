@@ -1,0 +1,44 @@
+2025-05-20 01:16:20,859 - INFO - Using random seed: 42
+2025-05-20 01:16:20,859 - INFO - Starting experiment with configuration:
+2025-05-20 01:16:20,860 - INFO -   num_episodes: 1
+2025-05-20 01:16:20,860 - INFO -   target_distance_range: (15.0, 50.0)
+2025-05-20 01:16:20,861 - INFO -   random_seed: 42
+2025-05-20 01:16:20,861 - INFO -   max_steps_per_episode: 100
+2025-05-20 01:16:20,861 - INFO -   output_dir: experiment_results
+2025-05-20 01:16:20,862 - INFO -   stuck_timeout: 15.0
+2025-05-20 01:16:20,862 - INFO -   stuck_check_interval: 3.0
+2025-05-20 01:16:20,862 - INFO -   episode_timeout: 120
+2025-05-20 01:16:20,863 - INFO -   precompile_julia: False
+2025-05-20 01:16:20,863 - INFO -   zmq_port: 5555
+2025-05-20 01:16:20,864 - INFO -   debug_raycasting: False
+2025-05-20 01:16:20,864 - INFO -   min_ray_checks: 3
+2025-05-20 01:16:20,864 - INFO -   max_ray_checks: 7
+2025-05-20 01:16:20,864 - INFO -   visualize_raycasts: False
+2025-05-20 01:16:20,864 - INFO -   visualization_duration: 60.0
+2025-05-20 01:16:24,470 - INFO - System information collected and saved
+2025-05-20 01:16:24,477 - INFO - AirSim connection established successfully
+2025-05-20 01:16:24,599 - INFO - Starting episode 0 of 1
+2025-05-20 01:16:24,600 - INFO - === Starting Episode 0 ===
+2025-05-20 01:16:24,602 - INFO - Episode 0: Taking off...
+2025-05-20 01:16:30,107 - INFO - Target distance range for episode 0: 15.0m - 50.0m
+2025-05-20 01:16:30,196 - INFO - Found first valid target at [-8.13, -9.76, -2.0]
+2025-05-20 01:16:34,213 - INFO - Phase 2: Found 50 valid targets, focusing on refining these
+2025-05-20 01:16:36,608 - INFO - Found 77 valid targets, selecting best with 0.00m clearance
+2025-05-20 01:16:36,608 - INFO - Episode 0: Target sampling took 6.50s with 3 rays
+2025-05-20 01:16:36,608 - INFO - Episode 0: Initial distance to target: 12.71m
+2025-05-20 01:16:36,609 - INFO - Episode 0: Initial position: [0.0, 0.0, -1.67]
+2025-05-20 01:16:36,609 - INFO - Episode 0: Target position: [-8.13, -9.76, -2.0]
+2025-05-20 01:16:36,609 - INFO - Episode 0: Initial distance: 12.71m
+2025-05-20 01:16:36,615 - INFO - Episode 0: Target verified with 3 rays
+2025-05-20 01:16:42,663 - WARNING - Episode 0: Step 0 took 6.05s (unusually long)
+2025-05-20 01:16:48,853 - WARNING - Episode 0: Step 1 took 6.19s (unusually long)
+2025-05-20 01:16:48,854 - INFO - Episode 0: Target reached at step 2
+2025-05-20 01:17:01,478 - INFO - Episode 0 completed: success
+2025-05-20 01:17:01,478 - INFO -   Steps: 2, Duration: 12.24s
+2025-05-20 01:17:01,478 - INFO -   Final distance: 0.28m, Collisions: 0
+2025-05-20 01:17:01,478 - INFO -   Dynamic replanning events: 0
+2025-05-20 01:17:01,493 - INFO - Saved recovery data for episode 0
+2025-05-20 01:17:02,717 - ERROR - Error creating plots: 'inference_time_ms'
+2025-05-20 01:17:02,726 - INFO - Metrics plots saved to experiment_results\experiment_20250520_011620\metrics_plots
+2025-05-20 01:17:02,727 - INFO - Experiment completed successfully, removed recovery data
+2025-05-20 01:17:02,727 - INFO - Experiment completed. Results saved to experiment_results\experiment_20250520_011620

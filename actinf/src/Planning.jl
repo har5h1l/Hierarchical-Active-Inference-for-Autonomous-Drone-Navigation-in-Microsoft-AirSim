@@ -601,13 +601,14 @@ function calculate_efe(state::StateSpace.DroneState,
     elev_entropy = -sum(beliefs.elevation_belief .* log.(beliefs.elevation_belief .+ 1e-10))
     suit_entropy = -sum(beliefs.suitability_belief .* log.(beliefs.suitability_belief .+ 1e-10))
     dens_entropy = -sum(beliefs.density_belief .* log.(beliefs.density_belief .+ 1e-10))
-    
-    total_entropy = dist_entropy + azim_entropy + elev_entropy + suit_entropy + dens_entropy
+      total_entropy = dist_entropy + azim_entropy + elev_entropy + suit_entropy + dens_entropy
     epistemic_value = -epistemic_weight * 0.5 * total_entropy * action_mag
     
-    # Total Expected Free Energy (lower is better)
-    # No risk value component anymore - handled by early filtering based on suitability
-    return pragmatic_value + epistemic_value
+    # Calculate total EFE
+    total_efe = pragmatic_value + epistemic_value
+    
+    # Return a tuple with all components for more detailed metrics
+    return (total_efe, pragmatic_value, epistemic_value)
 end
 
 """
@@ -625,7 +626,8 @@ function select_action(state::StateSpace.DroneState, beliefs::Inference.DroneBel
                      current_position::SVector{3, Float64}, target_position::SVector{3, Float64};
                      obstacle_distance::Float64 = 10.0, obstacle_density::Float64 = 0.0, 
                      num_policies::Int = 5, obstacle_weight::Float64 = DEFAULT_OBSTACLE_WEIGHT,
-                     suitability_threshold::Float64 = 0.75)  # Add explicit parameter with strong default
+                     suitability_threshold::Float64 = 0.75,  # Add explicit parameter with strong default
+                     kwargs...)
       MIN_RADIUS = 1.0  # Increased from 0.5 to ensure minimum action length of 1 meter
     MAX_RADIUS = 3.5  # Slightly increased maximum radius for more exploration
     MIN_POLICY_LEN = 2
@@ -883,9 +885,8 @@ function select_action(state::StateSpace.DroneState, beliefs::Inference.DroneBel
         
         # Check if this is a high suitability path (clear path)
         is_high_suitability = filtered_suitabilities[i] > 0.8
-        
-        # Calculate EFE using the existing function
-        efe = calculate_efe(
+          # Calculate EFE using the existing function - now returns tuple with components
+        efe_tuple = calculate_efe(
             next_state,
             beliefs,
             action,
@@ -895,6 +896,11 @@ function select_action(state::StateSpace.DroneState, beliefs::Inference.DroneBel
             obstacle_density=obstacle_density,  # Pass obstacle density to EFE calculation
             obstacle_distance=obstacle_distance  # Pass obstacle distance to EFE calculation
         )
+        
+        # Extract components from the tuple
+        efe = efe_tuple[1]
+        efe_pragmatic = efe_tuple[2]
+        efe_epistemic = efe_tuple[3]
         
         # Apply special bonus for high suitability paths in high density environments
         # This ensures clear paths are strongly preferred when in dense obstacle areas
@@ -1017,9 +1023,19 @@ function select_action(state::StateSpace.DroneState, beliefs::Inference.DroneBel
           println("Best EFE: $(best_efe), Action: $(best_action), Suitability: $(best_suitability)")
         println("Current distance to target: $(current_to_target_dist), Next distance: $(best_distance)")
     end
-    
-    # Return the valid actions (filtered to ensure minimum movement distance)
-    return valid_actions
+      # Return the valid actions (filtered to ensure minimum movement distance)
+    # If details are requested, return them along with the actions
+    if get(kwargs, :return_details, false)
+        details = Dict(
+            "sorted_indices" => sorted_indices,
+            "filtered_suitabilities" => filtered_suitabilities,
+            "filtered_states" => filtered_states,
+            "filtered_distances" => filtered_distances
+        )
+        return valid_actions, details
+    else
+        return valid_actions
+    end
 end
 
 # New helper function to generate waypoints biased toward the target

@@ -1,0 +1,190 @@
+2025-05-20 00:53:44,211 - INFO - Using random seed: 42
+2025-05-20 00:53:44,213 - INFO - Starting experiment with configuration:
+2025-05-20 00:53:44,213 - INFO -   num_episodes: 10
+2025-05-20 00:53:44,213 - INFO -   target_distance_range: (15.0, 50.0)
+2025-05-20 00:53:44,214 - INFO -   random_seed: 42
+2025-05-20 00:53:44,214 - INFO -   max_steps_per_episode: 100
+2025-05-20 00:53:44,215 - INFO -   output_dir: experiment_results
+2025-05-20 00:53:44,215 - INFO -   stuck_timeout: 15.0
+2025-05-20 00:53:44,215 - INFO -   stuck_check_interval: 3.0
+2025-05-20 00:53:44,216 - INFO -   episode_timeout: 120
+2025-05-20 00:53:44,216 - INFO -   precompile_julia: True
+2025-05-20 00:53:44,216 - INFO -   zmq_port: 5555
+2025-05-20 00:53:44,217 - INFO -   debug_raycasting: False
+2025-05-20 00:53:44,217 - INFO -   min_ray_checks: 3
+2025-05-20 00:53:44,217 - INFO -   max_ray_checks: 7
+2025-05-20 00:53:44,217 - INFO -   visualize_raycasts: False
+2025-05-20 00:53:44,218 - INFO -   visualization_duration: 60.0
+2025-05-20 00:53:47,928 - INFO - System information collected and saved
+2025-05-20 00:53:47,932 - INFO - AirSim connection established successfully
+2025-05-20 00:54:21,111 - INFO - Starting episode 0 of 10
+2025-05-20 00:54:21,111 - INFO - === Starting Episode 0 ===
+2025-05-20 00:54:21,114 - INFO - Episode 0: Taking off...
+2025-05-20 00:54:26,604 - INFO - Target distance range for episode 0: 15.0m - 50.0m
+2025-05-20 00:54:26,687 - INFO - Found first valid target at [-8.13, -9.76, -2.0]
+2025-05-20 00:54:30,624 - INFO - Phase 2: Found 50 valid targets, focusing on refining these
+2025-05-20 00:54:32,672 - INFO - Found 77 valid targets, selecting best with 0.00m clearance
+2025-05-20 00:54:32,672 - INFO - Episode 0: Target sampling took 6.07s with 3 rays
+2025-05-20 00:54:32,672 - INFO - Episode 0: Initial distance to target: 12.71m
+2025-05-20 00:54:32,673 - INFO - Episode 0: Initial position: [0.0, 0.0, -1.67]
+2025-05-20 00:54:32,673 - INFO - Episode 0: Target position: [-8.13, -9.76, -2.0]
+2025-05-20 00:54:32,674 - INFO - Episode 0: Initial distance: 12.71m
+2025-05-20 00:54:32,677 - INFO - Episode 0: Target verified with 3 rays
+2025-05-20 00:54:32,702 - ERROR - Error in episode 0: cannot access local variable 'previous_step_waypoint' where it is not associated with a value
+2025-05-20 00:54:32,707 - ERROR - Traceback (most recent call last):
+  File "c:\Users\harshil_airsim_1\Desktop\AirSim\Hierarchical-Active-Inference-for-Autonomous-Drone-Navigation-in-Microsoft-AirSim\data_collection.py", line 3276, in run_experiment
+    step_metrics, episode_summary = run_episode(
+                                    ^^^^^^^^^^^^
+  File "c:\Users\harshil_airsim_1\Desktop\AirSim\Hierarchical-Active-Inference-for-Autonomous-Drone-Navigation-in-Microsoft-AirSim\data_collection.py", line 2869, in run_episode
+    "control_error": np.linalg.norm(np.array(next_waypoint) - np.array(drone_pos)) if previous_step_waypoint is not None else 0,
+                                                                                      ^^^^^^^^^^^^^^^^^^^^^^
+UnboundLocalError: cannot access local variable 'previous_step_waypoint' where it is not associated with a value
+
+2025-05-20 00:54:32,708 - INFO - Saved recovery data for episode -1
+2025-05-20 00:54:32,709 - INFO - Starting episode 1 of 10
+2025-05-20 00:54:32,710 - INFO - === Starting Episode 1 ===
+2025-05-20 00:54:32,713 - INFO - Episode 1: Taking off...
+2025-05-20 00:54:38,189 - INFO - Target distance range for episode 1: 15.5m - 38.5m
+2025-05-20 00:54:38,277 - INFO - Found first valid target at [15.69, 3.88, -2.0]
+2025-05-20 00:54:42,188 - INFO - Phase 2: Found 50 valid targets, focusing on refining these
+2025-05-20 00:54:44,225 - INFO - Found 77 valid targets, selecting best with 0.00m clearance
+2025-05-20 00:54:44,225 - INFO - Episode 1: Target sampling took 6.04s with 3 rays
+2025-05-20 00:54:44,225 - INFO - Episode 1: Initial distance to target: 16.17m
+2025-05-20 00:54:44,226 - INFO - Episode 1: Initial position: [0.0, 0.0, -1.67]
+2025-05-20 00:54:44,226 - INFO - Episode 1: Target position: [15.69, 3.88, -2.0]
+2025-05-20 00:54:44,226 - INFO - Episode 1: Initial distance: 16.17m
+2025-05-20 00:54:44,230 - INFO - Episode 1: Target verified with 3 rays
+2025-05-20 00:54:44,257 - ERROR - Error in episode 1: cannot access local variable 'previous_step_waypoint' where it is not associated with a value
+2025-05-20 00:54:44,260 - ERROR - Traceback (most recent call last):
+  File "c:\Users\harshil_airsim_1\Desktop\AirSim\Hierarchical-Active-Inference-for-Autonomous-Drone-Navigation-in-Microsoft-AirSim\data_collection.py", line 3276, in run_experiment
+    step_metrics, episode_summary = run_episode(
+                                    ^^^^^^^^^^^^
+  File "c:\Users\harshil_airsim_1\Desktop\AirSim\Hierarchical-Active-Inference-for-Autonomous-Drone-Navigation-in-Microsoft-AirSim\data_collection.py", line 2869, in run_episode
+    "control_error": np.linalg.norm(np.array(next_waypoint) - np.array(drone_pos)) if previous_step_waypoint is not None else 0,
+                                                                                      ^^^^^^^^^^^^^^^^^^^^^^
+UnboundLocalError: cannot access local variable 'previous_step_waypoint' where it is not associated with a value
+
+2025-05-20 00:54:44,261 - INFO - Saved recovery data for episode 0
+2025-05-20 00:54:44,262 - INFO - Starting episode 2 of 10
+2025-05-20 00:54:44,262 - INFO - === Starting Episode 2 ===
+2025-05-20 00:54:44,265 - INFO - Episode 2: Taking off...
+2025-05-20 00:54:49,720 - INFO - Target distance range for episode 2: 16.0m - 42.0m
+2025-05-20 00:54:49,810 - INFO - Found first valid target at [-25.67, 16.62, -2.0]
+2025-05-20 00:54:53,692 - INFO - Phase 2: Found 50 valid targets, focusing on refining these
+2025-05-20 00:54:55,888 - INFO - Found 77 valid targets, selecting best with 0.00m clearance
+2025-05-20 00:54:55,888 - INFO - Episode 2: Target sampling took 6.17s with 3 rays
+2025-05-20 00:54:55,888 - INFO - Episode 2: Initial distance to target: 30.58m
+2025-05-20 00:54:55,889 - INFO - Episode 2: Initial position: [0.0, 0.0, -1.67]
+2025-05-20 00:54:55,889 - INFO - Episode 2: Target position: [-25.67, 16.62, -2.0]
+2025-05-20 00:54:55,889 - INFO - Episode 2: Initial distance: 30.58m
+2025-05-20 00:54:55,893 - INFO - Episode 2: Target verified with 3 rays
+2025-05-20 00:54:55,923 - ERROR - Error in episode 2: cannot access local variable 'previous_step_waypoint' where it is not associated with a value
+2025-05-20 00:54:55,926 - ERROR - Traceback (most recent call last):
+  File "c:\Users\harshil_airsim_1\Desktop\AirSim\Hierarchical-Active-Inference-for-Autonomous-Drone-Navigation-in-Microsoft-AirSim\data_collection.py", line 3276, in run_experiment
+    step_metrics, episode_summary = run_episode(
+                                    ^^^^^^^^^^^^
+  File "c:\Users\harshil_airsim_1\Desktop\AirSim\Hierarchical-Active-Inference-for-Autonomous-Drone-Navigation-in-Microsoft-AirSim\data_collection.py", line 2869, in run_episode
+    "control_error": np.linalg.norm(np.array(next_waypoint) - np.array(drone_pos)) if previous_step_waypoint is not None else 0,
+                                                                                      ^^^^^^^^^^^^^^^^^^^^^^
+UnboundLocalError: cannot access local variable 'previous_step_waypoint' where it is not associated with a value
+
+2025-05-20 00:54:55,927 - INFO - Saved recovery data for episode 1
+2025-05-20 00:54:55,927 - INFO - Starting episode 3 of 10
+2025-05-20 00:54:55,928 - INFO - === Starting Episode 3 ===
+2025-05-20 00:54:55,929 - INFO - Episode 3: Taking off...
+2025-05-20 00:55:01,558 - INFO - Target distance range for episode 3: 16.5m - 45.5m
+2025-05-20 00:55:01,644 - INFO - Found first valid target at [-2.0, 14.43, -2.0]
+2025-05-20 00:55:05,557 - INFO - Phase 2: Found 50 valid targets, focusing on refining these
+2025-05-20 00:55:07,722 - INFO - Found 77 valid targets, selecting best with 0.00m clearance
+2025-05-20 00:55:07,722 - INFO - Episode 3: Target sampling took 6.17s with 4 rays
+2025-05-20 00:55:07,722 - INFO - Episode 3: Initial distance to target: 14.57m
+2025-05-20 00:55:07,723 - INFO - Episode 3: Initial position: [0.0, 0.0, -1.67]
+2025-05-20 00:55:07,723 - INFO - Episode 3: Target position: [-2.0, 14.43, -2.0]
+2025-05-20 00:55:07,723 - INFO - Episode 3: Initial distance: 14.57m
+2025-05-20 00:55:07,728 - INFO - Episode 3: Target verified with 3 rays
+2025-05-20 00:55:07,758 - ERROR - Error in episode 3: cannot access local variable 'previous_step_waypoint' where it is not associated with a value
+2025-05-20 00:55:07,761 - ERROR - Traceback (most recent call last):
+  File "c:\Users\harshil_airsim_1\Desktop\AirSim\Hierarchical-Active-Inference-for-Autonomous-Drone-Navigation-in-Microsoft-AirSim\data_collection.py", line 3276, in run_experiment
+    step_metrics, episode_summary = run_episode(
+                                    ^^^^^^^^^^^^
+  File "c:\Users\harshil_airsim_1\Desktop\AirSim\Hierarchical-Active-Inference-for-Autonomous-Drone-Navigation-in-Microsoft-AirSim\data_collection.py", line 2869, in run_episode
+    "control_error": np.linalg.norm(np.array(next_waypoint) - np.array(drone_pos)) if previous_step_waypoint is not None else 0,
+                                                                                      ^^^^^^^^^^^^^^^^^^^^^^
+UnboundLocalError: cannot access local variable 'previous_step_waypoint' where it is not associated with a value
+
+2025-05-20 00:55:07,762 - INFO - Saved recovery data for episode 2
+2025-05-20 00:55:07,764 - INFO - Starting episode 4 of 10
+2025-05-20 00:55:07,765 - INFO - === Starting Episode 4 ===
+2025-05-20 00:55:07,768 - INFO - Episode 4: Taking off...
+2025-05-20 00:55:13,247 - INFO - Target distance range for episode 4: 17.0m - 49.0m
+2025-05-20 00:55:13,332 - INFO - Found first valid target at [19.95, -16.87, -2.0]
+2025-05-20 00:55:17,090 - INFO - Phase 2: Found 50 valid targets, focusing on refining these
+2025-05-20 00:55:19,080 - INFO - Found 77 valid targets, selecting best with 0.00m clearance
+2025-05-20 00:55:19,080 - INFO - Episode 4: Target sampling took 5.83s with 4 rays
+2025-05-20 00:55:19,080 - INFO - Episode 4: Initial distance to target: 26.13m
+2025-05-20 00:55:19,081 - INFO - Episode 4: Initial position: [0.0, 0.0, -1.67]
+2025-05-20 00:55:19,081 - INFO - Episode 4: Target position: [19.95, -16.87, -2.0]
+2025-05-20 00:55:19,081 - INFO - Episode 4: Initial distance: 26.13m
+2025-05-20 00:55:19,086 - INFO - Episode 4: Target verified with 3 rays
+2025-05-20 00:55:19,114 - ERROR - Error in episode 4: cannot access local variable 'previous_step_waypoint' where it is not associated with a value
+2025-05-20 00:55:19,116 - ERROR - Traceback (most recent call last):
+  File "c:\Users\harshil_airsim_1\Desktop\AirSim\Hierarchical-Active-Inference-for-Autonomous-Drone-Navigation-in-Microsoft-AirSim\data_collection.py", line 3276, in run_experiment
+    step_metrics, episode_summary = run_episode(
+                                    ^^^^^^^^^^^^
+  File "c:\Users\harshil_airsim_1\Desktop\AirSim\Hierarchical-Active-Inference-for-Autonomous-Drone-Navigation-in-Microsoft-AirSim\data_collection.py", line 2869, in run_episode
+    "control_error": np.linalg.norm(np.array(next_waypoint) - np.array(drone_pos)) if previous_step_waypoint is not None else 0,
+                                                                                      ^^^^^^^^^^^^^^^^^^^^^^
+UnboundLocalError: cannot access local variable 'previous_step_waypoint' where it is not associated with a value
+
+2025-05-20 00:55:19,117 - INFO - Saved recovery data for episode 3
+2025-05-20 00:55:19,118 - INFO - Starting episode 5 of 10
+2025-05-20 00:55:19,118 - INFO - === Starting Episode 5 ===
+2025-05-20 00:55:19,122 - INFO - Episode 5: Taking off...
+2025-05-20 00:55:24,571 - INFO - Target distance range for episode 5: 17.5m - 50.0m
+2025-05-20 00:55:24,636 - INFO - Found first valid target at [-14.32, 19.24, -2.0]
+2025-05-20 00:55:28,494 - INFO - Phase 2: Found 50 valid targets, focusing on refining these
+2025-05-20 00:55:30,599 - INFO - Found 77 valid targets, selecting best with 0.00m clearance
+2025-05-20 00:55:30,599 - INFO - Episode 5: Target sampling took 6.03s with 4 rays
+2025-05-20 00:55:30,599 - INFO - Episode 5: Initial distance to target: 23.99m
+2025-05-20 00:55:30,600 - INFO - Episode 5: Initial position: [0.0, 0.0, -1.66]
+2025-05-20 00:55:30,600 - INFO - Episode 5: Target position: [-14.32, 19.24, -2.0]
+2025-05-20 00:55:30,600 - INFO - Episode 5: Initial distance: 23.99m
+2025-05-20 00:55:30,603 - INFO - Episode 5: Target verified with 3 rays
+2025-05-20 00:55:30,632 - ERROR - Error in episode 5: cannot access local variable 'previous_step_waypoint' where it is not associated with a value
+2025-05-20 00:55:30,635 - ERROR - Traceback (most recent call last):
+  File "c:\Users\harshil_airsim_1\Desktop\AirSim\Hierarchical-Active-Inference-for-Autonomous-Drone-Navigation-in-Microsoft-AirSim\data_collection.py", line 3276, in run_experiment
+    step_metrics, episode_summary = run_episode(
+                                    ^^^^^^^^^^^^
+  File "c:\Users\harshil_airsim_1\Desktop\AirSim\Hierarchical-Active-Inference-for-Autonomous-Drone-Navigation-in-Microsoft-AirSim\data_collection.py", line 2869, in run_episode
+    "control_error": np.linalg.norm(np.array(next_waypoint) - np.array(drone_pos)) if previous_step_waypoint is not None else 0,
+                                                                                      ^^^^^^^^^^^^^^^^^^^^^^
+UnboundLocalError: cannot access local variable 'previous_step_waypoint' where it is not associated with a value
+
+2025-05-20 00:55:30,636 - INFO - Saved recovery data for episode 4
+2025-05-20 00:55:30,637 - INFO - Starting episode 6 of 10
+2025-05-20 00:55:30,637 - INFO - === Starting Episode 6 ===
+2025-05-20 00:55:30,640 - INFO - Episode 6: Taking off...
+2025-05-20 00:55:36,124 - INFO - Target distance range for episode 6: 18.0m - 50.0m
+2025-05-20 00:55:36,210 - INFO - Found first valid target at [-22.62, -7.06, -2.0]
+2025-05-20 00:55:40,030 - INFO - Phase 2: Found 50 valid targets, focusing on refining these
+2025-05-20 00:55:41,904 - INFO - Found 77 valid targets, selecting best with 0.00m clearance
+2025-05-20 00:55:41,904 - INFO - Episode 6: Target sampling took 5.78s with 5 rays
+2025-05-20 00:55:41,904 - INFO - Episode 6: Initial distance to target: 23.70m
+2025-05-20 00:55:41,905 - INFO - Episode 6: Initial position: [0.0, 0.0, -1.67]
+2025-05-20 00:55:41,905 - INFO - Episode 6: Target position: [-22.62, -7.06, -2.0]
+2025-05-20 00:55:41,905 - INFO - Episode 6: Initial distance: 23.70m
+2025-05-20 00:55:41,908 - INFO - Episode 6: Target verified with 3 rays
+2025-05-20 00:55:41,932 - ERROR - Error in episode 6: cannot access local variable 'previous_step_waypoint' where it is not associated with a value
+2025-05-20 00:55:41,938 - ERROR - Traceback (most recent call last):
+  File "c:\Users\harshil_airsim_1\Desktop\AirSim\Hierarchical-Active-Inference-for-Autonomous-Drone-Navigation-in-Microsoft-AirSim\data_collection.py", line 3276, in run_experiment
+    step_metrics, episode_summary = run_episode(
+                                    ^^^^^^^^^^^^
+  File "c:\Users\harshil_airsim_1\Desktop\AirSim\Hierarchical-Active-Inference-for-Autonomous-Drone-Navigation-in-Microsoft-AirSim\data_collection.py", line 2869, in run_episode
+    "control_error": np.linalg.norm(np.array(next_waypoint) - np.array(drone_pos)) if previous_step_waypoint is not None else 0,
+                                                                                      ^^^^^^^^^^^^^^^^^^^^^^
+UnboundLocalError: cannot access local variable 'previous_step_waypoint' where it is not associated with a value
+
+2025-05-20 00:55:41,940 - INFO - Saved recovery data for episode 5
+2025-05-20 00:55:41,942 - INFO - Starting episode 7 of 10
+2025-05-20 00:55:41,945 - INFO - === Starting Episode 7 ===
+2025-05-20 00:55:41,947 - INFO - Episode 7: Taking off...

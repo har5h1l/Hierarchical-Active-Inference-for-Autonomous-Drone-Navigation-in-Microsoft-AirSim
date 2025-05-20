@@ -40,6 +40,124 @@ class NumpyJSONEncoder(json.JSONEncoder):
             return obj.item()
         return super(NumpyJSONEncoder, self).default(obj)
 
+def collect_system_info() -> Dict[str, Any]:
+    """Collect system and device information for experiment metadata
+    
+    Returns:
+        Dict containing system information including OS, hardware, and software details
+    """
+    system_info = {
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "os": {
+            "name": platform.system(),
+            "version": platform.version(),
+            "platform": platform.platform(),
+            "release": platform.release(),
+            "architecture": platform.machine()
+        }
+    }
+    
+    # Python information
+    system_info["python"] = {
+        "version": platform.python_version(),
+        "implementation": platform.python_implementation(),
+        "compiler": platform.python_compiler()
+    }
+    
+    # Julia information
+    try:
+        julia_path = "julia"  # Default command assuming Julia is in PATH
+        julia_version_cmd = subprocess.run([julia_path, "--version"], 
+                                          capture_output=True, text=True, timeout=5)
+        if julia_version_cmd.returncode == 0:
+            system_info["julia"] = {
+                "version": julia_version_cmd.stdout.strip(),
+                "path": julia_path
+            }
+            
+            # Try to get package versions
+            get_pkg_versions_cmd = [
+                julia_path, 
+                "-e", 
+                "using Pkg; Pkg.status()"
+            ]
+            pkg_info = subprocess.run(get_pkg_versions_cmd, capture_output=True, text=True, timeout=10)
+            if pkg_info.returncode == 0:
+                system_info["julia"]["packages"] = pkg_info.stdout.strip()
+    except Exception as e:
+        system_info["julia"] = {"error": str(e)}
+    
+    # CPU information
+    try:
+        import psutil
+        cpu_info = {
+            "physical_cores": psutil.cpu_count(logical=False),
+            "total_cores": psutil.cpu_count(logical=True),
+            "usage_percent": psutil.cpu_percent(interval=0.1)
+        }
+        system_info["cpu"] = cpu_info
+    except ImportError:
+        # Fallback CPU info without psutil
+        system_info["cpu"] = {
+            "processor": platform.processor(),
+        }
+    
+    # Memory information
+    try:
+        import psutil
+        mem = psutil.virtual_memory()
+        system_info["memory"] = {
+            "total_gb": round(mem.total / (1024**3), 2),
+            "available_gb": round(mem.available / (1024**3), 2),
+            "used_percent": mem.percent
+        }
+    except ImportError:
+        system_info["memory"] = {"note": "psutil not available for detailed memory info"}
+    
+    # GPU information
+    try:
+        import GPUtil
+        gpus = GPUtil.getGPUs()
+        gpu_info = []
+        
+        for gpu in gpus:
+            gpu_info.append({
+                "id": gpu.id,
+                "name": gpu.name,
+                "memory_total": gpu.memoryTotal,
+                "memory_used": gpu.memoryUsed,
+                "load": gpu.load
+            })
+            
+        system_info["gpu"] = gpu_info if gpu_info else {"note": "No GPU detected"}
+    except ImportError:
+        # Try with subprocess for NVIDIA GPUs
+        try:
+            nvidia_smi = subprocess.run(["nvidia-smi", "--query-gpu=name,driver_version,memory.total,memory.used", "--format=csv"],
+                                       capture_output=True, text=True, timeout=5)
+            if nvidia_smi.returncode == 0:
+                system_info["gpu"] = {"nvidia_smi_output": nvidia_smi.stdout.strip()}
+            else:
+                system_info["gpu"] = {"note": "No GPU information available"}
+        except:
+            system_info["gpu"] = {"note": "Could not detect GPU information"}
+    
+    # AirSim version - check if we can get it
+    try:
+        airsim_version = airsim.__version__ if hasattr(airsim, "__version__") else "Unknown"
+        system_info["airsim"] = {"version": airsim_version}
+    except:
+        system_info["airsim"] = {"version": "Unknown"}
+    
+    # Additional library versions
+    system_info["libraries"] = {
+        "numpy": np.__version__,
+        "pandas": pd.__version__,
+        "zmq": zmq.pyzmq_version()
+    }
+    
+    return system_info
+
 # Constants and hyperparameters
 TARGET_LOCATION = [-20.0, -20.0, -30.0]  # [x, y, z] in NED coordinates
 MARGIN = 1.5  # Safety margin for waypoint generation (meters)
@@ -1866,15 +1984,33 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
     replanning_count = 0
     dynamic_replanning_count = 0  # Track dynamic replanning events specifically
     start_time = time.time()
-    trajectory = [drone_pos]
-      # Initialize stuck detection variables
+    trajectory = [drone_pos]    # Initialize stuck detection variables
     last_significant_movement_time = start_time
     last_position = np.array(drone_pos)
     stuck_timeout = config.get("stuck_timeout", 15.0)  # Time in seconds to consider the drone stuck
     min_movement_threshold = 0.5  # Minimum movement in meters to consider significant
     stuck_check_interval = config.get("stuck_check_interval", 3.0)  # Only check for stuck condition every X seconds
     last_stuck_check_time = start_time
-    time_since_movement = 0.0  # Initialize time_since_movement to avoid UnboundLocalError
+    time_since_movement = 0.0  # Initialize time_since_movement to avoid UnboundLocalError    # Initialize tracking variables for step metrics
+    previous_distance_to_target = initial_distance_to_target  # Initialize distance tracker
+    previous_step_waypoint = None  # Initialize waypoint tracker
+    previous_vfe = 0.0  # Initialize previous VFE for delta calculation
+    last_replanning_reason = "none"  # Track the reason for the last replanning event
+    
+    # Initialize collision tracking
+    collision_info = client.simGetCollisionInfo()  # Get initial collision info
+      # Initialize observation variable with default values to prevent UnboundLocalError
+    observation = {
+        "direct_path_clear": False,
+        "direct_path_suitability": 0.0
+    }
+    
+    # Initialize environment state variables
+    high_density_area = False
+    near_goal = False
+    closest_obstacle_dist = float('inf')
+    obstacle_positions = []
+    obstacle_distances = []
     
     # Initialize oscillation detection variables
     position_history = []  # List to store previous positions
@@ -2426,15 +2562,18 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
                 min_dist = min(obstacle_distances) if obstacle_distances else "N/A"
                 logging.debug(f"Episode {episode_id}: Closest obstacle at {min_dist}m")
                 logging.debug(f"Episode {episode_id}: Planning with exploration_factor={exploration_factor:.2f}, obstacle_priority={obstacle_priority:.2f}")
-        
-        # Main planning function - will be used for initial planning and dynamic replanning
+          # Main planning function - will be used for initial planning and dynamic replanning
         def get_next_waypoint(needs_replanning=False):
-            nonlocal replanning_count, dynamic_replanning_count
+            nonlocal replanning_count, dynamic_replanning_count, last_replanning_reason
             
             if needs_replanning:
+                reason = "obstacle_detected"
                 logging.info(f"Episode {episode_id}: Triggering dynamic replanning due to detected obstacle")
                 replanning_count += 1
                 dynamic_replanning_count += 1
+                last_replanning_reason = reason
+                # Pass the replanning reason to the observation
+                observation["replanning_reason"] = reason
             
             # Create observation for active inference with adaptive parameters
             observation = {
@@ -2572,8 +2711,7 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
             inference_start = time.time()
             next_waypoint, policy = zmq_interface.send_observation_and_receive_action(observation)
             inference_time_ms = (time.time() - inference_start) * 1000  # Convert to ms
-            
-            # Check if planning succeeded
+              # Check if planning succeeded
             if next_waypoint is None:
                 logging.error(f"Episode {episode_id}: Failed to get valid waypoint at step {step}")
                 retry_count = 0
@@ -2581,7 +2719,10 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
                 while next_waypoint is None and retry_count < 3:
                     retry_count += 1
                     replanning_count += 1
+                    last_replanning_reason = "planning_failure"
                     logging.info(f"Episode {episode_id}: Replanning attempt {retry_count}")
+                    # Pass the replanning reason to the observation
+                    observation["replanning_reason"] = "planning_failure"
                     next_waypoint, policy = zmq_interface.send_observation_and_receive_action(observation)
                 
                 if next_waypoint is None:
@@ -2718,49 +2859,101 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
                     
                     # Update action magnitude after adjustment
                     action_magnitude = step_size
-        
-        # Extract additional metrics from policy if available
+          # Extract additional metrics from policy if available
         # These would need to be included in the Julia server response
         vfe = policy[0].get("vfe", 0.0) if policy and len(policy) > 0 else 0.0
         efe = policy[0].get("efe", 0.0) if policy and len(policy) > 0 else 0.0
         suitability = policy[0].get("suitability", 0.0) if policy and len(policy) > 0 else 0.0
         
+        # Extract advanced inference metrics
+        efe_pragmatic = policy[0].get("efe_pragmatic", 0.0) if policy and len(policy) > 0 else 0.0
+        efe_epistemic = policy[0].get("efe_epistemic", 0.0) if policy and len(policy) > 0 else 0.0
+        efe_vs_vfe_gap = policy[0].get("efe_vs_vfe_gap", 0.0) if policy and len(policy) > 0 else 0.0
+        suitability_std = policy[0].get("suitability_std", 0.0) if policy and len(policy) > 0 else 0.0
+        action_heading_angle_rad = policy[0].get("action_heading_angle_rad", 0.0) if policy and len(policy) > 0 else 0.0
+        action_heading_angle_deg = policy[0].get("action_heading_angle_deg", 0.0) if policy and len(policy) > 0 else 0.0
+        replanning_triggered_reason = policy[0].get("replanning_triggered_reason", "none") if policy and len(policy) > 0 else "none"
+        
+        # Calculate delta_vfe (change in VFE from previous step)
+        delta_vfe = vfe - previous_vfe if step > 1 else 0.0
+        previous_vfe = vfe  # Store for next step
+        
         # Record step metrics
         step_data = {
+            # Basic episode information
             "episode_id": episode_id,
             "step": step,
+            "timestamp": time.time(),
+              # Distance metrics
             "distance_to_target": distance_to_target,
             "normalized_distance": distance_to_target / initial_distance_to_target,
+            "distance_improvement": previous_distance_to_target - distance_to_target,
+            
+            # Drone position and waypoint information
             "position_x": drone_pos[0],
             "position_y": drone_pos[1],
             "position_z": drone_pos[2],
             "waypoint_x": next_waypoint[0],
             "waypoint_y": next_waypoint[1],
             "waypoint_z": next_waypoint[2],
+            
+            # Control metrics
             "action_magnitude": action_magnitude,
             "policy_length": len(policy) if policy else 0,
+            "control_error": np.linalg.norm(np.array(next_waypoint) - np.array(drone_pos)) if previous_step_waypoint is not None else 0,
+            "velocity_x": drone_state.linear_velocity.x_val,
+            "velocity_y": drone_state.linear_velocity.y_val,
+            "velocity_z": drone_state.linear_velocity.z_val,
+            "speed": np.linalg.norm([drone_state.linear_velocity.x_val, 
+                                   drone_state.linear_velocity.y_val,
+                                   drone_state.linear_velocity.z_val]),
+              # Active inference metrics (internal model)
             "vfe": vfe,
             "efe": efe,
+            "delta_vfe": delta_vfe,
+            "efe_vs_vfe_gap": efe_vs_vfe_gap,
+            "efe_pragmatic": efe_pragmatic,
+            "efe_epistemic": efe_epistemic,
             "suitability": suitability,
+            "suitability_std": suitability_std,
+            "precision_factor": policy[0].get("precision_factor", 1.0) if policy and len(policy) > 0 else 1.0,
+            "entropy": policy[0].get("entropy", 0.0) if policy and len(policy) > 0 else 0.0,
+            "model_confidence": policy[0].get("confidence", 0.0) if policy and len(policy) > 0 else 0.0,
+            "predicted_efe_improvement": policy[0].get("efe_improvement", 0.0) if policy and len(policy) > 0 else 0.0,
+            "action_heading_angle_rad": action_heading_angle_rad,
+            "action_heading_angle_deg": action_heading_angle_deg,
+              # Planning metrics            "waypoint_options_count": policy[0].get("waypoint_options", 0) if policy and len(policy) > 0 else 0,
+            "planning_iterations": policy[0].get("iterations", 0) if policy and len(policy) > 0 else 0,
+            "planning_time_ms": inference_time_ms,
+            "replanning_occurred": replanning_count > 0,
+            "dynamic_replanning": dynamic_replanning_count > 0,
+            "replanning_triggered_reason": last_replanning_reason,
+            "direct_path_clear": observation.get("direct_path_clear", False),
+            "direct_path_suitability": observation.get("direct_path_suitability", 0.0),
+            
+            # Environment state metrics
             "collision": collision_info.has_collided,
             "obstacles_count": len(obstacle_positions),
             "closest_obstacle": closest_obstacle_dist if obstacle_distances else float('inf'),
+            "obstacle_density": len(obstacle_positions) / DENSITY_RADIUS if len(obstacle_positions) > 0 else 0.0,
             "high_density_area": high_density_area,
             "near_goal": near_goal,
-            "inference_time_ms": inference_time_ms,
-            "replanning_occurred": replanning_count > 0,
-            "dynamic_replanning": dynamic_replanning_count > 0,
             "time_since_movement": time_since_movement
         }
+        
+        # Store the current distance for next iteration
+        previous_distance_to_target = distance_to_target
+        # Store current waypoint for next iteration
+        previous_step_waypoint = next_waypoint
         step_metrics.append(step_data)
         
         # Move drone to waypoint with continuous obstacle monitoring
         # Our enhanced move_to_waypoint function now returns obstacle information
         obstacle_detected, obstacle_pos, obstacle_dist = move_to_waypoint(client, drone_pos, next_waypoint, velocity=2)
-        
-        # If obstacle detected during movement, trigger dynamic replanning
+          # If obstacle detected during movement, trigger dynamic replanning
         if obstacle_detected:
             logging.info(f"Episode {episode_id}: Obstacle detected during movement, triggering immediate replanning")
+            last_replanning_reason = "mid_movement_obstacle"
             
             # Update drone position after obstacle detection
             drone_state = client.getMultirotorState().kinematics_estimated
@@ -2858,23 +3051,59 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
     except Exception as e:
         logging.error(f"Error attempting to land drone: {e}")
         # Continue with metrics even if landing fails
-    
-    # Compile episode summary
+      # Compile episode summary
     episode_summary = {
+        # Basic episode metrics
         "episode_id": episode_id,
         "status": status,
         "steps_taken": len(step_metrics),
         "target_reached": status == "success",
+        "goal_status": "success" if status == "success" else 
+                      "partial" if final_distance < initial_distance_to_target/2 else 
+                      "failed",
+        
+        # Distance metrics
         "final_distance": final_distance,
         "initial_distance": initial_distance_to_target,
         "distance_improvement": initial_distance_to_target - final_distance,
         "normalized_improvement": (initial_distance_to_target - final_distance) / initial_distance_to_target,
+        "distance_improvement_percentage": ((initial_distance_to_target - final_distance) / initial_distance_to_target) * 100.0,
+        "efficiency_metric": ((initial_distance_to_target - final_distance) / initial_distance_to_target) / len(step_metrics) if step_metrics else 0,
+        
+        # Path metrics
+        "path_length": sum([m["action_magnitude"] for m in step_metrics]) if step_metrics else 0,
+        "path_efficiency": initial_distance_to_target / sum([m["action_magnitude"] for m in step_metrics]) if step_metrics and sum([m["action_magnitude"] for m in step_metrics]) > 0 else 0,
+        "avg_velocity": np.mean([m["speed"] for m in step_metrics]) if step_metrics else 0,
+        "max_velocity": max([m["speed"] for m in step_metrics]) if step_metrics else 0,
+        
+        # Active inference metrics
+        "avg_vfe": np.mean([m["vfe"] for m in step_metrics]) if step_metrics else 0,
+        "avg_efe": np.mean([m["efe"] for m in step_metrics]) if step_metrics else 0,
+        "avg_suitability": np.mean([m["suitability"] for m in step_metrics]) if step_metrics else 0,
+        "min_suitability": min([m["suitability"] for m in step_metrics]) if step_metrics else 0,
+        "avg_model_confidence": np.mean([m.get("model_confidence", 0) for m in step_metrics]) if step_metrics else 0,
+        
+        # Collision and obstacle metrics
         "collisions": collisions,
-        "replanning_count": replanning_count,        "dynamic_replanning_count": dynamic_replanning_count,
+        "collisions_per_meter": collisions / sum([m["action_magnitude"] for m in step_metrics]) if step_metrics and sum([m["action_magnitude"] for m in step_metrics]) > 0 else 0,
+        "max_obstacle_count": max([m["obstacles_count"] for m in step_metrics]) if step_metrics else 0,
+        "avg_obstacle_count": np.mean([m["obstacles_count"] for m in step_metrics]) if step_metrics else 0,
+        "min_obstacle_distance": min([m["closest_obstacle"] for m in step_metrics]) if step_metrics else float('inf'),
+        
+        # Planning metrics
+        "replanning_count": replanning_count,
+        "dynamic_replanning_count": dynamic_replanning_count,
         "replanning_percentage": (replanning_count / len(step_metrics) * 100) if step_metrics else 0,
-        "dynamic_replanning_percentage": (dynamic_replanning_count / len(step_metrics) * 100) if step_metrics else 0,        "duration_seconds": episode_duration,
+        "dynamic_replanning_percentage": (dynamic_replanning_count / len(step_metrics) * 100) if step_metrics else 0,
+        "avg_planning_time_ms": np.mean([m["planning_time_ms"] for m in step_metrics]) if step_metrics else 0,
+        "max_planning_time_ms": max([m["planning_time_ms"] for m in step_metrics]) if step_metrics else 0,
+        
+        # Time metrics
+        "duration_seconds": episode_duration,
         "avg_step_time": episode_duration / len(step_metrics) if step_metrics else 0,
-        "avg_inference_time_ms": np.mean([m["inference_time_ms"] for m in step_metrics]) if step_metrics else 0,
+        "timestamp_completed": time.time(),
+        
+        # Error states
         "stuck_detected": status == "stuck",
         "oscillation_detected": status == "oscillation",
         "airsim_crash": status == "airsim_crash"
@@ -2995,12 +3224,20 @@ def run_experiment(config: Dict[str, Any]) -> None:
     logging.info(f"Starting experiment with configuration:")
     for key, value in full_config.items():
         logging.info(f"  {key}: {value}")
-    
-    # Save configuration
+      # Save configuration
     config_file = os.path.join(experiment_dir, "config.json")
     with open(config_file, 'w') as f:
         json.dump(full_config, f, cls=NumpyJSONEncoder, indent=2)
-      # Create all episode metrics lists if not resuming
+    
+    # Collect and log system information
+    if not resuming:
+        system_info = collect_system_info()
+        system_info_file = os.path.join(experiment_dir, "system_info.json")
+        with open(system_info_file, 'w') as f:
+            json.dump(system_info, f, cls=NumpyJSONEncoder, indent=2)
+        logging.info("System information collected and saved")
+    
+    # Create all episode metrics lists if not resuming
     if not resuming:
         all_episodes_metrics = []
         episode_summaries = []
@@ -3682,22 +3919,20 @@ def plot_metrics(metrics_file, output_dir):
         
         plt.savefig(os.path.join(output_dir, 'obstacles_vs_steps.png'), dpi=150)
         plt.close()
-        
-        # Plot 4: Inference time over steps
+          # Plot 4: Planning time over steps
         plt.figure(figsize=(12, 8))
         for episode_id, group in episode_groups:
-            plt.plot(group['step'], group['inference_time_ms'], label=f'Episode {episode_id}')
+            plt.plot(group['step'], group['planning_time_ms'], label=f'Episode {episode_id}')
         
-        plt.title('Inference Time vs. Steps')
+        plt.title('Planning Time vs. Steps')
         plt.xlabel('Step')
-        plt.ylabel('Inference Time (ms)')
+        plt.ylabel('Planning Time (ms)')
         plt.grid(True, alpha=0.3)
-        
-        # Only show legend if not too many episodes
+          # Only show legend if not too many episodes
         if num_episodes <= 10:
             plt.legend()
         
-        plt.savefig(os.path.join(output_dir, 'inference_time_vs_steps.png'), dpi=150)
+        plt.savefig(os.path.join(output_dir, 'planning_time_vs_steps.png'), dpi=150)
         plt.close()
         
         # Plot 5: Action magnitude over steps

@@ -1,0 +1,73 @@
+2025-05-20 01:07:13,617 - INFO - Using random seed: 42
+2025-05-20 01:07:13,618 - INFO - Starting experiment with configuration:
+2025-05-20 01:07:13,618 - INFO -   num_episodes: 1
+2025-05-20 01:07:13,618 - INFO -   target_distance_range: (15.0, 50.0)
+2025-05-20 01:07:13,618 - INFO -   random_seed: 42
+2025-05-20 01:07:13,619 - INFO -   max_steps_per_episode: 100
+2025-05-20 01:07:13,619 - INFO -   output_dir: experiment_results
+2025-05-20 01:07:13,619 - INFO -   stuck_timeout: 15.0
+2025-05-20 01:07:13,619 - INFO -   stuck_check_interval: 3.0
+2025-05-20 01:07:13,619 - INFO -   episode_timeout: 120
+2025-05-20 01:07:13,619 - INFO -   precompile_julia: False
+2025-05-20 01:07:13,620 - INFO -   zmq_port: 5555
+2025-05-20 01:07:13,620 - INFO -   debug_raycasting: False
+2025-05-20 01:07:13,620 - INFO -   min_ray_checks: 3
+2025-05-20 01:07:13,620 - INFO -   max_ray_checks: 7
+2025-05-20 01:07:13,621 - INFO -   visualize_raycasts: False
+2025-05-20 01:07:13,621 - INFO -   visualization_duration: 60.0
+2025-05-20 01:07:17,177 - INFO - System information collected and saved
+2025-05-20 01:07:17,182 - INFO - AirSim connection established successfully
+2025-05-20 01:07:17,287 - INFO - Starting episode 0 of 1
+2025-05-20 01:07:17,287 - INFO - === Starting Episode 0 ===
+2025-05-20 01:07:17,290 - INFO - Episode 0: Taking off...
+2025-05-20 01:07:22,853 - INFO - Target distance range for episode 0: 15.0m - 50.0m
+2025-05-20 01:07:22,929 - INFO - Found first valid target at [-8.13, -9.76, -2.0]
+2025-05-20 01:07:26,758 - INFO - Phase 2: Found 50 valid targets, focusing on refining these
+2025-05-20 01:07:28,925 - INFO - Found 77 valid targets, selecting best with 0.00m clearance
+2025-05-20 01:07:28,925 - INFO - Episode 0: Target sampling took 6.07s with 3 rays
+2025-05-20 01:07:28,925 - INFO - Episode 0: Initial distance to target: 12.71m
+2025-05-20 01:07:28,926 - INFO - Episode 0: Initial position: [0.0, 0.0, -1.66]
+2025-05-20 01:07:28,926 - INFO - Episode 0: Target position: [-8.13, -9.76, -2.0]
+2025-05-20 01:07:28,927 - INFO - Episode 0: Initial distance: 12.71m
+2025-05-20 01:07:28,932 - INFO - Episode 0: Target verified with 3 rays
+2025-05-20 01:07:35,396 - WARNING - Episode 0: Step 0 took 6.46s (unusually long)
+2025-05-20 01:07:39,167 - WARNING - Collision detected during movement, cancelling task immediately
+2025-05-20 01:07:39,170 - INFO - Episode 0: Obstacle detected during movement, triggering immediate replanning
+2025-05-20 01:07:39,188 - INFO - Adding newly detected obstacle at [-5.61, -6.24, -1.88] to planning data
+2025-05-20 01:07:39,189 - INFO - Episode 0: Putting drone in hover mode before dynamic replanning
+2025-05-20 01:07:39,691 - INFO - Episode 0: Triggering dynamic replanning due to detected obstacle
+2025-05-20 01:07:39,717 - INFO - Enhanced planning parameters for obstacle avoidance: safety_margin=4.00, waypoint_count=150, obstacle_priority=3.00
+2025-05-20 01:07:39,725 - INFO - Episode 0: Executing replanned path to avoid obstacle
+2025-05-20 01:07:39,750 - WARNING - Collision detected during movement, cancelling task immediately
+2025-05-20 01:07:39,953 - WARNING - Episode 0: Collision detected at step 2
+2025-05-20 01:07:39,954 - INFO - Using collision normal for recovery: [0.67, 0.74, 0.00]
+2025-05-20 01:07:48,792 - WARNING - Recovery movement timed out after 8.0 seconds
+2025-05-20 01:07:48,794 - INFO - Episode 0: Collision recovery successful, moved 0.63m to new position: [-5.6, -5.79, -2.06]
+2025-05-20 01:07:49,941 - INFO - Episode 0: Clear path to target detected - moving directly toward goal
+2025-05-20 01:07:50,370 - WARNING - Obstacle detected at 0.62m during movement execution
+2025-05-20 01:07:50,372 - INFO - Episode 0: Obstacle detected during movement, triggering immediate replanning
+2025-05-20 01:07:50,402 - INFO - Episode 0: Putting drone in hover mode before dynamic replanning
+2025-05-20 01:07:50,905 - INFO - Episode 0: Triggering dynamic replanning due to detected obstacle
+2025-05-20 01:07:50,930 - INFO - Enhanced planning parameters for obstacle avoidance: safety_margin=4.00, waypoint_count=150, obstacle_priority=3.00
+2025-05-20 01:07:50,944 - INFO - Episode 0: Executing replanned path to avoid obstacle
+2025-05-20 01:07:50,965 - WARNING - Collision detected during movement, cancelling task immediately
+2025-05-20 01:07:51,168 - WARNING - Episode 0: Step 2 took 11.22s (unusually long)
+2025-05-20 01:07:52,342 - WARNING - Obstacle detected at 1.73m during movement execution
+2025-05-20 01:07:52,343 - INFO - Episode 0: Obstacle detected during movement, triggering immediate replanning
+2025-05-20 01:07:52,363 - INFO - Episode 0: Putting drone in hover mode before dynamic replanning
+2025-05-20 01:07:52,864 - INFO - Episode 0: Triggering dynamic replanning due to detected obstacle
+2025-05-20 01:07:52,884 - INFO - Enhanced planning parameters for obstacle avoidance: safety_margin=4.00, waypoint_count=150, obstacle_priority=3.00
+2025-05-20 01:07:52,892 - INFO - Episode 0: Executing replanned path to avoid obstacle
+2025-05-20 01:07:55,173 - WARNING - Forward obstacle detected at 1.73m during movement
+2025-05-20 01:07:55,375 - WARNING - Episode 0: Drone revisited position (np.int64(0), np.int64(0), np.int64(0)) 2 times
+2025-05-20 01:07:58,056 - WARNING - Obstacle detected at 1.73m during movement execution
+2025-05-20 01:07:58,057 - INFO - Episode 0: Obstacle detected during movement, triggering immediate replanning
+2025-05-20 01:07:58,080 - INFO - Episode 0: Putting drone in hover mode before dynamic replanning
+2025-05-20 01:07:58,582 - INFO - Episode 0: Triggering dynamic replanning due to detected obstacle
+2025-05-20 01:07:58,599 - INFO - Enhanced planning parameters for obstacle avoidance: safety_margin=4.00, waypoint_count=150, obstacle_priority=3.00
+2025-05-20 01:07:58,606 - INFO - Episode 0: Executing replanned path to avoid obstacle
+2025-05-20 01:08:01,171 - WARNING - Forward obstacle detected at 1.73m during movement
+2025-05-20 01:08:01,372 - WARNING - Episode 0: Step 4 took 6.00s (unusually long)
+2025-05-20 01:08:01,374 - WARNING - Episode 0: Drone revisited position (np.int64(0), np.int64(0), np.int64(0)) 3 times
+2025-05-20 01:08:01,374 - WARNING - Episode 0: No significant movement for 10.2s, attempting recovery maneuver
+2025-05-20 01:08:01,374 - INFO - Executing vertical recovery maneuver to position: [0.0, 0.0, -1.95]

@@ -1,0 +1,45 @@
+2025-05-20 00:49:59,710 - INFO - Using random seed: 42
+2025-05-20 00:49:59,710 - INFO - Starting experiment with configuration:
+2025-05-20 00:49:59,710 - INFO -   num_episodes: 1
+2025-05-20 00:49:59,711 - INFO -   target_distance_range: (15.0, 50.0)
+2025-05-20 00:49:59,711 - INFO -   random_seed: 42
+2025-05-20 00:49:59,711 - INFO -   max_steps_per_episode: 100
+2025-05-20 00:49:59,712 - INFO -   output_dir: experiment_results
+2025-05-20 00:49:59,712 - INFO -   stuck_timeout: 15.0
+2025-05-20 00:49:59,712 - INFO -   stuck_check_interval: 3.0
+2025-05-20 00:49:59,712 - INFO -   episode_timeout: 120
+2025-05-20 00:49:59,712 - INFO -   precompile_julia: True
+2025-05-20 00:49:59,713 - INFO -   zmq_port: 5555
+2025-05-20 00:49:59,713 - INFO -   debug_raycasting: False
+2025-05-20 00:49:59,713 - INFO -   min_ray_checks: 3
+2025-05-20 00:49:59,713 - INFO -   max_ray_checks: 7
+2025-05-20 00:49:59,714 - INFO -   visualize_raycasts: False
+2025-05-20 00:49:59,714 - INFO -   visualization_duration: 60.0
+2025-05-20 00:50:03,458 - INFO - System information collected and saved
+2025-05-20 00:50:03,470 - INFO - AirSim connection established successfully
+2025-05-20 00:50:27,184 - INFO - Starting episode 0 of 1
+2025-05-20 00:50:27,184 - INFO - === Starting Episode 0 ===
+2025-05-20 00:50:27,188 - INFO - Episode 0: Taking off...
+2025-05-20 00:50:32,901 - INFO - Target distance range for episode 0: 15.0m - 50.0m
+2025-05-20 00:50:32,986 - INFO - Found first valid target at [-8.13, -9.76, -2.0]
+2025-05-20 00:50:36,661 - INFO - Phase 2: Found 50 valid targets, focusing on refining these
+2025-05-20 00:50:38,781 - INFO - Found 77 valid targets, selecting best with 0.00m clearance
+2025-05-20 00:50:38,781 - INFO - Episode 0: Target sampling took 5.88s with 3 rays
+2025-05-20 00:50:38,781 - INFO - Episode 0: Initial distance to target: 12.71m
+2025-05-20 00:50:38,782 - INFO - Episode 0: Initial position: [0.0, 0.0, -1.67]
+2025-05-20 00:50:38,782 - INFO - Episode 0: Target position: [-8.13, -9.76, -2.0]
+2025-05-20 00:50:38,782 - INFO - Episode 0: Initial distance: 12.71m
+2025-05-20 00:50:38,785 - INFO - Episode 0: Target verified with 3 rays
+2025-05-20 00:50:38,826 - ERROR - Error in episode 0: cannot access local variable 'previous_step_waypoint' where it is not associated with a value
+2025-05-20 00:50:38,831 - ERROR - Traceback (most recent call last):
+  File "C:\Users\harshil_airsim_1\Desktop\AirSim\Hierarchical-Active-Inference-for-Autonomous-Drone-Navigation-in-Microsoft-AirSim\data_collection.py", line 3276, in run_experiment
+    step_metrics, episode_summary = run_episode(
+                                    ^^^^^^^^^^^^
+  File "C:\Users\harshil_airsim_1\Desktop\AirSim\Hierarchical-Active-Inference-for-Autonomous-Drone-Navigation-in-Microsoft-AirSim\data_collection.py", line 2869, in run_episode
+    "control_error": np.linalg.norm(np.array(next_waypoint) - np.array(drone_pos)) if previous_step_waypoint is not None else 0,
+                                                                                      ^^^^^^^^^^^^^^^^^^^^^^
+UnboundLocalError: cannot access local variable 'previous_step_waypoint' where it is not associated with a value
+
+2025-05-20 00:50:38,833 - INFO - Saved recovery data for episode -1
+2025-05-20 00:50:38,833 - INFO - Experiment completed successfully, removed recovery data
+2025-05-20 00:50:38,834 - INFO - Experiment completed. Results saved to experiment_results\experiment_20250520_004959

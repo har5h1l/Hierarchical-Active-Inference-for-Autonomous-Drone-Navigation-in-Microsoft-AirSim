@@ -17,11 +17,12 @@ println("Project activated: $(Base.active_project())")
 # Load essential packages
 println("\nLoading required packages...")
 try
-    using JSON, Dates
+    using JSON, Dates, Statistics
 catch e
-    println("Adding JSON package...")
+    println("Adding JSON and Statistics packages...")
     Pkg.add("JSON")
-    using JSON, Dates
+    Pkg.add("Statistics")
+    using JSON, Dates, Statistics
 end
 
 # Set up status files for communication with Python
@@ -248,9 +249,8 @@ function process_observation(observation_data::Dict)
                 suitability_threshold = get(observation_data, "safety_margin", 1.5) / 5.0 # Convert safety margin to appropriate threshold
             )
         )
-        
-        # Select best action
-        selected_action = select_action(
+          # Select best action - and get detailed metrics
+        selected_action, details = select_action(
             current_state,
             beliefs,
             planner,
@@ -259,7 +259,8 @@ function process_observation(observation_data::Dict)
             obstacle_distance=isempty(obstacle_distances) ? 10.0 : minimum(obstacle_distances),
             obstacle_density=obstacle_density,
             obstacle_weight=get(observation_data, "obstacle_distance_weight", 0.8),
-            suitability_threshold=get(observation_data, "suitability_threshold", 0.75)
+            suitability_threshold=get(observation_data, "suitability_threshold", 0.75),
+            return_details=true  # Get additional details for metrics
         )
         
         # Extract the best action (first in the returned list)
@@ -278,10 +279,73 @@ function process_observation(observation_data::Dict)
                 "distance_to_target" => current_state.distance,
                 "suitability" => current_state.suitability
             )
+              # Compute EFE components for current state before building policy
+            # We need this for delta_vfe calculation and to store in the best action
+            current_efe_tuple = calculate_efe(
+                current_state,
+                beliefs,
+                best_action,
+                planner.preference_model,
+                pragmatic_weight=planner.pragmatic_weight,
+                epistemic_weight=planner.epistemic_weight,
+                obstacle_density=obstacle_density,
+                obstacle_distance=isempty(obstacle_distances) ? 10.0 : minimum(obstacle_distances)
+            )
             
-            # Add policy information
+            # Extract the VFE and EFE components
+            vfe = -current_efe_tuple[2]  # Negative pragmatic value gives VFE
+            efe = current_efe_tuple[1]   # Total EFE
+            efe_pragmatic = current_efe_tuple[2]  # Pragmatic component
+            efe_epistemic = current_efe_tuple[3]  # Epistemic component
+            
+            # Add policy information with enhanced metrics
             policy = []
-            for i in 1:min(policy_length, length(selected_action))
+            
+            # First, add the best action with all metrics
+            best_action_vec = selected_action[1][1]
+            best_action_score = selected_action[1][2]
+            best_waypoint = drone_position + best_action_vec
+            
+            # Calculate heading angle of the action
+            action_heading_angle_rad = atan(best_action_vec[2], best_action_vec[1])  # atan2(y, x)
+            action_heading_angle_deg = action_heading_angle_rad * 180 / π
+              # Calculate standard deviation of suitability for retained waypoints
+            suitability_values = []
+            if haskey(details, "sorted_indices") && haskey(details, "filtered_suitabilities")
+                sorted_indices = details["sorted_indices"]
+                filtered_suitabilities = details["filtered_suitabilities"]
+                
+                for i in 1:min(policy_length, length(selected_action))
+                    if i <= length(sorted_indices)
+                        action_idx = sorted_indices[i]
+                        if action_idx <= length(filtered_suitabilities)
+                            push!(suitability_values, filtered_suitabilities[action_idx])
+                        end
+                    end
+                end
+            end
+            
+            suitability_std = length(suitability_values) > 1 ? 
+                              std(suitability_values) : 0.0
+            
+            # Create the policy entry with all metrics
+            push!(policy, Dict(
+                "action" => [best_action_vec[1], best_action_vec[2], best_action_vec[3]],
+                "waypoint" => [best_waypoint[1], best_waypoint[2], best_waypoint[3]],
+                "score" => best_action_score,
+                "vfe" => vfe,
+                "efe" => efe,
+                "efe_vs_vfe_gap" => efe - vfe,
+                "efe_pragmatic" => efe_pragmatic,
+                "efe_epistemic" => efe_epistemic,
+                "suitability_std" => suitability_std,
+                "action_heading_angle_rad" => action_heading_angle_rad,
+                "action_heading_angle_deg" => action_heading_angle_deg,
+                "replanning_triggered_reason" => get(observation_data, "replanning_reason", "none")
+            ))
+            
+            # Add the rest of the policy actions with basic information
+            for i in 2:min(policy_length, length(selected_action))
                 action_tuple = selected_action[i]
                 action_vec = action_tuple[1]
                 waypoint = drone_position + action_vec
