@@ -1,0 +1,53 @@
+2025-05-23 02:53:27,442 - INFO - Using random seed: 42
+2025-05-23 02:53:27,442 - INFO - Starting experiment with configuration:
+2025-05-23 02:53:27,443 - INFO -   num_episodes: 1
+2025-05-23 02:53:27,443 - INFO -   target_distance_range: (15.0, 50.0)
+2025-05-23 02:53:27,443 - INFO -   random_seed: 42
+2025-05-23 02:53:27,443 - INFO -   max_steps_per_episode: 10
+2025-05-23 02:53:27,444 - INFO -   output_dir: experiment_results
+2025-05-23 02:53:27,444 - INFO -   stuck_timeout: 15.0
+2025-05-23 02:53:27,444 - INFO -   stuck_check_interval: 3.0
+2025-05-23 02:53:27,444 - INFO -   episode_timeout: 120
+2025-05-23 02:53:27,445 - INFO -   precompile_julia: True
+2025-05-23 02:53:27,445 - INFO -   zmq_port: 5555
+2025-05-23 02:53:27,445 - INFO -   debug_raycasting: True
+2025-05-23 02:53:27,445 - INFO -   min_ray_checks: 3
+2025-05-23 02:53:27,446 - INFO -   max_ray_checks: 5
+2025-05-23 02:53:27,446 - INFO -   visualize_raycasts: True
+2025-05-23 02:53:27,446 - INFO -   visualization_duration: 60.0
+2025-05-23 02:53:30,671 - INFO - System information collected and saved
+2025-05-23 02:53:30,675 - INFO - AirSim connection established successfully
+2025-05-23 02:54:10,631 - INFO - Generating pool of 1 valid target locations...
+2025-05-23 02:54:10,631 - INFO - Target distance range for episode 0: 15.0m - 50.0m
+2025-05-23 02:54:10,631 - WARNING - Sampling target with drone too close to ground (alt: -5.08m)
+2025-05-23 02:54:10,631 - INFO - Adjusted sampling position to ensure minimum altitude: [0.8605061173439026, 24.823036193847656, -5.0] (alt: 5.00m)
+2025-05-23 02:54:10,722 - INFO - Found first valid target at [-14.9, 5.91, -8.21], altitude: 8.21m
+2025-05-23 02:54:19,413 - INFO - Phase 2: Found 100 valid targets, focusing on refining these
+2025-05-23 02:54:24,047 - INFO - Found 152 valid targets, selecting best with 0.00m clearance at altitude: 8.21m
+2025-05-23 02:54:24,049 - INFO - Generated 1/1 targets in 13.4s (0 attempts)
+2025-05-23 02:54:24,049 - INFO - Successfully generated pool of 1 targets in 13.4s
+2025-05-23 02:54:24,049 - INFO - Saved pool of 1 targets to experiment_results\experiment_20250523_025327\target_pool.json
+2025-05-23 02:54:24,050 - INFO - Starting episode 0 of 1
+2025-05-23 02:54:24,050 - INFO - === Starting Episode 0 ===
+2025-05-23 02:54:24,053 - INFO - Episode 0: Taking off...
+2025-05-23 02:54:29,663 - DEBUG - Episode 0: Enhanced logging enabled for raycast debugging
+2025-05-23 02:54:29,663 - DEBUG - Using 3 rays for target validation
+2025-05-23 02:54:29,665 - INFO - Episode 0: Using pre-generated target 0 of 1
+2025-05-23 02:54:29,665 - INFO - Episode 0: Initial distance to target: 17.32m
+2025-05-23 02:54:29,666 - INFO - Episode 0: Initial position: [-0.0, 0.0, -1.66]
+2025-05-23 02:54:29,666 - INFO - Episode 0: Target position: [-14.9, 5.91, -8.21]
+2025-05-23 02:54:29,666 - INFO - Episode 0: Initial distance: 17.32m
+2025-05-23 02:54:29,670 - INFO - Episode 0: Target verified with 3 rays
+2025-05-23 02:54:45,091 - WARNING - Episode 0: Step 0 took 15.42s (unusually long)
+2025-05-23 02:54:57,141 - WARNING - Episode 0: Step 3 took 6.06s (unusually long)
+2025-05-23 02:54:57,143 - INFO - Episode 0: Target reached at step 4
+2025-05-23 02:55:28,239 - INFO - Episode 0 completed: success
+2025-05-23 02:55:28,239 - INFO -   Steps: 4, Duration: 27.48s
+2025-05-23 02:55:28,239 - INFO -   Final distance: 1.42m, Collisions: 0
+2025-05-23 02:55:28,240 - INFO -   Dynamic replanning events: 0
+2025-05-23 02:55:28,254 - INFO - Saved recovery data for episode 0
+2025-05-23 02:55:30,048 - INFO - Successfully created 6 plots in experiment_results\experiment_20250523_025327\metrics_plots
+2025-05-23 02:55:30,048 - INFO - Metrics plots saved to experiment_results\experiment_20250523_025327\metrics_plots
+2025-05-23 02:55:30,049 - INFO - Experiment completed successfully, removed recovery data
+2025-05-23 02:55:30,049 - INFO - Experiment completed. Results saved to experiment_results\experiment_20250523_025327
+2025-05-23 02:55:30,051 - INFO - Test completed successfully

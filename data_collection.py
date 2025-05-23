@@ -2680,19 +2680,9 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
             if len(obstacle_positions) > 0:
                 min_dist = min(obstacle_distances) if obstacle_distances else "N/A"
                 logging.debug(f"Episode {episode_id}: Closest obstacle at {min_dist}m")
-                logging.debug(f"Episode {episode_id}: Planning with exploration_factor={exploration_factor:.2f}, obstacle_priority={obstacle_priority:.2f}")
-          # Main planning function - will be used for initial planning and dynamic replanning
+                logging.debug(f"Episode {episode_id}: Planning with exploration_factor={exploration_factor:.2f}, obstacle_priority={obstacle_priority:.2f}")        # Main planning function - will be used for initial planning and dynamic replanning
         def get_next_waypoint(needs_replanning=False):
             nonlocal replanning_count, dynamic_replanning_count, last_replanning_reason
-            
-            if needs_replanning:
-                reason = "obstacle_detected"
-                logging.info(f"Episode {episode_id}: Triggering dynamic replanning due to detected obstacle")
-                replanning_count += 1
-                dynamic_replanning_count += 1
-                last_replanning_reason = reason
-                # Pass the replanning reason to the observation
-                observation["replanning_reason"] = reason
             
             # Create observation for active inference with adaptive parameters
             observation = {
@@ -2715,6 +2705,17 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
                 "closest_obstacle": closest_obstacle_dist if obstacle_distances else float('inf'),  # Pass distance to closest obstacle
                 "critical_obstacle_avoidance": False  # Default to normal mode (may be updated if replanning)
             }
+              # Handle replanning case after observation is created
+            if needs_replanning:
+                reason = "obstacle_detected"
+                logging.info(f"Episode {episode_id}: Triggering dynamic replanning due to detected obstacle")
+                replanning_count += 1
+                dynamic_replanning_count += 1
+                last_replanning_reason = reason
+                # Now we can safely add the replanning reason to the observation
+                observation["replanning_reason"] = reason
+                # Mark as critical obstacle avoidance
+                observation["critical_obstacle_avoidance"] = True
             
             # Add enhanced obstacle awareness based on context
             if distance_to_target > 15.0:
@@ -3692,7 +3693,7 @@ def sample_visible_target(current_pos: List[float], distance_range: Tuple[float,
     """Sample a random target position within distance bounds that is visible to the drone
     
     Args:
-        current_pos: Current drone position [x, y, z]
+        current_pos: Current drone position [x, y, z] in NED coordinates
         distance_range: (min_distance, max_distance) in meters
         client: AirSim client instance
         max_attempts: Maximum sampling attempts before giving up
@@ -3706,6 +3707,9 @@ def sample_visible_target(current_pos: List[float], distance_range: Tuple[float,
     Raises:
         ValueError: If no valid target is found within max_attempts
     """
+    # Constants for target altitude constraints
+    MIN_TARGET_ALTITUDE = -10.0  # Max 10 meters above ground in NED (more negative is higher)
+    MAX_TARGET_ALTITUDE = -2.0   # Min 2 meters above ground in NED
     min_dist, max_dist = distance_range
     
     # Create a separate random generator for deterministic target generation
@@ -3726,13 +3730,13 @@ def sample_visible_target(current_pos: List[float], distance_range: Tuple[float,
         max_dist = min(max_dist, min_dist + 20 + (episode_factor * 30))  # Gradually increase range span
     
     logging.info(f"Target distance range for episode {episode_id}: {min_dist:.1f}m - {max_dist:.1f}m")
-    
-    # Verify the drone's position is valid for sampling
-    if current_pos[2] > -1.0:  # NED coordinates: Z is negative for altitude
-        logging.warning(f"Sampling target with drone too close to ground (alt: {current_pos[2]:.2f}m)")
-        # Force a minimum altitude for reliable sampling
+      # Verify the drone's position is valid for sampling
+    # In NED coordinates: Z is negative for altitude (more negative = higher altitude)
+    if current_pos[2] > -1.0:  
+        logging.warning(f"Sampling target with drone too close to ground (alt: {-current_pos[2]:.2f}m)")
+        # Force a minimum altitude for reliable sampling (-5.0 means 5m above ground in NED)
         current_pos = [current_pos[0], current_pos[1], -5.0]
-        logging.info(f"Adjusted sampling position to ensure minimum altitude: {current_pos}")
+        logging.info(f"Adjusted sampling position to ensure minimum altitude: {current_pos} (alt: {-current_pos[2]:.2f}m)")
     
     valid_targets = []  # Track all valid targets for potential selection
     best_target = None  # Best target based on obstacle clearance
@@ -3811,8 +3815,7 @@ def sample_visible_target(current_pos: List[float], distance_range: Tuple[float,
         x = math.sin(phi) * math.cos(theta)
         y = math.sin(phi) * math.sin(theta)
         z = math.cos(phi)
-        
-        # Sample random distance within range
+          # Sample random distance within range
         if attempt_phase < 2:
             # Normal random distance sampling for early phases
             distance = target_rng.uniform(min_dist, max_dist)
@@ -3825,14 +3828,35 @@ def sample_visible_target(current_pos: List[float], distance_range: Tuple[float,
             else:
                 distance = target_rng.uniform(min_dist, max_dist)
         
+        # Sample a random altitude variation for the target
+        # In NED coordinates, values between MIN_TARGET_ALTITUDE and MAX_TARGET_ALTITUDE
+        altitude_variation = target_rng.uniform(MIN_TARGET_ALTITUDE, MAX_TARGET_ALTITUDE)
+        
         # Scale direction vector by distance
         direction = np.array([x, y, z]) * distance
         
-        # Calculate target position in NED coordinates
-        target_pos = np.array(current_pos) + direction
+        # Adjust z component for variable altitude
+        # Keep horizontal direction but replace vertical component with altitude variation
+        horizontal_direction = np.array([direction[0], direction[1], 0])
+        horizontal_distance = np.linalg.norm(horizontal_direction)        # Calculate target position in NED coordinates with variable altitude
+        if horizontal_distance > 0:
+            # Use the horizontal direction but replace z component with variable altitude
+            normalized_horizontal = horizontal_direction / horizontal_distance
+            target_pos = np.array([
+                current_pos[0] + normalized_horizontal[0] * distance,
+                current_pos[1] + normalized_horizontal[1] * distance,
+                altitude_variation  # Direct Z value for altitude (in NED)
+            ])
+        else:
+            # Fallback if horizontal distance is too small - straight up or down
+            target_pos = np.array([
+                current_pos[0],
+                current_pos[1],
+                altitude_variation  # Direct Z value for altitude (in NED)
+            ])
         
-        # Ensure z-coordinate is negative (below ground level in NED)
-        target_pos[2] = min(target_pos[2], -2.0)  # Keep at least 2m below ground level
+        # Log the target position for debugging
+        logging.debug(f"Sampled target at {[round(p, 2) for p in target_pos.tolist()]}, altitude: {-target_pos[2]:.2f}m")
         
         # Convert to Vector3r for line of sight test
         start_vector = airsim.Vector3r(current_pos[0], current_pos[1], current_pos[2])
@@ -3907,7 +3931,12 @@ def sample_visible_target(current_pos: List[float], distance_range: Tuple[float,
                 
         # Consider target valid only if enough rays were valid
         target_valid = target_valid and (valid_ray_count >= min(3, actual_ray_checks * 0.5))
-                
+                  # Log target validation result with altitude information
+        if target_valid:
+            logging.debug(f"Valid target found at {[round(p, 2) for p in target_pos.tolist()]}, altitude: {-target_pos[2]:.2f}m")
+        else:
+            logging.debug(f"Target at {[round(p, 2) for p in target_pos.tolist()]}, altitude: {-target_pos[2]:.2f}m rejected - visibility check failed")
+            
         # If target passed ray checks, proceed with validation
         if target_valid:
             # Target is visible - add to valid targets
@@ -3951,20 +3980,39 @@ def sample_visible_target(current_pos: List[float], distance_range: Tuple[float,
                     return best_target
             except Exception as e:
                 logging.debug(f"Error checking obstacle clearance near target: {e}")
-            
-            # Log that we found a valid target
+              # Log that we found a valid target
             logging.debug(f"Found valid target at {[round(p, 2) for p in target_pos.tolist()]} (attempt {attempt+1})")
-            
             # If this is the first valid target, we'll use it as our initial best
             if best_target is None:
                 best_target = target_pos.tolist()
-                logging.info(f"Found first valid target at {[round(p, 2) for p in best_target]}")
+                logging.info(f"Found first valid target at {[round(p, 2) for p in best_target]}, altitude: {-best_target[2]:.2f}m")
+                
+                # Visualize the target in the simulator for debugging (if available)
+                try:
+                    client.simPlotPoints([airsim.Vector3r(best_target[0], best_target[1], best_target[2])], 
+                                       color_rgba=[1.0, 0.0, 0.0, 1.0], 
+                                       size=15.0, 
+                                       duration=10.0, 
+                                       is_persistent=False)
+                except Exception as e:
+                    logging.debug(f"Failed to visualize first target: {e}")
             
             # If we've found several valid targets, we can start being selective
             if len(valid_targets) >= 5 and attempt > max_attempts // 2:
                 # Return the best target we've found so far
                 if best_target:
-                    logging.info(f"Found {len(valid_targets)} valid targets, selecting best with {best_obstacle_clearance:.2f}m clearance")
+                    logging.info(f"Found {len(valid_targets)} valid targets, selecting best with {best_obstacle_clearance:.2f}m clearance at altitude: {-best_target[2]:.2f}m")
+                    
+                    # Visualize the selected target in the simulator
+                    try:
+                        client.simPlotPoints([airsim.Vector3r(best_target[0], best_target[1], best_target[2])], 
+                                           color_rgba=[0.0, 1.0, 0.0, 1.0], 
+                                           size=20.0, 
+                                           duration=15.0, 
+                                           is_persistent=False)
+                    except Exception as e:
+                        logging.debug(f"Failed to visualize target: {e}")
+                        
                     return best_target
                 # Or just return the last valid target
                 return valid_targets[-1]
@@ -3997,10 +4045,27 @@ def sample_visible_target(current_pos: List[float], distance_range: Tuple[float,
     
     for direction in fallback_directions:
         for distance in fallback_distances:
-            try:
-                # Create fallback target
-                fallback_target_pos = np.array(current_pos) + (direction * distance)
-                fallback_target_pos[2] = min(fallback_target_pos[2], -2.0)  # Keep below ground level
+            try:                # Create fallback target with variable altitude
+                # Sample altitude variation for fallback targets
+                fallback_altitude = target_rng.uniform(MIN_TARGET_ALTITUDE, MAX_TARGET_ALTITUDE)
+                
+                # Create fallback target using horizontal component of direction with variable altitude
+                horizontal_dir = np.array([direction[0], direction[1], 0])
+                horizontal_dist = np.linalg.norm(horizontal_dir)
+                
+                if horizontal_dist > 0:
+                    normalized_horizontal = horizontal_dir / horizontal_dist
+                    fallback_target_pos = np.array([
+                        current_pos[0] + normalized_horizontal[0] * distance,
+                        current_pos[1] + normalized_horizontal[1] * distance,
+                        fallback_altitude  # Variable altitude
+                    ])
+                else:
+                    fallback_target_pos = np.array([
+                        current_pos[0] + direction[0] * distance,
+                        current_pos[1] + direction[1] * distance,
+                        fallback_altitude  # Variable altitude
+                    ])
                 
                 # Check if this fallback target is valid
                 fallback_vector3r = airsim.Vector3r(fallback_target_pos[0], fallback_target_pos[1], fallback_target_pos[2])
@@ -4010,11 +4075,25 @@ def sample_visible_target(current_pos: List[float], distance_range: Tuple[float,
                     logging.info(f"Using fallback target at {[round(p, 2) for p in fallback_target_pos.tolist()]}")
                     return fallback_target_pos.tolist()
             except Exception as e:
-                logging.warning(f"Error checking fallback target: {e}")
-    
-    # Last resort - just return the default target position
+                logging.warning(f"Error checking fallback target: {e}")    # Last resort - just return the default target position
     logging.error("Failed to find any valid target, returning default position")
-    default_target = [current_pos[0] + 10.0, current_pos[1], current_pos[2]]
+    
+    # Choose a random safe altitude for the default target
+    if seed is not None:
+        final_rng = random.Random(seed + episode_id + 9999)  # Create a new RNG for this final choice
+    else:
+        final_rng = random.Random()
+    
+    default_altitude = final_rng.uniform(MIN_TARGET_ALTITUDE, MAX_TARGET_ALTITUDE)
+    
+    # Default to moving 10 meters forward at a random safe altitude
+    default_target = [
+        current_pos[0] + 10.0,  # 10m forward in X
+        current_pos[1],         # Same Y position
+        default_altitude        # Random safe altitude
+    ]
+    
+    logging.warning(f"Using default target at {[round(p, 2) for p in default_target]}, altitude: {-default_target[2]:.2f}m")
     return default_target
 
 def visualize_raycasts(client, raycast_data_file, duration=60.0):
@@ -4317,3 +4396,4 @@ if __name__ == "__main__":
 
 
 
+ 
