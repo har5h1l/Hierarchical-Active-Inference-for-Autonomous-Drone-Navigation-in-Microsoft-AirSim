@@ -172,7 +172,7 @@ ZMQ_MAX_RETRIES = 3  # Maximum number of retries for ZMQ communication
 
 # Default experiment configuration
 DEFAULT_CONFIG = {
-    "num_episodes": 10,
+    "num_episodes": 30,
     "target_distance_range": (15.0, 50.0),  # min, max in meters
     "random_seed": 42,
     "max_steps_per_episode": 100,
@@ -3158,19 +3158,18 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
             final_pos = current_pos
         final_distance = np.linalg.norm(np.array(target_pos) - np.array(final_pos))
         logging.info(f"Using last known position for final metrics: {[round(p, 2) for p in final_pos]}")
-    
-    # Land the drone
+      # Skip landing and directly reset for the next episode
     try:
-        land_task = client.landAsync()
-        try:
-            land_task.join()  # Wait for landing to complete
-        except Exception as e:
-            logging.error(f"Error during landing: {e}")
-            # We'll continue even if landing failed
+        # Disarm the drone without landing
         client.armDisarm(False)
+        
+        # Reset the drone position immediately for the next episode
+        client.reset()
+        
+        logging.info(f"Episode {episode_id}: Skipping landing process and resetting drone for next episode")
     except Exception as e:
-        logging.error(f"Error attempting to land drone: {e}")
-        # Continue with metrics even if landing fails
+        logging.error(f"Error when skipping landing and resetting drone: {e}")
+        # Continue with metrics even if reset fails
       # Compile episode summary
     episode_summary = {
         # Basic episode metrics
@@ -3928,8 +3927,7 @@ def sample_visible_target(current_pos: List[float], distance_range: Tuple[float,
                 logging.warning(f"Error in line of sight test for ray {ray_idx}: {e}")
                 target_valid = False
                 break
-                
-        # Consider target valid only if enough rays were valid
+                  # Consider target valid only if enough rays were valid
         target_valid = target_valid and (valid_ray_count >= min(3, actual_ray_checks * 0.5))
                   # Log target validation result with altitude information
         if target_valid:
@@ -3965,14 +3963,20 @@ def sample_visible_target(current_pos: List[float], distance_range: Tuple[float,
                             if dist < min_obstacle_dist:
                                 min_obstacle_dist = dist
                             break
-                
-                # If we found a valid obstacle distance
+                  # If we found a valid obstacle distance
                 if min_obstacle_dist < float('inf'):
-                    # If this target has better clearance than our previous best, update it
-                    if min_obstacle_dist > best_obstacle_clearance:
-                        best_obstacle_clearance = min_obstacle_dist
-                        best_target = target_pos.tolist()
-                        logging.debug(f"Better target found with {min_obstacle_dist:.2f}m obstacle clearance")
+                    # Check if the target meets minimum clearance requirement (3m)
+                    if min_obstacle_dist >= 3.0:
+                        # If this target has better clearance than our previous best, update it
+                        if min_obstacle_dist > best_obstacle_clearance:
+                            best_obstacle_clearance = min_obstacle_dist
+                            best_target = target_pos.tolist()
+                            logging.debug(f"Better target found with {min_obstacle_dist:.2f}m obstacle clearance")
+                    else:
+                        # Target is too close to obstacles (< 3m) - mark as invalid
+                        logging.debug(f"Target rejected - insufficient obstacle clearance ({min_obstacle_dist:.2f}m < 3.0m)")
+                        # Skip this target and continue to the next iteration
+                        continue
                 
                 # If we found a really good target (>5m clearance), stop early
                 if best_obstacle_clearance > 5.0:
@@ -4066,14 +4070,35 @@ def sample_visible_target(current_pos: List[float], distance_range: Tuple[float,
                         current_pos[1] + direction[1] * distance,
                         fallback_altitude  # Variable altitude
                     ])
-                
-                # Check if this fallback target is valid
+                  # Check if this fallback target is valid
                 fallback_vector3r = airsim.Vector3r(fallback_target_pos[0], fallback_target_pos[1], fallback_target_pos[2])
                 fallback_los_result = client.simTestLineOfSightBetweenPoints(start_vector, fallback_vector3r)
                 
                 if fallback_los_result:
-                    logging.info(f"Using fallback target at {[round(p, 2) for p in fallback_target_pos.tolist()]}")
-                    return fallback_target_pos.tolist()
+                    # Now check obstacle clearance for this fallback target
+                    min_obstacle_dist = float('inf')
+                    clearance_dirs = [
+                        np.array([1, 0, 0]), np.array([-1, 0, 0]),
+                        np.array([0, 1, 0]), np.array([0, -1, 0]),
+                        np.array([0, 0, 1]), np.array([0, 0, -1])
+                    ]
+                    
+                    for clear_dir in clearance_dirs:
+                        for clear_dist in range(1, 11):
+                            check_point = fallback_target_pos + (clear_dir * clear_dist)
+                            check_vector = airsim.Vector3r(check_point[0], check_point[1], check_point[2])
+                            
+                            if not client.simTestLineOfSightBetweenPoints(fallback_vector3r, check_vector):
+                                if clear_dist < min_obstacle_dist:
+                                    min_obstacle_dist = clear_dist
+                                break
+                    
+                    # Only use targets with sufficient clearance
+                    if min_obstacle_dist >= 3.0:
+                        logging.info(f"Using fallback target at {[round(p, 2) for p in fallback_target_pos.tolist()]} with {min_obstacle_dist}m clearance")
+                        return fallback_target_pos.tolist()
+                    else:
+                        logging.debug(f"Fallback target rejected - insufficient clearance ({min_obstacle_dist}m < 3.0m)")
             except Exception as e:
                 logging.warning(f"Error checking fallback target: {e}")    # Last resort - just return the default target position
     logging.error("Failed to find any valid target, returning default position")

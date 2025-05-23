@@ -1,165 +1,30 @@
-  Activating project at `c:\Users\harshil_airsim_1\Desktop\AirSim\Hierarchical-Active-Inference-for-Autonomous-Drone-Navigation-in-Microsoft-AirSim`
-┌ Error: curl_easy_setopt: 4
-└ @ Downloads.Curl C:\Users\harshil_airsim_1\.julia\juliaup\julia-1.11.5+0.x64.w64.mingw32\share\julia\stdlib\v1.11\Downloads\src\Curl\utils.jl:50
-    Updating registry at `C:\Users\harshil_airsim_1\.julia\registries\General.toml`
-┌ Error: curl_easy_setopt: 4
-└ @ Downloads.Curl C:\Users\harshil_airsim_1\.julia\juliaup\julia-1.11.5+0.x64.w64.mingw32\share\julia\stdlib\v1.11\Downloads\src\Curl\utils.jl:50
+  Activating project at `c:\Users\Satya\Autonomous-Drone-Navigation-in-AirSim-With-Active-Inference`
    Resolving package versions...
-  No Changes to `C:\Users\harshil_airsim_1\Desktop\AirSim\Hierarchical-Active-Inference-for-Autonomous-Drone-Navigation-in-Microsoft-AirSim\Project.toml`
-  No Changes to `C:\Users\harshil_airsim_1\Desktop\AirSim\Hierarchical-Active-Inference-for-Autonomous-Drone-Navigation-in-Microsoft-AirSim\Manifest.toml`
-Precompiling project...
-           ✗ actinf
-  0 dependencies successfully precompiled in 5 seconds. 282 already precompiled.
-
-The following 1 direct dependency failed to precompile:
-
-actinf 
-
-Failed to precompile actinf [d0498c39-f064-4652-9d32-417a3552f8c1] to "C:\\Users\\harshil_airsim_1\\.julia\\compiled\\v1.11\\actinf\\jl_F20E.tmp".
-ERROR: LoadError: UndefVarError: `safe_indices` not defined in `actinf.Planning`
-Stacktrace:
- [1] top-level scope
-   @ c:\Users\harshil_airsim_1\Desktop\AirSim\Hierarchical-Active-Inference-for-Autonomous-Drone-Navigation-in-Microsoft-AirSim\actinf\src\Planning.jl:900
- [2] include(mod::Module, _path::String)
-   @ Base .\Base.jl:557
- [3] include(x::String)
-   @ actinf c:\Users\harshil_airsim_1\Desktop\AirSim\Hierarchical-Active-Inference-for-Autonomous-Drone-Navigation-in-Microsoft-AirSim\actinf\src\actinf.jl:1
- [4] top-level scope
-   @ c:\Users\harshil_airsim_1\Desktop\AirSim\Hierarchical-Active-Inference-for-Autonomous-Drone-Navigation-in-Microsoft-AirSim\actinf\src\actinf.jl:10
- [5] include
-   @ .\Base.jl:557 [inlined]
- [6] include_package_for_output(pkg::Base.PkgId, input::String, depot_path::Vector{String}, dl_load_path::Vector{String}, load_path::Vector{String}, concrete_deps::Vector{Pair{Base.PkgId, UInt128}}, source::Nothing)
-   @ Base .\loading.jl:2881
- [7] top-level scope
-   @ stdin:6
-in expression starting at c:\Users\harshil_airsim_1\Desktop\AirSim\Hierarchical-Active-Inference-for-Autonomous-Drone-Navigation-in-Microsoft-AirSim\actinf\src\Planning.jl:1
-in expression starting at c:\Users\harshil_airsim_1\Desktop\AirSim\Hierarchical-Active-Inference-for-Autonomous-Drone-Navigation-in-Microsoft-AirSim\actinf\src\actinf.jl:1
-in expression starting at stdin:   Resolving package versions...
-  No Changes to `C:\Users\harshil_airsim_1\Desktop\AirSim\Hierarchical-Active-Inference-for-Autonomous-Drone-Navigation-in-Microsoft-AirSim\Project.toml`
-  No Changes to `C:\Users\harshil_airsim_1\Desktop\AirSim\Hierarchical-Active-Inference-for-Autonomous-Drone-Navigation-in-Microsoft-AirSim\Manifest.toml`
-Precompiling project...
-           ✗ actinf
-  0 dependencies successfully precompiled in 4 seconds. 282 already precompiled.
-
-The following 1 direct dependency failed to precompile:
-
-actinf 
-
-Failed to precompile actinf [d0498c39-f064-4652-9d32-417a3552f8c1] to "C:\\Users\\harshil_airsim_1\\.julia\\compiled\\v1.11\\actinf\\jl_913.tmp".
-ERROR: LoadError: UndefVarError: `safe_indices` not defined in `actinf.Planning`
-Stacktrace:
- [1] top-level scope
-   @ c:\Users\harshil_airsim_1\Desktop\AirSim\Hierarchical-Active-Inference-for-Autonomous-Drone-Navigation-in-Microsoft-AirSim\actinf\src\Planning.jl:900
- [2] include(mod::Module, _path::String)
-   @ Base .\Base.jl:557
- [3] include(x::String)
-   @ actinf c:\Users\harshil_airsim_1\Desktop\AirSim\Hierarchical-Active-Inference-for-Autonomous-Drone-Navigation-in-Microsoft-AirSim\actinf\src\actinf.jl:1
- [4] top-level scope
-   @ c:\Users\harshil_airsim_1\Desktop\AirSim\Hierarchical-Active-Inference-for-Autonomous-Drone-Navigation-in-Microsoft-AirSim\actinf\src\actinf.jl:10
- [5] include
-   @ .\Base.jl:557 [inlined]
- [6] include_package_for_output(pkg::Base.PkgId, input::String, depot_path::Vector{String}, dl_load_path::Vector{String}, load_path::Vector{String}, concrete_deps::Vector{Pair{Base.PkgId, UInt128}}, source::Nothing)
-   @ Base .\loading.jl:2881
- [7] top-level scope
-   @ stdin:6
-in expression starting at c:\Users\harshil_airsim_1\Desktop\AirSim\Hierarchical-Active-Inference-for-Autonomous-Drone-Navigation-in-Microsoft-AirSim\actinf\src\Planning.jl:1
-in expression starting at c:\Users\harshil_airsim_1\Desktop\AirSim\Hierarchical-Active-Inference-for-Autonomous-Drone-Navigation-in-Microsoft-AirSim\actinf\src\actinf.jl:1
-in expression starting at stdin:   Resolving package versions...
-  No Changes to `C:\Users\harshil_airsim_1\Desktop\AirSim\Hierarchical-Active-Inference-for-Autonomous-Drone-Navigation-in-Microsoft-AirSim\Project.toml`
-  No Changes to `C:\Users\harshil_airsim_1\Desktop\AirSim\Hierarchical-Active-Inference-for-Autonomous-Drone-Navigation-in-Microsoft-AirSim\Manifest.toml`
-Precompiling project...
-           ✗ actinf
-  0 dependencies successfully precompiled in 4 seconds. 282 already precompiled.
-
-The following 1 direct dependency failed to precompile:
-
-actinf 
-
-Failed to precompile actinf [d0498c39-f064-4652-9d32-417a3552f8c1] to "C:\\Users\\harshil_airsim_1\\.julia\\compiled\\v1.11\\actinf\\jl_1FEA.tmp".
-ERROR: LoadError: UndefVarError: `safe_indices` not defined in `actinf.Planning`
-Stacktrace:
- [1] top-level scope
-   @ c:\Users\harshil_airsim_1\Desktop\AirSim\Hierarchical-Active-Inference-for-Autonomous-Drone-Navigation-in-Microsoft-AirSim\actinf\src\Planning.jl:900
- [2] include(mod::Module, _path::String)
-   @ Base .\Base.jl:557
- [3] include(x::String)
-   @ actinf c:\Users\harshil_airsim_1\Desktop\AirSim\Hierarchical-Active-Inference-for-Autonomous-Drone-Navigation-in-Microsoft-AirSim\actinf\src\actinf.jl:1
- [4] top-level scope
-   @ c:\Users\harshil_airsim_1\Desktop\AirSim\Hierarchical-Active-Inference-for-Autonomous-Drone-Navigation-in-Microsoft-AirSim\actinf\src\actinf.jl:10
- [5] include
-   @ .\Base.jl:557 [inlined]
- [6] include_package_for_output(pkg::Base.PkgId, input::String, depot_path::Vector{String}, dl_load_path::Vector{String}, load_path::Vector{String}, concrete_deps::Vector{Pair{Base.PkgId, UInt128}}, source::Nothing)
-   @ Base .\loading.jl:2881
- [7] top-level scope
-   @ stdin:6
-in expression starting at c:\Users\harshil_airsim_1\Desktop\AirSim\Hierarchical-Active-Inference-for-Autonomous-Drone-Navigation-in-Microsoft-AirSim\actinf\src\Planning.jl:1
-in expression starting at c:\Users\harshil_airsim_1\Desktop\AirSim\Hierarchical-Active-Inference-for-Autonomous-Drone-Navigation-in-Microsoft-AirSim\actinf\src\actinf.jl:1
-in expression starting at stdin:   Resolving package versions...
-  No Changes to `C:\Users\harshil_airsim_1\Desktop\AirSim\Hierarchical-Active-Inference-for-Autonomous-Drone-Navigation-in-Microsoft-AirSim\Project.toml`
-  No Changes to `C:\Users\harshil_airsim_1\Desktop\AirSim\Hierarchical-Active-Inference-for-Autonomous-Drone-Navigation-in-Microsoft-AirSim\Manifest.toml`
-Precompiling project...
-           ✗ actinf
-  0 dependencies successfully precompiled in 4 seconds. 282 already precompiled.
-
-The following 1 direct dependency failed to precompile:
-
-actinf 
-
-Failed to precompile actinf [d0498c39-f064-4652-9d32-417a3552f8c1] to "C:\\Users\\harshil_airsim_1\\.julia\\compiled\\v1.11\\actinf\\jl_379B.tmp".
-ERROR: LoadError: UndefVarError: `safe_indices` not defined in `actinf.Planning`
-Stacktrace:
- [1] top-level scope
-   @ c:\Users\harshil_airsim_1\Desktop\AirSim\Hierarchical-Active-Inference-for-Autonomous-Drone-Navigation-in-Microsoft-AirSim\actinf\src\Planning.jl:900
- [2] include(mod::Module, _path::String)
-   @ Base .\Base.jl:557
- [3] include(x::String)
-   @ actinf c:\Users\harshil_airsim_1\Desktop\AirSim\Hierarchical-Active-Inference-for-Autonomous-Drone-Navigation-in-Microsoft-AirSim\actinf\src\actinf.jl:1
- [4] top-level scope
-   @ c:\Users\harshil_airsim_1\Desktop\AirSim\Hierarchical-Active-Inference-for-Autonomous-Drone-Navigation-in-Microsoft-AirSim\actinf\src\actinf.jl:10
- [5] include
-   @ .\Base.jl:557 [inlined]
- [6] include_package_for_output(pkg::Base.PkgId, input::String, depot_path::Vector{String}, dl_load_path::Vector{String}, load_path::Vector{String}, concrete_deps::Vector{Pair{Base.PkgId, UInt128}}, source::Nothing)
-   @ Base .\loading.jl:2881
- [7] top-level scope
-   @ stdin:6
-in expression starting at c:\Users\harshil_airsim_1\Desktop\AirSim\Hierarchical-Active-Inference-for-Autonomous-Drone-Navigation-in-Microsoft-AirSim\actinf\src\Planning.jl:1
-in expression starting at c:\Users\harshil_airsim_1\Desktop\AirSim\Hierarchical-Active-Inference-for-Autonomous-Drone-Navigation-in-Microsoft-AirSim\actinf\src\actinf.jl:1
-in expression starting at stdin:Precompiling project...
-           ✗ actinf
-  0 dependencies successfully precompiled in 4 seconds. 282 already precompiled.
-
-ERROR: LoadError: The following 1 direct dependency failed to precompile:
-
-actinf 
-
-Failed to precompile actinf [d0498c39-f064-4652-9d32-417a3552f8c1] to "C:\\Users\\harshil_airsim_1\\.julia\\compiled\\v1.11\\actinf\\jl_4913.tmp".
-ERROR: LoadError: UndefVarError: `safe_indices` not defined in `actinf.Planning`
-Stacktrace:
- [1] top-level scope
-   @ c:\Users\harshil_airsim_1\Desktop\AirSim\Hierarchical-Active-Inference-for-Autonomous-Drone-Navigation-in-Microsoft-AirSim\actinf\src\Planning.jl:900
- [2] include(mod::Module, _path::String)
-   @ Base .\Base.jl:557
- [3] include(x::String)
-   @ actinf c:\Users\harshil_airsim_1\Desktop\AirSim\Hierarchical-Active-Inference-for-Autonomous-Drone-Navigation-in-Microsoft-AirSim\actinf\src\actinf.jl:1
- [4] top-level scope
-   @ c:\Users\harshil_airsim_1\Desktop\AirSim\Hierarchical-Active-Inference-for-Autonomous-Drone-Navigation-in-Microsoft-AirSim\actinf\src\actinf.jl:10
- [5] include
-   @ .\Base.jl:557 [inlined]
- [6] include_package_for_output(pkg::Base.PkgId, input::String, depot_path::Vector{String}, dl_load_path::Vector{String}, load_path::Vector{String}, concrete_deps::Vector{Pair{Base.PkgId, UInt128}}, source::Nothing)
-   @ Base .\loading.jl:2881
- [7] top-level scope
-   @ stdin:6
-in expression starting at c:\Users\harshil_airsim_1\Desktop\AirSim\Hierarchical-Active-Inference-for-Autonomous-Drone-Navigation-in-Microsoft-AirSim\actinf\src\Planning.jl:1
-in expression starting at c:\Users\harshil_airsim_1\Desktop\AirSim\Hierarchical-Active-Inference-for-Autonomous-Drone-Navigation-in-Microsoft-AirSim\actinf\src\actinf.jl:1
-in expression starting at stdin:
-in expression starting at c:\Users\harshil_airsim_1\Desktop\AirSim\Hierarchical-Active-Inference-for-Autonomous-Drone-Navigation-in-Microsoft-AirSim\precompile.jl:118
+  No Changes to `C:\Users\Satya\Autonomous-Drone-Navigation-in-AirSim-With-Active-Inference\Project.toml`
+  No Changes to `C:\Users\Satya\Autonomous-Drone-Navigation-in-AirSim-With-Active-Inference\Manifest.toml`
+   Resolving package versions...
+  No Changes to `C:\Users\Satya\Autonomous-Drone-Navigation-in-AirSim-With-Active-Inference\Project.toml`
+  No Changes to `C:\Users\Satya\Autonomous-Drone-Navigation-in-AirSim-With-Active-Inference\Manifest.toml`
+   Resolving package versions...
+  No Changes to `C:\Users\Satya\Autonomous-Drone-Navigation-in-AirSim-With-Active-Inference\Project.toml`
+  No Changes to `C:\Users\Satya\Autonomous-Drone-Navigation-in-AirSim-With-Active-Inference\Manifest.toml`
+   Resolving package versions...
+  No Changes to `C:\Users\Satya\Autonomous-Drone-Navigation-in-AirSim-With-Active-Inference\Project.toml`
+  No Changes to `C:\Users\Satya\Autonomous-Drone-Navigation-in-AirSim-With-Active-Inference\Manifest.toml`
+┌ Warning: Assignment to `all_packages_loaded` in soft scope is ambiguous because a global variable by the same name exists: `all_packages_loaded` will be treated as a new local. Disambiguate by using `local all_packages_loaded` to suppress this warning or `global all_packages_loaded` to assign to the existing global variable.
+└ @ c:\Users\Satya\Autonomous-Drone-Navigation-in-AirSim-With-Active-Inference\precompile.jl:132
+┌ Warning: Assignment to `actinf_loaded` in soft scope is ambiguous because a global variable by the same name exists: `actinf_loaded` will be treated as a new local. Disambiguate by using `local actinf_loaded` to suppress this warning or `global actinf_loaded` to assign to the existing global variable.
+└ @ c:\Users\Satya\Autonomous-Drone-Navigation-in-AirSim-With-Active-Inference\precompile.jl:161
+   Resolving package versions...
+  No Changes to `C:\Users\Satya\Autonomous-Drone-Navigation-in-AirSim-With-Active-Inference\Project.toml`
+  No Changes to `C:\Users\Satya\Autonomous-Drone-Navigation-in-AirSim-With-Active-Inference\Manifest.toml`
 
 === Starting Active Inference Precompilation ===
 ✓ Basic packages loaded
 ✓ JSON package loaded
-Current directory: c:\Users\harshil_airsim_1\Desktop\AirSim\Hierarchical-Active-Inference-for-Autonomous-Drone-Navigation-in-Microsoft-AirSim
-Current project: C:\Users\harshil_airsim_1\.julia\environments\v1.11\Project.toml
-✓ Project activated: c:\Users\harshil_airsim_1\Desktop\AirSim\Hierarchical-Active-Inference-for-Autonomous-Drone-Navigation-in-Microsoft-AirSim\Project.toml
+Current directory: c:\Users\Satya\Autonomous-Drone-Navigation-in-AirSim-With-Active-Inference
+Current project: C:\Users\Satya\.julia\environments\v1.11\Project.toml
+✓ Project activated: c:\Users\Satya\Autonomous-Drone-Navigation-in-AirSim-With-Active-Inference\Project.toml
 
 Installing required packages...
 ✓ Added JSON package
@@ -173,3 +38,25 @@ Instantiating project...
 ✓ Project instantiated
 
 Precompiling packages...
+✓ Packages precompiled
+
+Verifying package loading...
+  Testing JSON... ✓
+  Testing ZMQ... ✓
+  Testing StaticArrays... ✓
+  Testing LinearAlgebra... ✓
+
+Testing actinf package loading...
+✓ actinf package and modules loaded successfully
+
+Verifying core functionality...
+  StateSpace module test: ✓
+  Inference module test: ✓
+  Planning module test: ✓
+
+Testing ZMQ functionality...
+  ZMQ functionality: ✓
+✓ All components successfully precompiled
+
+=== Active Inference Precompilation Completed in 24.7 seconds ===
+The system is now ready for efficient navigation
