@@ -1322,6 +1322,86 @@ class Scanner:
             traceback.print_exc()
             return [], []
 
+def generate_target_pool(start_pos: List[float], distance_range: Tuple[float, float],
+                      client: airsim.MultirotorClient, num_targets: int = 100,
+                      max_attempts: int = 300, seed: int = None,
+                      ray_checks: int = 7) -> List[List[float]]:
+    """Pre-generate a pool of valid target positions for use throughout the experiment
+    
+    Args:
+        start_pos: Starting drone position [x, y, z]
+        distance_range: (min_distance, max_distance) in meters
+        client: AirSim client instance
+        num_targets: Number of targets to generate for the pool
+        max_attempts: Maximum sampling attempts per target
+        seed: Random seed for deterministic behavior
+        ray_checks: Number of rays to use for validating each target
+        
+    Returns:
+        List[List[float]]: List of target positions [x, y, z] in NED coordinates
+        
+    Raises:
+        ValueError: If unable to generate enough valid targets
+    """
+    logging.info(f"Generating pool of {num_targets} valid target locations...")
+    
+    # Create a separate random generator for deterministic target generation
+    if seed is not None:
+        target_rng = random.Random(seed)
+    else:
+        target_rng = random.Random()
+    
+    target_pool = []
+    total_attempts = 0
+    max_total_attempts = max_attempts * num_targets * 2  # Upper bound to prevent infinite loops
+    
+    # Start time to track performance
+    start_time = time.time()
+    
+    # Try to generate the requested number of targets
+    while len(target_pool) < num_targets and total_attempts < max_total_attempts:
+        try:
+            # For each target, we'll use a different "episode id" to ensure diversity
+            # This lets us leverage the existing sample_visible_target logic directly
+            fake_episode_id = len(target_pool)
+            
+            # Get a valid target location
+            target_pos = sample_visible_target(
+                start_pos,
+                distance_range,
+                client,
+                max_attempts=max(50, max_attempts // num_targets),
+                episode_id=fake_episode_id,
+                seed=seed,
+                ray_checks=ray_checks
+            )
+            
+            if target_pos:
+                target_pool.append(target_pos)
+                
+                # Log progress periodically
+                if len(target_pool) % 10 == 0 or len(target_pool) == num_targets:
+                    elapsed = time.time() - start_time
+                    logging.info(f"Generated {len(target_pool)}/{num_targets} targets "
+                                f"in {elapsed:.1f}s ({total_attempts} attempts)")
+        
+        except Exception as e:
+            logging.warning(f"Error generating target {len(target_pool)}: {e}")
+        
+        total_attempts += 1
+    
+    # Check if we generated enough targets
+    if len(target_pool) < num_targets:
+        logging.warning(f"Could only generate {len(target_pool)}/{num_targets} valid targets "
+                      f"after {total_attempts} attempts")
+        if len(target_pool) == 0:
+            raise ValueError("Failed to generate any valid targets for the pool")
+    else:
+        logging.info(f"Successfully generated pool of {len(target_pool)} targets "
+                   f"in {time.time() - start_time:.1f}s")
+    
+    return target_pool
+
 def move_to_waypoint(client, current_pos, waypoint, velocity=2, distance_to_target=None, high_density=False):
     """Move to waypoint with calculated yaw so drone faces direction of travel
     
@@ -1862,12 +1942,13 @@ def move_to_waypoint(client, current_pos, waypoint, velocity=2, distance_to_targ
 
 def run_episode(episode_id: int, client: airsim.MultirotorClient, 
                 zmq_interface: ZMQInterface, scanner: Scanner, 
-                config: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+                config: Dict[str, Any], target_pool: List[List[float]] = None) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     """Run a single navigation episode
     
     Args:
         episode_id: Episode identifier
         client: AirSim client instance
+        target_pool: Pre-generated pool of valid target locations
         zmq_interface: ZMQ communication interface
         scanner: Scanner for obstacle detection
         config: Experiment configuration
@@ -1942,23 +2023,61 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
     if config.get("debug_raycasting", False) and episode_id % 5 == 0:  # Debug every 5th episode
         logging.getLogger().setLevel(logging.DEBUG)
         logging.debug(f"Episode {episode_id}: Enhanced logging enabled for raycast debugging")
-        logging.debug(f"Using {ray_checks} rays for target validation")
-    
-    # Sample a random target - NOW we can safely check visibility
-    target_sampling_start = time.time()
+        logging.debug(f"Using {ray_checks} rays for target validation")        # Get target from the pre-generated pool if available, otherwise fall back to sampling
+    target_sampling_start = time.time()    
     try:
-        target_pos = sample_visible_target(
-            drone_pos, 
-            config["target_distance_range"], 
-            client,
-            episode_id=episode_id,
-            seed=config["random_seed"],
-            ray_checks=ray_checks
-        )
-        target_sampling_time = time.time() - target_sampling_start
-        logging.info(f"Episode {episode_id}: Target sampling took {target_sampling_time:.2f}s with {ray_checks} rays")
+        # Use pre-generated target pool if available
+        if target_pool and episode_id < len(target_pool):
+            # Get the target corresponding to this episode
+            target_pos = target_pool[episode_id]
+            
+            # Verify that this pre-generated target is still valid (environment may have changed)
+            start_vector = airsim.Vector3r(drone_pos[0], drone_pos[1], drone_pos[2])
+            target_vector = airsim.Vector3r(target_pos[0], target_pos[1], target_pos[2])
+            los_valid = client.simTestLineOfSightBetweenPoints(start_vector, target_vector)
+            
+            if los_valid:
+                target_sampling_time = time.time() - target_sampling_start
+                logging.info(f"Episode {episode_id}: Using pre-generated target {episode_id} of {len(target_pool)}")
+            else:
+                # Target is no longer valid, fall back to on-the-fly generation
+                logging.warning(f"Episode {episode_id}: Pre-generated target no longer valid, generating new target")
+                target_pos = sample_visible_target(
+                    drone_pos, 
+                    config["target_distance_range"], 
+                    client,
+                    episode_id=episode_id,
+                    seed=config["random_seed"],
+                    ray_checks=ray_checks
+                )
+                target_sampling_time = time.time() - target_sampling_start
+                logging.info(f"Episode {episode_id}: Fallback target sampling took {target_sampling_time:.2f}s with {ray_checks} rays")
+        else:
+            # No pool or index out of range, use on-the-fly generation
+            if not target_pool:
+                logging.warning(f"Episode {episode_id}: No target pool available")
+            elif episode_id >= len(target_pool):
+                logging.warning(f"Episode {episode_id}: Target pool exhausted (only {len(target_pool)} targets available)")
+            
+            target_pos = sample_visible_target(
+                drone_pos, 
+                config["target_distance_range"], 
+                client,
+                episode_id=episode_id,
+                seed=config["random_seed"],
+                ray_checks=ray_checks
+            )
+            target_sampling_time = time.time() - target_sampling_start
+            logging.info(f"Episode {episode_id}: Target sampling took {target_sampling_time:.2f}s with {ray_checks} rays")
     except ValueError as e:
         logging.warning(f"Episode {episode_id}: {str(e)}")
+        # Attempt to get a simpler target if sampling failed
+        try:
+            target_pos = [drone_pos[0] + 10.0, drone_pos[1], drone_pos[2]]
+            logging.warning(f"Episode {episode_id}: Using fallback target at {target_pos}")
+        except Exception as fallback_error:
+            logging.error(f"Episode {episode_id}: Even fallback target failed: {fallback_error}")
+            return [], {}  # Return empty results if we couldn't create any target
         
         # Restore original log level if it was changed
         if config.get("debug_rayca+sting", False) and episode_id % 5 == 0:
@@ -3116,6 +3235,87 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
     
     return step_metrics, episode_summary
 
+def generate_target_pool(start_pos: List[float], distance_range: Tuple[float, float],
+                      client: airsim.MultirotorClient, num_targets: int = 100,
+                      max_attempts: int = 300, seed: int = None,
+                      ray_checks: int = 7) -> List[List[float]]:
+    """Pre-generate a pool of valid target positions for use throughout the experiment
+    
+    Args:
+        start_pos: Starting drone position [x, y, z]
+        distance_range: (min_distance, max_distance) in meters
+        client: AirSim client instance
+        num_targets: Number of targets to generate for the pool
+        max_attempts: Maximum sampling attempts per target
+        seed: Random seed for deterministic behavior
+        ray_checks: Number of rays to use for validating each target
+        
+    Returns:
+        List[List[float]]: List of target positions [x, y, z] in NED coordinates
+        
+    Raises:
+        ValueError: If unable to generate enough valid targets
+    """
+    logging.info(f"Generating pool of {num_targets} valid target locations...")
+    
+    # Create a separate random generator for deterministic target generation
+    if seed is not None:
+        target_rng = random.Random(seed)
+    else:
+        target_rng = random.Random()
+    
+    target_pool = []
+    total_attempts = 0
+    max_total_attempts = max_attempts * num_targets * 2  # Upper bound to prevent infinite loops
+    
+    # Start time to track performance
+    start_time = time.time()
+    
+    # Try to generate the requested number of targets
+    while len(target_pool) < num_targets and total_attempts < max_total_attempts:
+        try:
+            # For each target, we'll use a different "episode id" to ensure diversity
+            # This lets us leverage the existing sample_visible_target logic directly
+            fake_episode_id = len(target_pool)
+            
+            # Get a valid target location
+            target_pos = sample_visible_target(
+                start_pos,
+                distance_range,
+                client,
+                max_attempts=max(50, max_attempts // num_targets),
+                episode_id=fake_episode_id,
+                seed=seed,
+                ray_checks=ray_checks
+            )
+            
+            if target_pos:
+                target_pool.append(target_pos)
+                
+                # Log progress periodically
+                if len(target_pool) % 10 == 0 or len(target_pool) == num_targets:
+                    elapsed = time.time() - start_time
+                    logging.info(f"Generated {len(target_pool)}/{num_targets} targets "
+                                f"in {elapsed:.1f}s ({total_attempts} attempts)")
+        
+        except Exception as e:
+            logging.warning(f"Error generating target {len(target_pool)}: {e}")
+        
+        total_attempts += 1
+    
+    # Check if we generated enough targets
+    if len(target_pool) < num_targets:
+        logging.warning(f"Could only generate {len(target_pool)}/{num_targets} valid targets "
+                      f"after {total_attempts} attempts")
+        if len(target_pool) == 0:
+            raise ValueError("Failed to generate any valid targets for the pool")
+    else:
+        logging.info(f"Successfully generated pool of {len(target_pool)} targets "
+                   f"in {time.time() - start_time:.1f}s")
+    
+    return target_pool
+
+
 def run_experiment(config: Dict[str, Any]) -> None:
     """Run a full navigation experiment with multiple episodes
     
@@ -3132,6 +3332,7 @@ def run_experiment(config: Dict[str, Any]) -> None:
     start_episode = 0
     all_episodes_metrics = []
     episode_summaries = []
+    target_pool = []  # Initialize empty target pool
     
     if os.path.exists(recovery_file):
         try:
@@ -3275,7 +3476,6 @@ def run_experiment(config: Dict[str, Any]) -> None:
                 else:
                     logging.error("Maximum retry attempts reached. Please ensure AirSim is running.")
                     raise ConnectionError("Failed to connect to AirSim after multiple attempts")
-    
     try:
         # Initialize AirSim client with retry
         client = initialize_airsim_with_retry()
@@ -3297,6 +3497,73 @@ def run_experiment(config: Dict[str, Any]) -> None:
         # Initialize ZMQ interface
         zmq_interface = ZMQInterface(server_port=server_port)
         
+        # Generate pool of target locations for the experiment
+        # Only if we're not resuming or if we're resuming but no target pool exists
+        if not resuming or not os.path.exists(os.path.join(experiment_dir, "target_pool.json")):
+            try:
+                # Get initial drone position to use as starting point for generating targets
+                drone_pose = client.simGetVehiclePose()
+                start_pos = [drone_pose.position.x_val, drone_pose.position.y_val, drone_pose.position.z_val]
+                
+                # Number of targets to pre-generate (1.5x the number of episodes to have extras)
+                num_targets = min(200, int(full_config["num_episodes"] * 1.5))
+                
+                # Generate the pool
+                target_pool = generate_target_pool(
+                    start_pos, 
+                    full_config["target_distance_range"],
+                    client,
+                    num_targets=num_targets,
+                    max_attempts=300,
+                    seed=full_config.get("random_seed"),
+                    ray_checks=7
+                )
+                
+                # Save the target pool to file for recovery purposes
+                target_pool_file = os.path.join(experiment_dir, "target_pool.json")
+                with open(target_pool_file, 'w') as f:
+                    json.dump(target_pool, f)
+                logging.info(f"Saved pool of {len(target_pool)} targets to {target_pool_file}")
+            except Exception as e:
+                logging.error(f"Failed to generate target pool: {e}")
+                target_pool = []  # Reset to empty if generation fails
+                
+                # Try again with reduced parameters if the first attempt failed
+                try:
+                    logging.warning("Retrying target pool generation with reduced parameters...")
+                    
+                    # Try with fewer targets and simpler validation
+                    reduced_targets = min(50, int(full_config["num_episodes"] * 0.75))
+                    target_pool = generate_target_pool(
+                        start_pos, 
+                        full_config["target_distance_range"],
+                        client,
+                        num_targets=reduced_targets,
+                        max_attempts=200,
+                        seed=full_config.get("random_seed"),
+                        ray_checks=3  # Use fewer ray checks for faster generation
+                    )
+                    
+                    # Save the reduced pool
+                    target_pool_file = os.path.join(experiment_dir, "target_pool.json")
+                    with open(target_pool_file, 'w') as f:
+                        json.dump(target_pool, f)
+                    logging.info(f"Saved reduced pool of {len(target_pool)} targets to {target_pool_file}")
+                    
+                except Exception as retry_error:
+                    logging.error(f"Second attempt to generate target pool also failed: {retry_error}")
+                    target_pool = []  # Will fall back to on-the-fly generation
+        else:
+            # Load existing target pool if resuming
+            target_pool_file = os.path.join(experiment_dir, "target_pool.json")
+            try:
+                with open(target_pool_file, 'r') as f:
+                    target_pool = json.load(f)
+                logging.info(f"Loaded existing pool of {len(target_pool)} targets from {target_pool_file}")
+            except Exception as e:
+                logging.error(f"Failed to load target pool: {e}")
+                target_pool = []
+        
         # Run episodes
         for episode_id in range(start_episode, full_config["num_episodes"]):
             try:
@@ -3310,10 +3577,9 @@ def run_experiment(config: Dict[str, Any]) -> None:
                     scanner = Scanner(client)  # Reinitialize scanner with new client
                 
                 logging.info(f"Starting episode {episode_id} of {full_config['num_episodes']}")
-                
-                # Run episode
+                  # Run episode
                 step_metrics, episode_summary = run_episode(
-                    episode_id, client, zmq_interface, scanner, full_config
+                    episode_id, client, zmq_interface, scanner, full_config, target_pool
                 )
                 
                 # Track metrics
@@ -4042,6 +4308,7 @@ def plot_metrics(metrics_file, output_dir):
 
 if __name__ == "__main__":
     main()
+
 
 
 
