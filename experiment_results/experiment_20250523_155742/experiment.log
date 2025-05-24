@@ -1,0 +1,496 @@
+2025-05-23 15:57:42,001 - INFO - Using random seed: 42
+2025-05-23 15:57:42,001 - INFO - Starting experiment with configuration:
+2025-05-23 15:57:42,002 - INFO -   num_episodes: 30
+2025-05-23 15:57:42,002 - INFO -   target_distance_range: (15.0, 50.0)
+2025-05-23 15:57:42,002 - INFO -   random_seed: 42
+2025-05-23 15:57:42,002 - INFO -   max_steps_per_episode: 100
+2025-05-23 15:57:42,002 - INFO -   output_dir: experiment_results
+2025-05-23 15:57:42,002 - INFO -   stuck_timeout: 15.0
+2025-05-23 15:57:42,002 - INFO -   stuck_check_interval: 3.0
+2025-05-23 15:57:42,002 - INFO -   episode_timeout: 120
+2025-05-23 15:57:42,003 - INFO -   precompile_julia: True
+2025-05-23 15:57:42,003 - INFO -   zmq_port: 5555
+2025-05-23 15:57:42,003 - INFO -   debug_raycasting: False
+2025-05-23 15:57:42,003 - INFO -   min_ray_checks: 3
+2025-05-23 15:57:42,003 - INFO -   max_ray_checks: 7
+2025-05-23 15:57:42,003 - INFO -   visualize_raycasts: False
+2025-05-23 15:57:42,003 - INFO -   visualization_duration: 60.0
+2025-05-23 15:57:45,762 - INFO - System information collected and saved
+2025-05-23 15:57:45,772 - INFO - AirSim connection established successfully
+2025-05-23 15:58:54,311 - INFO - Generating pool of 45 valid target locations...
+2025-05-23 15:58:54,311 - INFO - Target distance range for episode 0: 15.0m - 50.0m
+2025-05-23 15:58:54,312 - WARNING - Sampling target with drone too close to ground (alt: -0.05m)
+2025-05-23 15:58:54,312 - INFO - Adjusted sampling position to ensure minimum altitude: [0.0, 0.0, -5.0] (alt: 5.00m)
+2025-05-23 15:58:54,546 - INFO - Found first valid target at [-15.77, -18.92, -8.21], altitude: 8.21m
+2025-05-23 15:58:57,911 - INFO - Phase 2: Found 16 valid targets, focusing on refining these
+2025-05-23 15:59:00,397 - INFO - Found 27 valid targets, selecting best with 0.00m clearance at altitude: 8.21m
+2025-05-23 15:59:00,398 - INFO - Target distance range for episode 1: 15.5m - 38.5m
+2025-05-23 15:59:00,398 - WARNING - Sampling target with drone too close to ground (alt: -0.05m)
+2025-05-23 15:59:00,398 - INFO - Adjusted sampling position to ensure minimum altitude: [0.0, 0.0, -5.0] (alt: 5.00m)
+2025-05-23 15:59:00,633 - INFO - Found first valid target at [18.26, 4.51, -6.3], altitude: 6.30m
+2025-05-23 15:59:04,006 - INFO - Phase 2: Found 16 valid targets, focusing on refining these
+2025-05-23 15:59:06,509 - INFO - Found 27 valid targets, selecting best with 0.00m clearance at altitude: 6.30m
+2025-05-23 15:59:06,511 - INFO - Target distance range for episode 2: 16.0m - 42.0m
+2025-05-23 15:59:06,511 - WARNING - Sampling target with drone too close to ground (alt: -0.05m)
+2025-05-23 15:59:06,511 - INFO - Adjusted sampling position to ensure minimum altitude: [0.0, 0.0, -5.0] (alt: 5.00m)
+2025-05-23 15:59:06,745 - INFO - Found first valid target at [-32.24, 20.88, -8.59], altitude: 8.59m
+2025-05-23 15:59:10,216 - INFO - Phase 2: Found 16 valid targets, focusing on refining these
+2025-05-23 15:59:12,727 - INFO - Found 27 valid targets, selecting best with 0.00m clearance at altitude: 8.59m
+2025-05-23 15:59:12,740 - INFO - Target distance range for episode 3: 16.5m - 45.5m
+2025-05-23 15:59:12,740 - WARNING - Sampling target with drone too close to ground (alt: -0.05m)
+2025-05-23 15:59:12,741 - INFO - Adjusted sampling position to ensure minimum altitude: [0.0, 0.0, -5.0] (alt: 5.00m)
+2025-05-23 15:59:12,965 - INFO - Found first valid target at [-2.59, 18.7, -7.29], altitude: 7.29m
+2025-05-23 15:59:16,376 - INFO - Phase 2: Found 16 valid targets, focusing on refining these
+2025-05-23 15:59:18,897 - INFO - Found 27 valid targets, selecting best with 0.00m clearance at altitude: 7.29m
+2025-05-23 15:59:18,898 - INFO - Target distance range for episode 4: 17.0m - 49.0m
+2025-05-23 15:59:18,898 - WARNING - Sampling target with drone too close to ground (alt: -0.05m)
+2025-05-23 15:59:18,899 - INFO - Adjusted sampling position to ensure minimum altitude: [0.0, 0.0, -5.0] (alt: 5.00m)
+2025-05-23 15:59:19,136 - INFO - Found first valid target at [27.36, -23.14, -3.12], altitude: 3.12m
+2025-05-23 15:59:22,549 - INFO - Phase 2: Found 16 valid targets, focusing on refining these
+2025-05-23 15:59:25,011 - INFO - Found 27 valid targets, selecting best with 0.00m clearance at altitude: 3.12m
+2025-05-23 15:59:25,014 - INFO - Target distance range for episode 5: 17.5m - 50.0m
+2025-05-23 15:59:25,014 - WARNING - Sampling target with drone too close to ground (alt: -0.05m)
+2025-05-23 15:59:25,015 - INFO - Adjusted sampling position to ensure minimum altitude: [0.0, 0.0, -5.0] (alt: 5.00m)
+2025-05-23 15:59:25,236 - INFO - Found first valid target at [-19.25, 25.86, -7.25], altitude: 7.25m
+2025-05-23 15:59:28,611 - INFO - Phase 2: Found 16 valid targets, focusing on refining these
+2025-05-23 15:59:31,106 - INFO - Found 27 valid targets, selecting best with 0.00m clearance at altitude: 7.25m
+2025-05-23 15:59:31,108 - INFO - Target distance range for episode 6: 18.0m - 50.0m
+2025-05-23 15:59:31,108 - WARNING - Sampling target with drone too close to ground (alt: -0.05m)
+2025-05-23 15:59:31,109 - INFO - Adjusted sampling position to ensure minimum altitude: [0.0, 0.0, -5.0] (alt: 5.00m)
+2025-05-23 15:59:31,335 - INFO - Found first valid target at [-38.92, -12.15, -7.58], altitude: 7.58m
+2025-05-23 15:59:34,896 - INFO - Phase 2: Found 16 valid targets, focusing on refining these
+2025-05-23 15:59:37,412 - INFO - Found 27 valid targets, selecting best with 0.00m clearance at altitude: 7.58m
+2025-05-23 15:59:37,413 - INFO - Target distance range for episode 7: 18.5m - 50.0m
+2025-05-23 15:59:37,413 - WARNING - Sampling target with drone too close to ground (alt: -0.05m)
+2025-05-23 15:59:37,414 - INFO - Adjusted sampling position to ensure minimum altitude: [0.0, 0.0, -5.0] (alt: 5.00m)
+2025-05-23 15:59:37,641 - INFO - Found first valid target at [20.07, 8.97, -3.98], altitude: 3.98m
+2025-05-23 15:59:41,107 - INFO - Phase 2: Found 16 valid targets, focusing on refining these
+2025-05-23 15:59:43,692 - INFO - Found 27 valid targets, selecting best with 0.00m clearance at altitude: 3.98m
+2025-05-23 15:59:43,695 - INFO - Target distance range for episode 8: 19.0m - 50.0m
+2025-05-23 15:59:43,695 - WARNING - Sampling target with drone too close to ground (alt: -0.05m)
+2025-05-23 15:59:43,696 - INFO - Adjusted sampling position to ensure minimum altitude: [0.0, 0.0, -5.0] (alt: 5.00m)
+2025-05-23 15:59:43,924 - INFO - Found first valid target at [-38.76, 0.6, -8.06], altitude: 8.06m
+2025-05-23 15:59:47,374 - INFO - Phase 2: Found 16 valid targets, focusing on refining these
+2025-05-23 15:59:49,924 - INFO - Found 27 valid targets, selecting best with 0.00m clearance at altitude: 8.06m
+2025-05-23 15:59:49,926 - INFO - Target distance range for episode 9: 19.5m - 50.0m
+2025-05-23 15:59:49,926 - WARNING - Sampling target with drone too close to ground (alt: -0.05m)
+2025-05-23 15:59:49,926 - INFO - Adjusted sampling position to ensure minimum altitude: [0.0, 0.0, -5.0] (alt: 5.00m)
+2025-05-23 15:59:50,164 - INFO - Found first valid target at [1.0, 24.42, -3.43], altitude: 3.43m
+2025-05-23 15:59:53,615 - INFO - Phase 2: Found 16 valid targets, focusing on refining these
+2025-05-23 15:59:56,149 - INFO - Found 27 valid targets, selecting best with 0.00m clearance at altitude: 3.43m
+2025-05-23 15:59:56,151 - INFO - Generated 10/45 targets in 61.8s (9 attempts)
+2025-05-23 15:59:56,151 - INFO - Target distance range for episode 10: 20.0m - 50.0m
+2025-05-23 15:59:56,152 - WARNING - Sampling target with drone too close to ground (alt: -0.05m)
+2025-05-23 15:59:56,152 - INFO - Adjusted sampling position to ensure minimum altitude: [0.0, 0.0, -5.0] (alt: 5.00m)
+2025-05-23 15:59:56,383 - INFO - Found first valid target at [41.38, -5.66, -6.13], altitude: 6.13m
+2025-05-23 15:59:59,811 - INFO - Phase 2: Found 16 valid targets, focusing on refining these
+2025-05-23 16:00:02,345 - INFO - Found 27 valid targets, selecting best with 0.00m clearance at altitude: 6.13m
+2025-05-23 16:00:02,347 - INFO - Target distance range for episode 11: 20.0m - 50.0m
+2025-05-23 16:00:02,347 - WARNING - Sampling target with drone too close to ground (alt: -0.05m)
+2025-05-23 16:00:02,348 - INFO - Adjusted sampling position to ensure minimum altitude: [0.0, 0.0, -5.0] (alt: 5.00m)
+2025-05-23 16:00:02,582 - INFO - Found first valid target at [-24.97, -22.62, -4.31], altitude: 4.31m
+2025-05-23 16:00:05,976 - INFO - Phase 2: Found 16 valid targets, focusing on refining these
+2025-05-23 16:00:08,717 - INFO - Found 27 valid targets, selecting best with 0.00m clearance at altitude: 4.31m
+2025-05-23 16:00:08,719 - INFO - Target distance range for episode 12: 20.0m - 50.0m
+2025-05-23 16:00:08,720 - WARNING - Sampling target with drone too close to ground (alt: -0.05m)
+2025-05-23 16:00:08,720 - INFO - Adjusted sampling position to ensure minimum altitude: [0.0, 0.0, -5.0] (alt: 5.00m)
+2025-05-23 16:00:08,960 - INFO - Found first valid target at [31.41, -18.94, -6.14], altitude: 6.14m
+2025-05-23 16:00:12,467 - INFO - Phase 2: Found 16 valid targets, focusing on refining these
+2025-05-23 16:00:14,974 - INFO - Found 27 valid targets, selecting best with 0.00m clearance at altitude: 6.14m
+2025-05-23 16:00:14,976 - INFO - Target distance range for episode 13: 20.0m - 50.0m
+2025-05-23 16:00:14,977 - WARNING - Sampling target with drone too close to ground (alt: -0.05m)
+2025-05-23 16:00:14,977 - INFO - Adjusted sampling position to ensure minimum altitude: [0.0, 0.0, -5.0] (alt: 5.00m)
+2025-05-23 16:00:15,211 - INFO - Found first valid target at [20.66, 13.17, -4.09], altitude: 4.09m
+2025-05-23 16:00:18,620 - INFO - Phase 2: Found 16 valid targets, focusing on refining these
+2025-05-23 16:00:21,128 - INFO - Found 27 valid targets, selecting best with 0.00m clearance at altitude: 4.09m
+2025-05-23 16:00:21,131 - INFO - Target distance range for episode 14: 20.0m - 50.0m
+2025-05-23 16:00:21,131 - WARNING - Sampling target with drone too close to ground (alt: -0.05m)
+2025-05-23 16:00:21,132 - INFO - Adjusted sampling position to ensure minimum altitude: [0.0, 0.0, -5.0] (alt: 5.00m)
+2025-05-23 16:00:21,366 - INFO - Found first valid target at [33.43, -7.27, -5.81], altitude: 5.81m
+2025-05-23 16:00:24,835 - INFO - Phase 2: Found 16 valid targets, focusing on refining these
+2025-05-23 16:00:27,373 - INFO - Found 27 valid targets, selecting best with 0.00m clearance at altitude: 5.81m
+2025-05-23 16:00:27,375 - INFO - Target distance range for episode 15: 20.0m - 50.0m
+2025-05-23 16:00:27,376 - WARNING - Sampling target with drone too close to ground (alt: -0.05m)
+2025-05-23 16:00:27,376 - INFO - Adjusted sampling position to ensure minimum altitude: [0.0, 0.0, -5.0] (alt: 5.00m)
+2025-05-23 16:00:27,613 - INFO - Found first valid target at [19.85, 5.44, -5.89], altitude: 5.89m
+2025-05-23 16:00:31,066 - INFO - Phase 2: Found 16 valid targets, focusing on refining these
+2025-05-23 16:00:33,675 - INFO - Found 27 valid targets, selecting best with 0.00m clearance at altitude: 5.89m
+2025-05-23 16:00:33,678 - INFO - Target distance range for episode 16: 20.0m - 50.0m
+2025-05-23 16:00:33,678 - WARNING - Sampling target with drone too close to ground (alt: -0.05m)
+2025-05-23 16:00:33,679 - INFO - Adjusted sampling position to ensure minimum altitude: [0.0, 0.0, -5.0] (alt: 5.00m)
+2025-05-23 16:00:33,919 - INFO - Found first valid target at [-34.31, -19.08, -2.43], altitude: 2.43m
+2025-05-23 16:00:37,425 - INFO - Phase 2: Found 16 valid targets, focusing on refining these
+2025-05-23 16:00:39,945 - INFO - Found 27 valid targets, selecting best with 0.00m clearance at altitude: 2.43m
+2025-05-23 16:00:39,947 - INFO - Target distance range for episode 17: 20.0m - 50.0m
+2025-05-23 16:00:39,948 - WARNING - Sampling target with drone too close to ground (alt: -0.05m)
+2025-05-23 16:00:39,948 - INFO - Adjusted sampling position to ensure minimum altitude: [0.0, 0.0, -5.0] (alt: 5.00m)
+2025-05-23 16:00:40,186 - INFO - Found first valid target at [7.81, 47.74, -9.82], altitude: 9.82m
+2025-05-23 16:00:43,675 - INFO - Phase 2: Found 16 valid targets, focusing on refining these
+2025-05-23 16:00:46,215 - INFO - Found 27 valid targets, selecting best with 0.00m clearance at altitude: 9.82m
+2025-05-23 16:00:46,217 - INFO - Target distance range for episode 18: 20.0m - 50.0m
+2025-05-23 16:00:46,217 - WARNING - Sampling target with drone too close to ground (alt: -0.05m)
+2025-05-23 16:00:46,218 - INFO - Adjusted sampling position to ensure minimum altitude: [0.0, 0.0, -5.0] (alt: 5.00m)
+2025-05-23 16:00:46,443 - INFO - Found first valid target at [-9.94, 26.14, -3.54], altitude: 3.54m
+2025-05-23 16:00:50,028 - INFO - Phase 2: Found 16 valid targets, focusing on refining these
+2025-05-23 16:00:52,561 - INFO - Found 27 valid targets, selecting best with 0.00m clearance at altitude: 3.54m
+2025-05-23 16:00:52,563 - INFO - Target distance range for episode 19: 20.0m - 50.0m
+2025-05-23 16:00:52,564 - WARNING - Sampling target with drone too close to ground (alt: -0.05m)
+2025-05-23 16:00:52,564 - INFO - Adjusted sampling position to ensure minimum altitude: [0.0, 0.0, -5.0] (alt: 5.00m)
+2025-05-23 16:00:52,798 - INFO - Found first valid target at [-44.27, 1.53, -7.44], altitude: 7.44m
+2025-05-23 16:00:56,218 - INFO - Phase 2: Found 16 valid targets, focusing on refining these
+2025-05-23 16:00:58,713 - INFO - Found 27 valid targets, selecting best with 0.00m clearance at altitude: 7.44m
+2025-05-23 16:00:58,715 - INFO - Generated 20/45 targets in 124.4s (19 attempts)
+2025-05-23 16:00:58,716 - INFO - Target distance range for episode 20: 20.0m - 50.0m
+2025-05-23 16:00:58,716 - WARNING - Sampling target with drone too close to ground (alt: -0.05m)
+2025-05-23 16:00:58,716 - INFO - Adjusted sampling position to ensure minimum altitude: [0.0, 0.0, -5.0] (alt: 5.00m)
+2025-05-23 16:00:58,952 - INFO - Found first valid target at [44.18, -21.47, -8.1], altitude: 8.10m
+2025-05-23 16:01:02,415 - INFO - Phase 2: Found 16 valid targets, focusing on refining these
+2025-05-23 16:01:04,926 - INFO - Found 27 valid targets, selecting best with 0.00m clearance at altitude: 8.10m
+2025-05-23 16:01:04,928 - INFO - Target distance range for episode 21: 20.0m - 50.0m
+2025-05-23 16:01:04,928 - WARNING - Sampling target with drone too close to ground (alt: -0.05m)
+2025-05-23 16:01:04,929 - INFO - Adjusted sampling position to ensure minimum altitude: [0.0, 0.0, -5.0] (alt: 5.00m)
+2025-05-23 16:01:05,149 - INFO - Found first valid target at [-44.5, 15.98, -6.13], altitude: 6.13m
+2025-05-23 16:01:08,523 - INFO - Phase 2: Found 16 valid targets, focusing on refining these
+2025-05-23 16:01:11,016 - INFO - Found 27 valid targets, selecting best with 0.00m clearance at altitude: 6.13m
+2025-05-23 16:01:11,018 - INFO - Target distance range for episode 22: 20.0m - 50.0m
+2025-05-23 16:01:11,018 - WARNING - Sampling target with drone too close to ground (alt: -0.05m)
+2025-05-23 16:01:11,019 - INFO - Adjusted sampling position to ensure minimum altitude: [0.0, 0.0, -5.0] (alt: 5.00m)
+2025-05-23 16:01:11,246 - INFO - Found first valid target at [-31.76, 4.79, -2.64], altitude: 2.64m
+2025-05-23 16:01:14,689 - INFO - Phase 2: Found 16 valid targets, focusing on refining these
+2025-05-23 16:01:17,190 - INFO - Found 27 valid targets, selecting best with 0.00m clearance at altitude: 2.64m
+2025-05-23 16:01:17,192 - INFO - Target distance range for episode 23: 20.0m - 50.0m
+2025-05-23 16:01:17,192 - WARNING - Sampling target with drone too close to ground (alt: -0.05m)
+2025-05-23 16:01:17,193 - INFO - Adjusted sampling position to ensure minimum altitude: [0.0, 0.0, -5.0] (alt: 5.00m)
+2025-05-23 16:01:17,421 - INFO - Found first valid target at [-38.99, 23.14, -6.45], altitude: 6.45m
+2025-05-23 16:01:20,924 - INFO - Phase 2: Found 16 valid targets, focusing on refining these
+2025-05-23 16:01:23,541 - INFO - Found 27 valid targets, selecting best with 0.00m clearance at altitude: 6.45m
+2025-05-23 16:01:23,542 - INFO - Target distance range for episode 24: 20.0m - 50.0m
+2025-05-23 16:01:23,542 - WARNING - Sampling target with drone too close to ground (alt: -0.05m)
+2025-05-23 16:01:23,543 - INFO - Adjusted sampling position to ensure minimum altitude: [0.0, 0.0, -5.0] (alt: 5.00m)
+2025-05-23 16:01:23,781 - INFO - Found first valid target at [24.72, 11.79, -6.43], altitude: 6.43m
+2025-05-23 16:01:27,276 - INFO - Phase 2: Found 16 valid targets, focusing on refining these
+2025-05-23 16:01:29,843 - INFO - Found 27 valid targets, selecting best with 0.00m clearance at altitude: 6.43m
+2025-05-23 16:01:29,845 - INFO - Target distance range for episode 25: 20.0m - 50.0m
+2025-05-23 16:01:29,845 - WARNING - Sampling target with drone too close to ground (alt: -0.05m)
+2025-05-23 16:01:29,845 - INFO - Adjusted sampling position to ensure minimum altitude: [0.0, 0.0, -5.0] (alt: 5.00m)
+2025-05-23 16:01:30,082 - INFO - Found first valid target at [43.83, 22.26, -6.68], altitude: 6.68m
+2025-05-23 16:01:33,665 - INFO - Phase 2: Found 16 valid targets, focusing on refining these
+2025-05-23 16:01:36,196 - INFO - Found 27 valid targets, selecting best with 0.00m clearance at altitude: 6.68m
+2025-05-23 16:01:36,197 - INFO - Target distance range for episode 26: 20.0m - 50.0m
+2025-05-23 16:01:36,197 - WARNING - Sampling target with drone too close to ground (alt: -0.05m)
+2025-05-23 16:01:36,198 - INFO - Adjusted sampling position to ensure minimum altitude: [0.0, 0.0, -5.0] (alt: 5.00m)
+2025-05-23 16:01:36,431 - INFO - Found first valid target at [-2.22, -42.36, -2.73], altitude: 2.73m
+2025-05-23 16:01:39,911 - INFO - Phase 2: Found 16 valid targets, focusing on refining these
+2025-05-23 16:01:42,514 - INFO - Found 27 valid targets, selecting best with 0.00m clearance at altitude: 2.73m
+2025-05-23 16:01:42,516 - INFO - Target distance range for episode 27: 20.0m - 50.0m
+2025-05-23 16:01:42,517 - WARNING - Sampling target with drone too close to ground (alt: -0.05m)
+2025-05-23 16:01:42,517 - INFO - Adjusted sampling position to ensure minimum altitude: [0.0, 0.0, -5.0] (alt: 5.00m)
+2025-05-23 16:01:42,746 - INFO - Found first valid target at [-10.04, -22.9, -5.16], altitude: 5.16m
+2025-05-23 16:01:46,204 - INFO - Phase 2: Found 16 valid targets, focusing on refining these
+2025-05-23 16:01:48,721 - INFO - Found 27 valid targets, selecting best with 0.00m clearance at altitude: 5.16m
+2025-05-23 16:01:48,722 - INFO - Target distance range for episode 28: 20.0m - 50.0m
+2025-05-23 16:01:48,722 - WARNING - Sampling target with drone too close to ground (alt: -0.05m)
+2025-05-23 16:01:48,722 - INFO - Adjusted sampling position to ensure minimum altitude: [0.0, 0.0, -5.0] (alt: 5.00m)
+2025-05-23 16:01:48,947 - INFO - Found first valid target at [28.5, -18.14, -8.91], altitude: 8.91m
+2025-05-23 16:01:52,436 - INFO - Phase 2: Found 16 valid targets, focusing on refining these
+2025-05-23 16:01:54,968 - INFO - Found 27 valid targets, selecting best with 0.00m clearance at altitude: 8.91m
+2025-05-23 16:01:54,970 - INFO - Target distance range for episode 29: 20.0m - 50.0m
+2025-05-23 16:01:54,970 - WARNING - Sampling target with drone too close to ground (alt: -0.05m)
+2025-05-23 16:01:54,971 - INFO - Adjusted sampling position to ensure minimum altitude: [0.0, 0.0, -5.0] (alt: 5.00m)
+2025-05-23 16:01:55,204 - INFO - Found first valid target at [-9.05, 18.12, -2.14], altitude: 2.14m
+2025-05-23 16:01:58,635 - INFO - Phase 2: Found 16 valid targets, focusing on refining these
+2025-05-23 16:02:01,185 - INFO - Found 27 valid targets, selecting best with 0.00m clearance at altitude: 2.14m
+2025-05-23 16:02:01,188 - INFO - Generated 30/45 targets in 186.9s (29 attempts)
+2025-05-23 16:02:01,189 - INFO - Target distance range for episode 30: 20.0m - 50.0m
+2025-05-23 16:02:01,189 - WARNING - Sampling target with drone too close to ground (alt: -0.05m)
+2025-05-23 16:02:01,190 - INFO - Adjusted sampling position to ensure minimum altitude: [0.0, 0.0, -5.0] (alt: 5.00m)
+2025-05-23 16:02:01,416 - INFO - Found first valid target at [44.49, 22.12, -7.25], altitude: 7.25m
+2025-05-23 16:02:04,877 - INFO - Phase 2: Found 16 valid targets, focusing on refining these
+2025-05-23 16:02:07,414 - INFO - Found 27 valid targets, selecting best with 0.00m clearance at altitude: 7.25m
+2025-05-23 16:02:07,416 - INFO - Target distance range for episode 31: 20.0m - 50.0m
+2025-05-23 16:02:07,416 - WARNING - Sampling target with drone too close to ground (alt: -0.05m)
+2025-05-23 16:02:07,417 - INFO - Adjusted sampling position to ensure minimum altitude: [0.0, 0.0, -5.0] (alt: 5.00m)
+2025-05-23 16:02:07,652 - INFO - Found first valid target at [-6.88, 36.28, -6.31], altitude: 6.31m
+2025-05-23 16:02:11,088 - INFO - Phase 2: Found 16 valid targets, focusing on refining these
+2025-05-23 16:02:13,673 - INFO - Found 27 valid targets, selecting best with 0.00m clearance at altitude: 6.31m
+2025-05-23 16:02:13,675 - INFO - Target distance range for episode 32: 20.0m - 50.0m
+2025-05-23 16:02:13,675 - WARNING - Sampling target with drone too close to ground (alt: -0.05m)
+2025-05-23 16:02:13,676 - INFO - Adjusted sampling position to ensure minimum altitude: [0.0, 0.0, -5.0] (alt: 5.00m)
+2025-05-23 16:02:13,905 - INFO - Found first valid target at [14.89, -18.06, -9.04], altitude: 9.04m
+2025-05-23 16:02:17,355 - INFO - Phase 2: Found 16 valid targets, focusing on refining these
+2025-05-23 16:02:19,897 - INFO - Found 27 valid targets, selecting best with 0.00m clearance at altitude: 9.04m
+2025-05-23 16:02:19,899 - INFO - Target distance range for episode 33: 20.0m - 50.0m
+2025-05-23 16:02:19,900 - WARNING - Sampling target with drone too close to ground (alt: -0.05m)
+2025-05-23 16:02:19,900 - INFO - Adjusted sampling position to ensure minimum altitude: [0.0, 0.0, -5.0] (alt: 5.00m)
+2025-05-23 16:02:20,125 - INFO - Found first valid target at [-20.24, 6.46, -3.86], altitude: 3.86m
+2025-05-23 16:02:23,635 - INFO - Phase 2: Found 16 valid targets, focusing on refining these
+2025-05-23 16:02:26,213 - INFO - Found 27 valid targets, selecting best with 0.00m clearance at altitude: 3.86m
+2025-05-23 16:02:26,215 - INFO - Target distance range for episode 34: 20.0m - 50.0m
+2025-05-23 16:02:26,215 - WARNING - Sampling target with drone too close to ground (alt: -0.05m)
+2025-05-23 16:02:26,215 - INFO - Adjusted sampling position to ensure minimum altitude: [0.0, 0.0, -5.0] (alt: 5.00m)
+2025-05-23 16:02:26,458 - INFO - Found first valid target at [-17.87, 18.89, -7.62], altitude: 7.62m
+2025-05-23 16:02:29,971 - INFO - Phase 2: Found 16 valid targets, focusing on refining these
+2025-05-23 16:02:32,632 - INFO - Found 27 valid targets, selecting best with 0.00m clearance at altitude: 7.62m
+2025-05-23 16:02:32,635 - INFO - Target distance range for episode 35: 20.0m - 50.0m
+2025-05-23 16:02:32,635 - WARNING - Sampling target with drone too close to ground (alt: -0.05m)
+2025-05-23 16:02:32,636 - INFO - Adjusted sampling position to ensure minimum altitude: [0.0, 0.0, -5.0] (alt: 5.00m)
+2025-05-23 16:02:32,874 - INFO - Found first valid target at [8.27, -25.93, -3.42], altitude: 3.42m
+2025-05-23 16:02:36,463 - INFO - Phase 2: Found 16 valid targets, focusing on refining these
+2025-05-23 16:02:39,001 - INFO - Found 27 valid targets, selecting best with 0.00m clearance at altitude: 3.42m
+2025-05-23 16:02:39,003 - INFO - Target distance range for episode 36: 20.0m - 50.0m
+2025-05-23 16:02:39,003 - WARNING - Sampling target with drone too close to ground (alt: -0.05m)
+2025-05-23 16:02:39,004 - INFO - Adjusted sampling position to ensure minimum altitude: [0.0, 0.0, -5.0] (alt: 5.00m)
+2025-05-23 16:02:39,236 - INFO - Found first valid target at [18.81, -43.87, -4.16], altitude: 4.16m
+2025-05-23 16:02:42,825 - INFO - Phase 2: Found 16 valid targets, focusing on refining these
+2025-05-23 16:02:45,485 - INFO - Found 27 valid targets, selecting best with 0.00m clearance at altitude: 4.16m
+2025-05-23 16:02:45,488 - INFO - Target distance range for episode 37: 20.0m - 50.0m
+2025-05-23 16:02:45,488 - WARNING - Sampling target with drone too close to ground (alt: -0.05m)
+2025-05-23 16:02:45,489 - INFO - Adjusted sampling position to ensure minimum altitude: [0.0, 0.0, -5.0] (alt: 5.00m)
+2025-05-23 16:02:45,738 - INFO - Found first valid target at [15.21, 19.7, -8.03], altitude: 8.03m
+2025-05-23 16:02:49,343 - INFO - Phase 2: Found 16 valid targets, focusing on refining these
+2025-05-23 16:02:51,914 - INFO - Found 27 valid targets, selecting best with 0.00m clearance at altitude: 8.03m
+2025-05-23 16:02:51,916 - INFO - Target distance range for episode 38: 20.0m - 50.0m
+2025-05-23 16:02:51,917 - WARNING - Sampling target with drone too close to ground (alt: -0.05m)
+2025-05-23 16:02:51,917 - INFO - Adjusted sampling position to ensure minimum altitude: [0.0, 0.0, -5.0] (alt: 5.00m)
+2025-05-23 16:02:52,148 - INFO - Found first valid target at [-5.55, 40.87, -2.33], altitude: 2.33m
+2025-05-23 16:02:55,608 - INFO - Phase 2: Found 16 valid targets, focusing on refining these
+2025-05-23 16:02:58,139 - INFO - Found 27 valid targets, selecting best with 0.00m clearance at altitude: 2.33m
+2025-05-23 16:02:58,141 - INFO - Target distance range for episode 39: 20.0m - 50.0m
+2025-05-23 16:02:58,141 - WARNING - Sampling target with drone too close to ground (alt: -0.05m)
+2025-05-23 16:02:58,142 - INFO - Adjusted sampling position to ensure minimum altitude: [0.0, 0.0, -5.0] (alt: 5.00m)
+2025-05-23 16:02:58,379 - INFO - Found first valid target at [-36.71, -1.37, -6.93], altitude: 6.93m
+2025-05-23 16:03:01,828 - INFO - Phase 2: Found 16 valid targets, focusing on refining these
+2025-05-23 16:03:04,333 - INFO - Found 27 valid targets, selecting best with 0.00m clearance at altitude: 6.93m
+2025-05-23 16:03:04,334 - INFO - Generated 40/45 targets in 250.0s (39 attempts)
+2025-05-23 16:03:04,334 - INFO - Target distance range for episode 40: 20.0m - 50.0m
+2025-05-23 16:03:04,335 - WARNING - Sampling target with drone too close to ground (alt: -0.05m)
+2025-05-23 16:03:04,335 - INFO - Adjusted sampling position to ensure minimum altitude: [0.0, 0.0, -5.0] (alt: 5.00m)
+2025-05-23 16:03:04,563 - INFO - Found first valid target at [21.59, 27.74, -2.25], altitude: 2.25m
+2025-05-23 16:03:08,006 - INFO - Phase 2: Found 16 valid targets, focusing on refining these
+2025-05-23 16:03:10,538 - INFO - Found 27 valid targets, selecting best with 0.00m clearance at altitude: 2.25m
+2025-05-23 16:03:10,540 - INFO - Target distance range for episode 41: 20.0m - 50.0m
+2025-05-23 16:03:10,541 - WARNING - Sampling target with drone too close to ground (alt: -0.05m)
+2025-05-23 16:03:10,541 - INFO - Adjusted sampling position to ensure minimum altitude: [0.0, 0.0, -5.0] (alt: 5.00m)
+2025-05-23 16:03:10,767 - INFO - Found first valid target at [-22.65, 0.55, -6.97], altitude: 6.97m
+2025-05-23 16:03:14,163 - INFO - Phase 2: Found 16 valid targets, focusing on refining these
+2025-05-23 16:03:16,721 - INFO - Found 27 valid targets, selecting best with 0.00m clearance at altitude: 6.97m
+2025-05-23 16:03:16,722 - INFO - Target distance range for episode 42: 20.0m - 50.0m
+2025-05-23 16:03:16,722 - WARNING - Sampling target with drone too close to ground (alt: -0.05m)
+2025-05-23 16:03:16,723 - INFO - Adjusted sampling position to ensure minimum altitude: [0.0, 0.0, -5.0] (alt: 5.00m)
+2025-05-23 16:03:16,953 - INFO - Found first valid target at [-2.45, -20.98, -9.96], altitude: 9.96m
+2025-05-23 16:03:20,389 - INFO - Phase 2: Found 16 valid targets, focusing on refining these
+2025-05-23 16:03:22,877 - INFO - Found 27 valid targets, selecting best with 0.00m clearance at altitude: 9.96m
+2025-05-23 16:03:22,879 - INFO - Target distance range for episode 43: 20.0m - 50.0m
+2025-05-23 16:03:22,879 - WARNING - Sampling target with drone too close to ground (alt: -0.05m)
+2025-05-23 16:03:22,880 - INFO - Adjusted sampling position to ensure minimum altitude: [0.0, 0.0, -5.0] (alt: 5.00m)
+2025-05-23 16:03:23,108 - INFO - Found first valid target at [7.23, 22.06, -2.76], altitude: 2.76m
+2025-05-23 16:03:26,519 - INFO - Phase 2: Found 16 valid targets, focusing on refining these
+2025-05-23 16:03:29,005 - INFO - Found 27 valid targets, selecting best with 0.00m clearance at altitude: 2.76m
+2025-05-23 16:03:29,006 - INFO - Target distance range for episode 44: 20.0m - 50.0m
+2025-05-23 16:03:29,006 - WARNING - Sampling target with drone too close to ground (alt: -0.05m)
+2025-05-23 16:03:29,007 - INFO - Adjusted sampling position to ensure minimum altitude: [0.0, 0.0, -5.0] (alt: 5.00m)
+2025-05-23 16:03:29,226 - INFO - Found first valid target at [11.64, -43.6, -7.46], altitude: 7.46m
+2025-05-23 16:03:32,635 - INFO - Phase 2: Found 16 valid targets, focusing on refining these
+2025-05-23 16:03:35,143 - INFO - Found 27 valid targets, selecting best with 0.00m clearance at altitude: 7.46m
+2025-05-23 16:03:35,146 - INFO - Generated 45/45 targets in 280.8s (44 attempts)
+2025-05-23 16:03:35,147 - INFO - Successfully generated pool of 45 targets in 280.8s
+2025-05-23 16:03:35,149 - INFO - Saved pool of 45 targets to experiment_results\experiment_20250523_155742\target_pool.json
+2025-05-23 16:03:35,150 - INFO - Starting episode 0 of 30
+2025-05-23 16:03:35,150 - INFO - === Starting Episode 0 ===
+2025-05-23 16:03:35,153 - INFO - Episode 0: Taking off...
+2025-05-23 16:03:40,561 - INFO - Episode 0: Using pre-generated target 0 of 45
+2025-05-23 16:03:40,562 - INFO - Episode 0: Initial distance to target: 25.48m
+2025-05-23 16:03:40,563 - INFO - Episode 0: Initial position: [0.0, 0.0, -1.67]
+2025-05-23 16:03:40,564 - INFO - Episode 0: Target position: [-15.77, -18.92, -8.21]
+2025-05-23 16:03:40,564 - INFO - Episode 0: Initial distance: 25.48m
+2025-05-23 16:03:40,570 - INFO - Episode 0: Target verified with 3 rays
+2025-05-23 16:03:55,712 - WARNING - Episode 0: Step 0 took 15.14s (unusually long)
+2025-05-23 16:04:10,325 - INFO - Episode 0: Target reached at step 6
+2025-05-23 16:04:10,329 - INFO - Episode 0: Skipping landing process and resetting drone for next episode
+2025-05-23 16:04:10,330 - INFO - Episode 0 completed: success
+2025-05-23 16:04:10,331 - INFO -   Steps: 6, Duration: 29.76s
+2025-05-23 16:04:10,331 - INFO -   Final distance: 1.15m, Collisions: 0
+2025-05-23 16:04:10,332 - INFO -   Dynamic replanning events: 0
+2025-05-23 16:04:10,369 - INFO - Saved recovery data for episode 0
+2025-05-23 16:04:10,371 - INFO - Starting episode 1 of 30
+2025-05-23 16:04:10,371 - INFO - === Starting Episode 1 ===
+2025-05-23 16:04:10,374 - INFO - Episode 1: Taking off...
+2025-05-23 16:04:15,783 - INFO - Episode 1: Using pre-generated target 1 of 45
+2025-05-23 16:04:15,784 - INFO - Episode 1: Initial distance to target: 19.37m
+2025-05-23 16:04:15,784 - INFO - Episode 1: Initial position: [0.0, 0.0, -1.67]
+2025-05-23 16:04:15,785 - INFO - Episode 1: Target position: [18.26, 4.51, -6.3]
+2025-05-23 16:04:15,785 - INFO - Episode 1: Initial distance: 19.37m
+2025-05-23 16:04:15,790 - INFO - Episode 1: Target verified with 3 rays
+2025-05-23 16:04:30,522 - INFO - Episode 1: Target reached at step 4
+2025-05-23 16:04:30,527 - INFO - Episode 1: Skipping landing process and resetting drone for next episode
+2025-05-23 16:04:30,527 - INFO - Episode 1 completed: success
+2025-05-23 16:04:30,527 - INFO -   Steps: 4, Duration: 14.74s
+2025-05-23 16:04:30,528 - INFO -   Final distance: 1.30m, Collisions: 0
+2025-05-23 16:04:30,528 - INFO -   Dynamic replanning events: 0
+2025-05-23 16:04:30,538 - INFO - Saved recovery data for episode 1
+2025-05-23 16:04:30,539 - INFO - Starting episode 2 of 30
+2025-05-23 16:04:30,539 - INFO - === Starting Episode 2 ===
+2025-05-23 16:04:30,543 - INFO - Episode 2: Taking off...
+2025-05-23 16:04:35,952 - INFO - Episode 2: Using pre-generated target 2 of 45
+2025-05-23 16:04:35,952 - INFO - Episode 2: Initial distance to target: 39.03m
+2025-05-23 16:04:35,953 - INFO - Episode 2: Initial position: [0.0, 0.0, -1.67]
+2025-05-23 16:04:35,954 - INFO - Episode 2: Target position: [-32.24, 20.88, -8.59]
+2025-05-23 16:04:35,954 - INFO - Episode 2: Initial distance: 39.03m
+2025-05-23 16:04:35,957 - INFO - Episode 2: Target verified with 3 rays
+2025-05-23 16:04:42,121 - WARNING - Episode 2: Step 0 took 6.16s (unusually long)
+2025-05-23 16:04:51,158 - WARNING - Collision detected during movement, cancelling task immediately
+2025-05-23 16:04:51,159 - INFO - Episode 2: Obstacle detected during movement, triggering immediate replanning
+2025-05-23 16:04:51,164 - INFO - Adding newly detected obstacle at [-13.91, 8.24, -2.81] to planning data
+2025-05-23 16:04:51,165 - INFO - Episode 2: Putting drone in hover mode before dynamic replanning
+2025-05-23 16:04:51,666 - INFO - Episode 2: Triggering dynamic replanning due to detected obstacle
+2025-05-23 16:04:51,676 - INFO - Enhanced planning parameters for obstacle avoidance: safety_margin=4.00, waypoint_count=150, obstacle_priority=3.00
+2025-05-23 16:04:51,688 - INFO - Episode 2: Executing replanned path to avoid obstacle
+2025-05-23 16:04:51,699 - WARNING - Collision detected during movement, cancelling task immediately
+2025-05-23 16:04:51,902 - WARNING - Episode 2: Collision detected at step 5
+2025-05-23 16:04:51,903 - INFO - Using collision normal for recovery: [0.98, 0.21, 0.00]
+2025-05-23 16:05:00,635 - WARNING - Recovery movement timed out after 8.0 seconds
+2025-05-23 16:05:00,636 - INFO - Episode 2: Collision recovery successful, moved 4.04m to new position: [-10.25, 9.05, -5.26]
+2025-05-23 16:05:04,002 - WARNING - Collision detected during movement, cancelling task immediately
+2025-05-23 16:05:04,003 - INFO - Episode 2: Obstacle detected during movement, triggering immediate replanning
+2025-05-23 16:05:04,009 - INFO - Adding newly detected obstacle at [-13.91, 8.24, -2.64] to planning data
+2025-05-23 16:05:04,010 - INFO - Episode 2: Putting drone in hover mode before dynamic replanning
+2025-05-23 16:05:04,512 - INFO - Episode 2: Triggering dynamic replanning due to detected obstacle
+2025-05-23 16:05:04,520 - INFO - Enhanced planning parameters for obstacle avoidance: safety_margin=5.00, waypoint_count=150, obstacle_priority=5.00
+2025-05-23 16:05:04,533 - INFO - Episode 2: Executing replanned path to avoid obstacle
+2025-05-23 16:05:09,356 - WARNING - Episode 2: Step 5 took 17.46s (unusually long)
+2025-05-23 16:05:15,490 - WARNING - Episode 2: Step 6 took 6.13s (unusually long)
+2025-05-23 16:05:27,131 - WARNING - Collision detected during movement, cancelling task immediately
+2025-05-23 16:05:27,133 - INFO - Episode 2: Obstacle detected during movement, triggering immediate replanning
+2025-05-23 16:05:27,139 - INFO - Adding newly detected obstacle at [-28.54, 18.53, -7.67] to planning data
+2025-05-23 16:05:27,139 - INFO - Episode 2: Putting drone in hover mode before dynamic replanning
+2025-05-23 16:05:27,642 - INFO - Episode 2: Triggering dynamic replanning due to detected obstacle
+2025-05-23 16:05:27,651 - INFO - Enhanced planning parameters for obstacle avoidance: safety_margin=4.00, waypoint_count=150, obstacle_priority=3.00
+2025-05-23 16:05:27,665 - INFO - Episode 2: Executing replanned path to avoid obstacle
+2025-05-23 16:05:27,677 - WARNING - Collision detected during movement, cancelling task immediately
+2025-05-23 16:05:27,880 - WARNING - Episode 2: Collision detected at step 12
+2025-05-23 16:05:27,882 - INFO - Using collision normal for recovery: [1.00, -0.00, 0.00]
+2025-05-23 16:05:36,612 - WARNING - Recovery movement timed out after 8.0 seconds
+2025-05-23 16:05:36,614 - INFO - Episode 2: Collision recovery successful, moved 4.05m to new position: [-24.78, 18.66, -10.18]
+2025-05-23 16:05:39,964 - WARNING - Collision detected during movement, cancelling task immediately
+2025-05-23 16:05:39,966 - INFO - Episode 2: Obstacle detected during movement, triggering immediate replanning
+2025-05-23 16:05:39,975 - INFO - Adding newly detected obstacle at [-28.54, 18.56, -7.68] to planning data
+2025-05-23 16:05:39,975 - INFO - Episode 2: Putting drone in hover mode before dynamic replanning
+2025-05-23 16:05:40,477 - INFO - Episode 2: Triggering dynamic replanning due to detected obstacle
+2025-05-23 16:05:40,488 - INFO - Enhanced planning parameters for obstacle avoidance: safety_margin=4.00, waypoint_count=150, obstacle_priority=3.00
+2025-05-23 16:05:40,503 - INFO - Episode 2: Executing replanned path to avoid obstacle
+2025-05-23 16:05:43,293 - WARNING - Collision detected during movement, cancelling task immediately
+2025-05-23 16:05:43,495 - WARNING - Episode 2: Step 12 took 15.62s (unusually long)
+2025-05-23 16:05:43,497 - WARNING - Episode 2: Collision detected at step 13
+2025-05-23 16:05:43,499 - INFO - Using collision normal for recovery: [1.00, 0.00, 0.00]
+2025-05-23 16:05:52,229 - WARNING - Recovery movement timed out after 8.0 seconds
+2025-05-23 16:05:52,232 - INFO - Episode 2: Collision recovery successful, moved 4.04m to new position: [-24.74, 20.98, -12.78]
+2025-05-23 16:05:55,640 - WARNING - Collision detected during movement, cancelling task immediately
+2025-05-23 16:05:55,641 - INFO - Episode 2: Obstacle detected during movement, triggering immediate replanning
+2025-05-23 16:05:55,646 - INFO - Adding newly detected obstacle at [-28.5, 20.92, -10.28] to planning data
+2025-05-23 16:05:55,647 - INFO - Episode 2: Putting drone in hover mode before dynamic replanning
+2025-05-23 16:05:56,148 - INFO - Episode 2: Triggering dynamic replanning due to detected obstacle
+2025-05-23 16:05:56,156 - INFO - Enhanced planning parameters for obstacle avoidance: safety_margin=4.00, waypoint_count=150, obstacle_priority=3.00
+2025-05-23 16:05:56,167 - INFO - Episode 2: Executing replanned path to avoid obstacle
+2025-05-23 16:05:58,743 - WARNING - Collision detected during movement, cancelling task immediately
+2025-05-23 16:05:58,945 - WARNING - Episode 2: Step 13 took 15.45s (unusually long)
+2025-05-23 16:05:58,947 - WARNING - Episode 2: Collision detected at step 14
+2025-05-23 16:05:58,949 - INFO - Using collision normal for recovery: [1.00, 0.00, 0.00]
+2025-05-23 17:49:03,289 - INFO - Using random seed: 42
+2025-05-23 17:49:03,291 - INFO - Starting experiment with configuration:
+2025-05-23 17:49:03,291 - INFO -   num_episodes: 30
+2025-05-23 17:49:03,291 - INFO -   target_distance_range: [15.0, 50.0]
+2025-05-23 17:49:03,291 - INFO -   random_seed: 42
+2025-05-23 17:49:03,291 - INFO -   max_steps_per_episode: 100
+2025-05-23 17:49:03,291 - INFO -   output_dir: experiment_results
+2025-05-23 17:49:03,292 - INFO -   stuck_timeout: 15.0
+2025-05-23 17:49:03,292 - INFO -   stuck_check_interval: 3.0
+2025-05-23 17:49:03,292 - INFO -   episode_timeout: 120
+2025-05-23 17:49:03,293 - INFO -   precompile_julia: True
+2025-05-23 17:49:03,293 - INFO -   zmq_port: 5555
+2025-05-23 17:49:03,293 - INFO -   debug_raycasting: False
+2025-05-23 17:49:03,293 - INFO -   min_ray_checks: 3
+2025-05-23 17:49:03,293 - INFO -   max_ray_checks: 7
+2025-05-23 17:49:03,293 - INFO -   visualize_raycasts: False
+2025-05-23 17:49:03,293 - INFO -   visualization_duration: 60.0
+2025-05-23 17:49:03,306 - INFO - AirSim connection established successfully
+2025-05-23 17:50:47,344 - INFO - Loaded existing pool of 45 targets from experiment_results\experiment_20250523_155742\target_pool.json
+2025-05-23 17:50:47,346 - INFO - Starting episode 2 of 30
+2025-05-23 17:50:47,346 - INFO - === Starting Episode 2 ===
+2025-05-23 17:50:47,353 - INFO - Episode 2: Taking off...
+2025-05-23 17:50:52,784 - INFO - Episode 2: Using pre-generated target 2 of 45
+2025-05-23 17:50:52,785 - INFO - Episode 2: Initial distance to target: 39.03m
+2025-05-23 17:50:52,786 - INFO - Episode 2: Initial position: [0.0, 0.0, -1.67]
+2025-05-23 17:50:52,786 - INFO - Episode 2: Target position: [-32.24, 20.88, -8.59]
+2025-05-23 17:50:52,786 - INFO - Episode 2: Initial distance: 39.03m
+2025-05-23 17:50:52,791 - INFO - Episode 2: Target verified with 3 rays
+2025-05-23 17:51:08,431 - WARNING - Episode 2: Step 0 took 15.64s (unusually long)
+2025-05-23 17:51:16,882 - WARNING - Episode 2: Step 2 took 5.51s (unusually long)
+2025-05-23 17:51:34,031 - WARNING - Collision detected during movement, cancelling task immediately
+2025-05-23 17:51:34,034 - INFO - Episode 2: Obstacle detected during movement, triggering immediate replanning
+2025-05-23 17:51:34,055 - INFO - Adding newly detected obstacle at [-27.76, 16.09, -5.32] to planning data
+2025-05-23 17:51:34,056 - INFO - Episode 2: Putting drone in hover mode before dynamic replanning
+2025-05-23 17:51:34,557 - INFO - Episode 2: Triggering dynamic replanning due to detected obstacle
+2025-05-23 17:51:34,572 - INFO - Enhanced planning parameters for obstacle avoidance: safety_margin=4.00, waypoint_count=150, obstacle_priority=3.00
+2025-05-23 17:51:34,594 - INFO - Episode 2: Executing replanned path to avoid obstacle
+2025-05-23 17:51:34,610 - WARNING - Collision detected during movement, cancelling task immediately
+2025-05-23 17:51:34,815 - WARNING - Episode 2: Collision detected at step 10
+2025-05-23 17:51:34,817 - INFO - Using collision normal for recovery: [1.00, -0.00, 0.00]
+2025-05-23 17:51:43,554 - WARNING - Recovery movement timed out after 8.0 seconds
+2025-05-23 17:51:43,558 - INFO - Episode 2: Collision recovery successful, moved 4.05m to new position: [-24.08, 16.26, -8.0]
+2025-05-23 17:51:46,842 - WARNING - Collision detected during movement, cancelling task immediately
+2025-05-23 17:51:46,844 - INFO - Episode 2: Obstacle detected during movement, triggering immediate replanning
+2025-05-23 17:51:46,857 - INFO - Adding newly detected obstacle at [-27.83, 16.19, -5.39] to planning data
+2025-05-23 17:51:46,857 - INFO - Episode 2: Putting drone in hover mode before dynamic replanning
+2025-05-23 17:51:47,359 - INFO - Episode 2: Triggering dynamic replanning due to detected obstacle
+2025-05-23 17:51:47,374 - INFO - Enhanced planning parameters for obstacle avoidance: safety_margin=4.00, waypoint_count=150, obstacle_priority=3.00
+2025-05-23 17:51:47,386 - INFO - Episode 2: Executing replanned path to avoid obstacle
+2025-05-23 17:51:51,088 - WARNING - Collision detected during movement, cancelling task immediately
+2025-05-23 17:51:51,290 - WARNING - Episode 2: Step 10 took 16.48s (unusually long)
+2025-05-23 17:51:51,292 - WARNING - Episode 2: Collision detected at step 11
+2025-05-23 17:51:51,295 - INFO - Using collision normal for recovery: [1.00, -0.00, 0.00]
+2025-05-23 17:52:00,050 - WARNING - Recovery movement timed out after 8.0 seconds
+2025-05-23 17:52:00,055 - WARNING - Episode 2: Collision recovery barely moved the drone (0.12m), retrying with emergency protocol
+2025-05-23 17:52:00,556 - INFO - Episode 2: Attempting emergency vertical escape to altitude -13.147636413574219
+2025-05-23 17:52:05,572 - WARNING - Episode 2: Emergency recovery had limited success, moved only 0.28m
+2025-05-23 18:26:06,421 - INFO - Using random seed: 42
+2025-05-23 18:26:06,422 - INFO - Starting experiment with configuration:
+2025-05-23 18:26:06,422 - INFO -   num_episodes: 30
+2025-05-23 18:26:06,422 - INFO -   target_distance_range: [15.0, 50.0]
+2025-05-23 18:26:06,422 - INFO -   random_seed: 42
+2025-05-23 18:26:06,423 - INFO -   max_steps_per_episode: 100
+2025-05-23 18:26:06,423 - INFO -   output_dir: experiment_results
+2025-05-23 18:26:06,423 - INFO -   stuck_timeout: 15.0
+2025-05-23 18:26:06,423 - INFO -   stuck_check_interval: 3.0
+2025-05-23 18:26:06,423 - INFO -   episode_timeout: 120
+2025-05-23 18:26:06,423 - INFO -   precompile_julia: True
+2025-05-23 18:26:06,423 - INFO -   zmq_port: 5555
+2025-05-23 18:26:06,423 - INFO -   debug_raycasting: False
+2025-05-23 18:26:06,423 - INFO -   min_ray_checks: 3
+2025-05-23 18:26:06,423 - INFO -   max_ray_checks: 7
+2025-05-23 18:26:06,423 - INFO -   visualize_raycasts: False
+2025-05-23 18:26:06,424 - INFO -   visualization_duration: 60.0
+2025-05-23 18:26:06,439 - INFO - AirSim connection established successfully
+2025-05-23 18:28:46,366 - INFO - Loaded existing pool of 45 targets from experiment_results\experiment_20250523_155742\target_pool.json
+2025-05-23 18:28:46,369 - INFO - Starting episode 2 of 30
+2025-05-23 18:28:46,370 - INFO - === Starting Episode 2 ===
+2025-05-23 18:28:46,376 - INFO - Episode 2: Taking off...
+2025-05-23 18:28:51,800 - INFO - Episode 2: Using pre-generated target 2 of 45
+2025-05-23 18:28:51,804 - INFO - Episode 2: Initial distance to target: 39.03m
+2025-05-23 18:28:51,806 - INFO - Episode 2: Initial position: [0.0, 0.0, -1.67]
+2025-05-23 18:28:51,806 - INFO - Episode 2: Target position: [-32.24, 20.88, -8.59]
+2025-05-23 18:28:51,807 - INFO - Episode 2: Initial distance: 39.03m
+2025-05-23 18:28:51,812 - INFO - Episode 2: Target verified with 3 rays
+2025-05-23 18:29:09,693 - WARNING - Episode 2: Step 0 took 17.88s (unusually long)
+2025-05-23 18:29:18,885 - WARNING - Episode 2: Step 2 took 5.86s (unusually long)
+2025-05-23 18:29:36,745 - WARNING - Collision detected during movement, cancelling task immediately
+2025-05-23 18:29:36,747 - INFO - Episode 2: Obstacle detected during movement, triggering immediate replanning
+2025-05-23 18:29:36,765 - INFO - Adding newly detected obstacle at [-28.48, 16.57, -6.3] to planning data
+2025-05-23 18:29:36,765 - INFO - Episode 2: Putting drone in hover mode before dynamic replanning
+2025-05-23 18:29:37,268 - INFO - Episode 2: Triggering dynamic replanning due to detected obstacle
+2025-05-23 18:29:37,291 - INFO - Enhanced planning parameters for obstacle avoidance: safety_margin=4.00, waypoint_count=150, obstacle_priority=3.00
+2025-05-23 18:29:37,314 - INFO - Episode 2: Executing replanned path to avoid obstacle
+2025-05-23 18:29:37,339 - WARNING - Collision detected during movement, cancelling task immediately
+2025-05-23 18:29:37,546 - WARNING - Episode 2: Collision detected at step 10
+2025-05-23 18:29:37,549 - INFO - Using collision normal for recovery: [1.00, -0.00, 0.00]
+2025-05-23 18:29:46,283 - WARNING - Recovery movement timed out after 8.0 seconds
+2025-05-23 18:29:46,284 - INFO - Episode 2: Collision recovery successful, moved 4.05m to new position: [-24.71, 16.59, -8.81]

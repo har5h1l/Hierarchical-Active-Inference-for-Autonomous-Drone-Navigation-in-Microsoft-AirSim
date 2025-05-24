@@ -3937,7 +3937,67 @@ def sample_visible_target(current_pos: List[float], distance_range: Tuple[float,
             
         # If target passed ray checks, proceed with validation
         if target_valid:
-            # Target is visible - add to valid targets
+            # First check if the target is inside an enclosed structure (like a house)
+            # This prevents generating targets inside inaccessible buildings
+            is_enclosed_space = False
+            
+            try:
+                # Test if position is inside an enclosed space by checking for obstacles in all directions
+                # For indoor spaces like houses, there should be obstacles in most or all directions
+                
+                # Use more comprehensive directions to check for enclosure
+                enclosure_test_dirs = [
+                    np.array([1, 0, 0]), np.array([-1, 0, 0]),  # X axis
+                    np.array([0, 1, 0]), np.array([0, -1, 0]),  # Y axis
+                    np.array([0, 0, 1]), np.array([0, 0, -1]),  # Z axis (up/down)
+                    # Add diagonal directions for better coverage
+                    np.array([1, 1, 0]), np.array([-1, -1, 0]),
+                    np.array([1, -1, 0]), np.array([-1, 1, 0]),
+                    np.array([1, 0, 1]), np.array([-1, 0, 1]),
+                    np.array([0, 1, 1]), np.array([0, -1, 1])
+                ]
+                
+                # Normalize diagonal directions
+                for i in range(6, len(enclosure_test_dirs)):
+                    norm = np.linalg.norm(enclosure_test_dirs[i])
+                    if norm > 0:
+                        enclosure_test_dirs[i] = enclosure_test_dirs[i] / norm
+                
+                # Count obstacles in different directions
+                obstacles_detected = 0
+                max_enclosed_dist = 15  # Maximum distance to check for enclosure
+                
+                for direction in enclosure_test_dirs:
+                    obstacle_detected = False
+                    
+                    # Check at multiple distances to see if there's an obstacle
+                    for dist in range(2, max_enclosed_dist + 1, 2):  # Check every 2m up to max_enclosed_dist
+                        check_point = target_pos + (direction * dist)
+                        check_vector = airsim.Vector3r(check_point[0], check_point[1], check_point[2])
+                        
+                        # If line of sight fails, we found an obstacle
+                        if not client.simTestLineOfSightBetweenPoints(target_vector, check_vector):
+                            obstacle_detected = True
+                            obstacles_detected += 1
+                            break
+                
+                # If obstacles are detected in most directions, this is likely an enclosed space
+                enclosure_threshold = 0.75  # 75% of directions need to have obstacles
+                is_enclosed_space = obstacles_detected >= len(enclosure_test_dirs) * enclosure_threshold
+                
+                if is_enclosed_space:
+                    logging.debug(f"Target at {[round(p, 2) for p in target_pos.tolist()]} rejected - appears to be inside an enclosed structure")
+                    continue  # Skip this target and try another one
+                else:
+                    logging.debug(f"Target at {[round(p, 2) for p in target_pos.tolist()]} is not in an enclosed space ({obstacles_detected}/{len(enclosure_test_dirs)} directions have obstacles)")
+            
+            except Exception as e:
+                logging.warning(f"Error checking if target is in enclosed space: {e}")
+                # Be conservative - if we can't determine, assume it might be enclosed
+                logging.debug(f"Target at {[round(p, 2) for p in target_pos.tolist()]} skipped due to error checking enclosed space")
+                continue
+            
+            # Only add to valid targets if it passed the enclosed space check
             valid_targets.append(target_pos.tolist())
             
             # Check obstacle clearance around target
@@ -4069,12 +4129,55 @@ def sample_visible_target(current_pos: List[float], distance_range: Tuple[float,
                         current_pos[0] + direction[0] * distance,
                         current_pos[1] + direction[1] * distance,
                         fallback_altitude  # Variable altitude
-                    ])
-                  # Check if this fallback target is valid
+                    ])                # Check if this fallback target is valid
                 fallback_vector3r = airsim.Vector3r(fallback_target_pos[0], fallback_target_pos[1], fallback_target_pos[2])
                 fallback_los_result = client.simTestLineOfSightBetweenPoints(start_vector, fallback_vector3r)
                 
                 if fallback_los_result:
+                    # First check if the fallback target is inside an enclosed structure
+                    is_enclosed = False
+                    try:
+                        # Test directions for enclosure
+                        enclosure_test_dirs = [
+                            np.array([1, 0, 0]), np.array([-1, 0, 0]),  # X axis
+                            np.array([0, 1, 0]), np.array([0, -1, 0]),  # Y axis
+                            np.array([0, 0, 1]), np.array([0, 0, -1]),  # Z axis
+                            # Add some diagonal directions
+                            np.array([1, 1, 0]), np.array([-1, -1, 0]),
+                            np.array([1, -1, 0]), np.array([-1, 1, 0])
+                        ]
+                        
+                        # Normalize diagonal directions
+                        for i in range(6, len(enclosure_test_dirs)):
+                            norm = np.linalg.norm(enclosure_test_dirs[i])
+                            if norm > 0:
+                                enclosure_test_dirs[i] = enclosure_test_dirs[i] / norm
+                        
+                        # Count obstacles in different directions
+                        obstacles_detected = 0
+                        
+                        for direction in enclosure_test_dirs:
+                            # Check if there's an obstacle within 15m
+                            for dist in range(2, 16, 2):  # Check every 2m up to 15m
+                                check_point = fallback_target_pos + (direction * dist)
+                                check_vector = airsim.Vector3r(check_point[0], check_point[1], check_point[2])
+                                
+                                if not client.simTestLineOfSightBetweenPoints(fallback_vector3r, check_vector):
+                                    obstacles_detected += 1
+                                    break
+                        
+                        # If obstacles are detected in most directions, this is likely an enclosed space
+                        is_enclosed = obstacles_detected >= len(enclosure_test_dirs) * 0.75  # 75% threshold
+                        
+                        if is_enclosed:
+                            logging.debug(f"Fallback target rejected - appears to be inside an enclosed structure")
+                            continue  # Try next fallback target
+                    
+                    except Exception as e:
+                        logging.warning(f"Error checking if fallback target is in enclosed space: {e}")
+                        is_enclosed = True  # Be conservative - if we can't determine, skip this target
+                        continue
+                    
                     # Now check obstacle clearance for this fallback target
                     min_obstacle_dist = float('inf')
                     clearance_dirs = [
@@ -4093,15 +4196,15 @@ def sample_visible_target(current_pos: List[float], distance_range: Tuple[float,
                                     min_obstacle_dist = clear_dist
                                 break
                     
-                    # Only use targets with sufficient clearance
-                    if min_obstacle_dist >= 3.0:
+                    # Only use targets with sufficient clearance and not in enclosed spaces
+                    if min_obstacle_dist >= 3.0 and not is_enclosed:
                         logging.info(f"Using fallback target at {[round(p, 2) for p in fallback_target_pos.tolist()]} with {min_obstacle_dist}m clearance")
                         return fallback_target_pos.tolist()
                     else:
-                        logging.debug(f"Fallback target rejected - insufficient clearance ({min_obstacle_dist}m < 3.0m)")
+                        logging.debug(f"Fallback target rejected - insufficient clearance ({min_obstacle_dist}m < 3.0m) or enclosed space")
             except Exception as e:
-                logging.warning(f"Error checking fallback target: {e}")    # Last resort - just return the default target position
-    logging.error("Failed to find any valid target, returning default position")
+                logging.warning(f"Error checking fallback target: {e}")    # Last resort - try several directions for the default target to find one that's not inside a building
+    logging.error("Failed to find any valid target, trying multiple default positions")
     
     # Choose a random safe altitude for the default target
     if seed is not None:
@@ -4111,15 +4214,74 @@ def sample_visible_target(current_pos: List[float], distance_range: Tuple[float,
     
     default_altitude = final_rng.uniform(MIN_TARGET_ALTITUDE, MAX_TARGET_ALTITUDE)
     
-    # Default to moving 10 meters forward at a random safe altitude
-    default_target = [
-        current_pos[0] + 10.0,  # 10m forward in X
-        current_pos[1],         # Same Y position
-        default_altitude        # Random safe altitude
+    # Try multiple default directions with increasing distances
+    default_directions = [
+        np.array([1.0, 0.0, 0.0]),   # Forward
+        np.array([0.0, 1.0, 0.0]),   # Right
+        np.array([0.0, -1.0, 0.0]),  # Left
+        np.array([-1.0, 0.0, 0.0]),  # Backward
+        np.array([0.7, 0.7, 0.0]),   # Forward-right
+        np.array([0.7, -0.7, 0.0])   # Forward-left
     ]
     
-    logging.warning(f"Using default target at {[round(p, 2) for p in default_target]}, altitude: {-default_target[2]:.2f}m")
-    return default_target
+    default_distances = [10.0, 15.0, 20.0, 25.0]
+    
+    for direction in default_directions:
+        for distance in default_distances:
+            default_target = [
+                current_pos[0] + direction[0] * distance,
+                current_pos[1] + direction[1] * distance,
+                default_altitude
+            ]
+            
+            # Check if this default target is inside an enclosed structure
+            try:
+                target_vector = airsim.Vector3r(default_target[0], default_target[1], default_target[2])
+                
+                # Do a quick LOS check first
+                if not client.simTestLineOfSightBetweenPoints(start_vector, target_vector):
+                    logging.debug(f"Default target at {[round(p, 2) for p in default_target]} - direct LOS check failed")
+                    continue
+                
+                # Check for enclosure (houses/buildings)
+                check_dirs = [
+                    np.array([1, 0, 0]), np.array([-1, 0, 0]),
+                    np.array([0, 1, 0]), np.array([0, -1, 0]),
+                    np.array([0, 0, 1]), np.array([0, 0, -1])
+                ]
+                
+                obstacles_count = 0
+                for check_dir in check_dirs:
+                    for check_dist in range(2, 16, 2):
+                        check_point = np.array(default_target) + (check_dir * check_dist)
+                        check_vector = airsim.Vector3r(check_point[0], check_point[1], check_point[2])
+                        
+                        if not client.simTestLineOfSightBetweenPoints(target_vector, check_vector):
+                            obstacles_count += 1
+                            break
+                
+                # If too many obstacles in different directions, it's likely inside a building
+                if obstacles_count >= len(check_dirs) * 0.7:  # 70% threshold
+                    logging.debug(f"Default target at {[round(p, 2) for p in default_target]} appears to be in enclosed space")
+                    continue
+                
+                # If we get here, we have a valid default target
+                logging.warning(f"Using default target at {[round(p, 2) for p in default_target]}, altitude: {-default_target[2]:.2f}m")
+                return default_target
+                
+            except Exception as e:
+                logging.warning(f"Error checking default target: {e}")
+                continue
+    
+    # If all default targets failed, use the most basic fallback - directly up and slightly forward
+    absolute_last_resort = [
+        current_pos[0] + 5.0,     # 5m forward
+        current_pos[1],           # Same Y position
+        current_pos[2] - 7.0      # 7m higher (more negative Z in NED)
+    ]
+    
+    logging.warning(f"All default targets failed, using absolute fallback at {[round(p, 2) for p in absolute_last_resort]}")
+    return absolute_last_resort
 
 def visualize_raycasts(client, raycast_data_file, duration=60.0):
     """Visualize the results of raycasting tests by drawing lines in the AirSim environment

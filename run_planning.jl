@@ -419,10 +419,9 @@ function main()
         adaptive_waypoint_count = Int(WAYPOINT_SAMPLE_COUNT * 1.5)
         println("Increased waypoint sampling for critical planning: $(adaptive_waypoint_count)")
     end
-    
-    # Select the next waypoint using active inference
+      # Select the next waypoint using active inference
     println("\nSelecting next waypoint...")
-    next_waypoint = select_action(
+    next_waypoint_result = select_action(
         planner, 
         beliefs, 
         num_samples=adaptive_waypoint_count, 
@@ -432,12 +431,25 @@ function main()
         suitability_threshold=0.75  # Increased to 0.75 for safer path selection
     )
     
+    # Extract next_waypoint and metadata from the result
+    if isa(next_waypoint_result, Tuple) && length(next_waypoint_result) == 2
+        next_waypoint, metadata = next_waypoint_result
+        # Merge metadata into data dictionary for use in direct path comparison
+        if isa(metadata, Dict)
+            merge!(data, metadata)
+            if haskey(metadata, "best_suitability")
+                println("Best path suitability: $(round(metadata["best_suitability"], digits=2))")
+            end
+        end
+    else
+        next_waypoint = next_waypoint_result
+    end
+    
     # If we didn't get a good waypoint, try again with slightly lower threshold but still higher than default
     if isnothing(next_waypoint) || length(next_waypoint) < 3
         println("❌ Failed to find waypoint with high suitability, retrying with adjusted parameters")
-        
-        # Retry with lower threshold but still much higher than original
-        next_waypoint = select_action(
+          # Retry with lower threshold but still much higher than original
+        next_waypoint_result = select_action(
             planner, 
             beliefs,
             num_samples=adaptive_waypoint_count * 2,  # Double the samples to find more alternatives
@@ -447,18 +459,47 @@ function main()
             suitability_threshold=0.65  # Fallback threshold still higher than default but lower than primary
         )
         
-        if isnothing(next_waypoint) || length(next_waypoint) < 3
+        # Extract next_waypoint and metadata
+        if isa(next_waypoint_result, Tuple) && length(next_waypoint_result) == 2
+            next_waypoint, metadata = next_waypoint_result
+            # Merge metadata into data dictionary
+            if isa(metadata, Dict)
+                merge!(data, metadata)
+                if haskey(metadata, "best_suitability")
+                    println("Best path suitability (fallback 1): $(round(metadata["best_suitability"], digits=2))")
+                end
+            end
+        else
+            next_waypoint = next_waypoint_result
+        end
+          if isnothing(next_waypoint) || length(next_waypoint) < 3
             println("⚠️ Second attempt failed, using lower threshold in emergency mode")
             
-            # Last resort - use a lower threshold but still enforce suitability
-            next_waypoint = select_action(
+        # Last resort - focus on finding high suitability paths with more samples
+            # Rather than lowering threshold further, we increase the sample count and search more thoroughly
+            println("🔍 Searching more thoroughly for high quality paths...")
+            next_waypoint_result = select_action(
                 planner, 
-                beliefs,
-                num_samples=adaptive_waypoint_count * 3,  # Triple the samples as last resort                safety_margin=adaptive_safety_margin * 0.7,  # Reduced safety margin for more options
+                beliefs,                num_samples=adaptive_waypoint_count * 5,  # 5x samples for thorough search
+                safety_margin=adaptive_safety_margin * 0.8,  # Slightly reduced but still safe
                 policy_length=POLICY_LENGTH,
                 density_radius=get(data, "density_radius", 5.0),
-                suitability_threshold=0.55  # Emergency fallback threshold, still above minimum
+                suitability_threshold=0.6  # Emergency threshold, still relatively high
             )
+            
+            # Extract next_waypoint and metadata
+            if isa(next_waypoint_result, Tuple) && length(next_waypoint_result) == 2
+                next_waypoint, metadata = next_waypoint_result
+                # Merge metadata into data dictionary
+                if isa(metadata, Dict)
+                    merge!(data, metadata)
+                    if haskey(metadata, "best_suitability")
+                        println("Best path suitability (fallback 2): $(round(metadata["best_suitability"], digits=2))")
+                    end
+                end
+            else
+                next_waypoint = next_waypoint_result
+            end
         end
     end
       # Calculate waypoint in global coordinates
@@ -490,20 +531,47 @@ function main()
       # Check if there's a clear path to target and not too far away
     target_in_range = current_to_target_dist < 25.0  # Only try direct path when within reasonable range
     direct_path_clear = get(data, "direct_path_clear", false)
-    direct_path_suitability = get(data, "direct_path_suitability", 0.0)
-      # If direct path is clear, has good suitability, and not too distant, prioritize it
-    if target_in_range && direct_path_clear && direct_path_suitability > 0.6
-        println("✅ Direct path to target is clear! Using optimized path")
+    direct_path_suitability = get(data, "direct_path_suitability", 0.0)    # If direct path is clear and has good suitability, and not too distant, consider it
+    if target_in_range && direct_path_clear
+        # More strict suitability requirement when not close to target
+        direct_path_threshold = current_to_target_dist < 5.0 ? 0.6 : 0.75
         
-        # Calculate a direct waypoint toward target
-        # Use a step size based on distance: longer steps when farther away, shorter when close
-        step_size = min(current_to_target_dist * 0.5, 5.0)  # 50% of distance or max 5 meters
-        step_size = max(step_size, 1.5)  # Ensure minimum step size of 1.5 meters
-        
-        # Create direct waypoint
-        normalized_to_target = current_to_target / current_to_target_dist
-        direct_waypoint = drone_position + normalized_to_target * step_size
-        global_waypoint = direct_waypoint
+        # Check if direct path has sufficient suitability
+        if direct_path_suitability > direct_path_threshold
+            # Calculate if the planned path actually has better suitability
+            # Only override if the direct path is truly better than the planned path
+            best_planned_suitability = 0.0
+            if !isnothing(next_waypoint) && !isempty(next_waypoint) && isa(next_waypoint[1], Tuple)
+                # Get the planned waypoint for comparison
+                planned_action = next_waypoint[1][1]
+                planned_waypoint = drone_position + planned_action
+                
+                # Access data about the planned path from the planning module
+                # We'll only use direct path if it's significantly better in terms of suitability
+                best_idx = 1 # First action is the best one
+                if haskey(data, "best_suitability")
+                    best_planned_suitability = data["best_suitability"]
+                end
+            end
+            
+            # Only choose direct path if its suitability is better than the planned path
+            # or if the planned path has unusually low suitability
+            if direct_path_suitability > best_planned_suitability * 1.2 || best_planned_suitability < 0.6
+                println("✅ Direct path to target is clear with superior suitability: $(round(direct_path_suitability, digits=2))! Using optimized path")
+                
+                # Calculate a direct waypoint toward target
+                # Use a step size based on distance: longer steps when farther away, shorter when close
+                step_size = min(current_to_target_dist * 0.5, 5.0)  # 50% of distance or max 5 meters
+                step_size = max(step_size, 1.5)  # Ensure minimum step size of 1.5 meters
+                
+                # Create direct waypoint
+                normalized_to_target = current_to_target / current_to_target_dist
+                direct_waypoint = drone_position + normalized_to_target * step_size
+                global_waypoint = direct_waypoint
+            else
+                println("ℹ️ Direct path available but planned path has better suitability ($(round(best_planned_suitability, digits=2)) vs $(round(direct_path_suitability, digits=2)))")
+            end
+        end
     end
     
     # Print the selected waypoint

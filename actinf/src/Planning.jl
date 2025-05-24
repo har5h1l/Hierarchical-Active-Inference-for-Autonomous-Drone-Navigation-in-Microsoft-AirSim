@@ -784,23 +784,28 @@ function select_action(state::StateSpace.DroneState, beliefs::Inference.DroneBel
     
     # Find indices of all waypoints that meet minimum suitability
     safe_indices = findall(s -> s >= effective_threshold, all_suitabilities)
-    
-    # IMPROVED SAFETY STRATEGY: Always prioritize higher suitability paths
-    # If we found safe paths, take the top 30% by suitability
+      # IMPROVED SAFETY STRATEGY: Always prioritize higher suitability paths
+    # If we found safe paths, take the top paths but ensure we retain high suitability ones
     if !isempty(safe_indices)
         println("Found $(length(safe_indices)) waypoints above threshold $(effective_threshold)")
         
         # Sort indices by suitability (descending)
         sorted_by_suitability = sort(safe_indices, by=i -> all_suitabilities[i], rev=true)
-          # Take the top 30% most suitable paths (with a minimum of 5)
-        top_count = max(5, round(Int, length(sorted_by_suitability) * 0.3))
-        top_indices = sorted_by_suitability[1:min(top_count, length(sorted_by_suitability))]
         
         # Find paths with very high suitability (clear paths)
         high_suitability_indices = findall(i -> all_suitabilities[i] > 0.8, sorted_by_suitability)
         has_clear_paths = !isempty(high_suitability_indices)
         
-        # In high density environments, prioritize clear paths over target proximity
+        # Always include ALL high suitability paths (>0.8) regardless of other factors
+        # This ensures we never filter out the safest paths
+        high_suit_paths = collect(filter(i -> all_suitabilities[i] > 0.8, safe_indices))
+        
+        # Also include paths with medium-high suitability (>0.7) that improve distance to target
+        med_high_suit_improving_paths = collect(filter(i -> 
+            all_suitabilities[i] > 0.7 && all_distances[i] < current_to_target_dist, 
+            safe_indices))
+        
+        # In high density environments, strongly prioritize clear paths
         if obstacle_density > 0.3 && has_clear_paths
             # Find the subset of high suitability paths that don't increase distance too much
             acceptable_distance_indices = filter(i -> 
@@ -809,30 +814,62 @@ function select_action(state::StateSpace.DroneState, beliefs::Inference.DroneBel
             
             if !isempty(acceptable_distance_indices)
                 println("High density environment: Prioritizing $(length(acceptable_distance_indices)) clear paths")
-                # Replace top indices with high suitability paths
                 clear_path_indices = sorted_by_suitability[acceptable_distance_indices]
+                # Start with these as priority paths
                 top_indices = clear_path_indices
+            else
+                # If no clear paths with acceptable distance, start with all high suitability paths
+                top_indices = high_suit_paths
+            end
+        else
+            # Start with high suitability paths and medium-high that improve distance
+            top_indices = union(high_suit_paths, med_high_suit_improving_paths)
+            
+            # If we don't have enough paths yet, add more from top suitability
+            if length(top_indices) < 5
+                # Take from sorted_by_suitability until we have at least 5 (if available)
+                remaining_needed = 5 - length(top_indices)
+                for idx in sorted_by_suitability
+                    if !(idx in top_indices) && remaining_needed > 0
+                        push!(top_indices, idx)
+                        remaining_needed -= 1
+                    end
+                    if remaining_needed <= 0
+                        break
+                    end
+                end
             end
         end
         
-        # If using the top 30% would discard paths that also move closer to the target,
-        # include some of these target-approaching paths even if they aren't in the top 30%
-        # by suitability
-        if length(sorted_by_suitability) > top_count
-            # Find paths that bring us closer to target
-            remaining_indices = sorted_by_suitability[top_count+1:end]
-            closer_to_target_indices = filter(i -> all_distances[i] < current_to_target_dist, remaining_indices)
+        # Take additional paths that bring us closer to target if they have acceptable suitability
+        if length(safe_indices) > length(top_indices)
+            # Find paths that bring us closer to target and aren't already included
+            remaining_indices = filter(i -> !(i in top_indices), safe_indices)
+            closer_to_target_indices = filter(i -> 
+                all_distances[i] < current_to_target_dist * 0.95, # Must reduce distance by at least 5%
+                remaining_indices)
             
-            # Sort these by distance to target (ascending)
+            # Sort these by a combination of suitability and distance improvement
             if !isempty(closer_to_target_indices)
-                sorted_by_distance = sort(closer_to_target_indices, by=i -> all_distances[i])
+                # Calculate distance improvements
+                distance_improvements = Dict(i => (current_to_target_dist - all_distances[i]) for i in closer_to_target_indices)
+                max_improvement = maximum(values(distance_improvements))
                 
-                # Add up to 5 more paths that get closer to target with acceptable suitability
-                # This ensures we don't neglect target approach when focusing on suitability
-                additional_count = min(5, length(sorted_by_distance))
-                append!(top_indices, sorted_by_distance[1:additional_count])
+                # Score based on both suitability and distance improvement
+                path_scores = Dict(i => (0.7 * all_suitabilities[i] + 
+                                        0.3 * (distance_improvements[i] / max_improvement)) 
+                                 for i in closer_to_target_indices)
                 
-                println("Added $additional_count additional paths that approach target")
+                # Sort by combined score
+                sorted_by_combined = sort(collect(keys(path_scores)), 
+                                         by=i -> path_scores[i], 
+                                         rev=true)
+                
+                # Add up to 8 more paths (increased from 5) with good combined scores
+                additional_count = min(8, length(sorted_by_combined))
+                append!(top_indices, sorted_by_combined[1:additional_count])
+                
+                println("Added $additional_count additional paths optimized for target approach and safety")
             end
         end
         
@@ -901,22 +938,33 @@ function select_action(state::StateSpace.DroneState, beliefs::Inference.DroneBel
         efe = efe_tuple[1]
         efe_pragmatic = efe_tuple[2]
         efe_epistemic = efe_tuple[3]
-        
-        # Apply special bonus for high suitability paths in high density environments
+          # Apply special bonus for high suitability paths in high density environments
         # This ensures clear paths are strongly preferred when in dense obstacle areas
-        if is_high_suitability && (obstacle_density > 0.3 || obstacle_distance < 3.0)
+        
+        # Calculate a weighted suitability bonus that applies to all paths but is stronger for higher suitability
+        # This creates a continuous gradient of preference toward higher suitability
+        suitability_factor = filtered_suitabilities[i]  # 0.0 to 1.0
+        
+        # Apply stronger suitability bonus in complex environments
+        if obstacle_density > 0.3 || obstacle_distance < 3.0
             # Calculate density factor (more bonus in higher density)
             density_factor = clamp(obstacle_density * 2.0, 0.5, 1.5)
             
-            # Stronger bonus when both density is high and obstacles are close
-            if obstacle_density > 0.3 && obstacle_distance < 3.0
-                high_suitability_bonus = 2.0 * density_factor
-            else
-                high_suitability_bonus = 1.5 * density_factor
+            # Use an exponential scale for suitability bonus to strongly favor higher suitability
+            # This creates a non-linear preference that strongly rewards high suitability
+            # paths while still maintaining a gradient across all suitability levels
+            suitability_bonus = 1.0 + (suitability_factor^2 * 2.0 * density_factor)
+            
+            # Announce significant bonuses
+            if suitability_factor > 0.7
+                println("Applying high suitability bonus ($(round(suitability_bonus, digits=2))x) in dense environment")
             end
             
-            println("Applying high suitability bonus ($(round(high_suitability_bonus, digits=2))x) in dense environment")
-            efe = efe * high_suitability_bonus
+            efe = efe * suitability_bonus
+        else
+            # In less complex environments, still apply a smaller suitability bonus
+            suitability_bonus = 1.0 + (suitability_factor * 1.0)
+            efe = efe * suitability_bonus
         end
         
         # Use percentage-based approach for distance bonus calculation
@@ -966,12 +1014,66 @@ function select_action(state::StateSpace.DroneState, beliefs::Inference.DroneBel
         
         push!(efe_scores, efe)
     end
+      # Step 5: Policy selection - choose the best actions based on EFE
+    # But first rank them by suitability to ensure we don't neglect high suitability paths
     
-    # Step 5: Policy selection - choose the best actions based on EFE
-    # Sort by EFE ascending (lower is better)
-    sorted_indices = sortperm(efe_scores)
-      # Use the adaptive policy length instead of fixed num_policies
+    # Calculate a weighted score that balances EFE with suitability
+    # This ensures we don't select low suitability paths over high suitability ones
+    # just because they have slightly better EFE scores
+    weighted_scores = Float64[]
+    
+    for i in 1:length(efe_scores)
+        # Get the suitability for this path
+        path_suitability = filtered_suitabilities[i]
+        
+        # Get the EFE score (lower is better)
+        path_efe = efe_scores[i]
+        
+        # Calculate a weighted score
+        # We invert the efe contribution since lower is better
+        # For paths with high suitability (>0.8), strongly favor them
+        if path_suitability > 0.8
+            # High suitability paths get a major boost
+            suitability_weight = 0.7  # 70% suitability, 30% EFE
+            efe_weight = 0.3
+        elseif path_suitability > 0.6
+            # Medium-high suitability 
+            suitability_weight = 0.6
+            efe_weight = 0.4
+        else
+            # Lower suitability paths - more balanced
+            suitability_weight = 0.5
+            efe_weight = 0.5
+        end
+        
+        # Calculate min and max EFE to normalize
+        min_efe = minimum(efe_scores)
+        max_efe = maximum(efe_scores)
+        efe_range = max(max_efe - min_efe, 1e-6)  # Avoid division by zero
+        
+        # Normalized and inverted EFE (0 to 1, higher is better)
+        normalized_efe = 1.0 - ((path_efe - min_efe) / efe_range)
+        
+        # Calculate weighted score (higher is better)
+        weighted_score = suitability_weight * path_suitability + efe_weight * normalized_efe
+        
+        push!(weighted_scores, weighted_score)
+    end
+    
+    # Sort by combined weighted score (higher is better)
+    sorted_indices = sortperm(weighted_scores, rev=true)
+      
+    # Use the adaptive policy length instead of fixed num_policies
     top_k = min(adaptive_policy_length, length(sorted_indices))
+    
+    # Print the top paths for debugging
+    println("Top selected paths:")
+    for i in 1:min(3, top_k)
+        idx = sorted_indices[i]
+        println("  Path $(i): Suitability: $(round(filtered_suitabilities[idx], digits=2)), " *
+                "EFE: $(round(efe_scores[idx], digits=2)), " *
+                "Score: $(round(weighted_scores[idx], digits=2))")
+    end
     
     # Create selected tuples of (action, efe)
     selected = [(filtered_actions[sorted_indices[i]], efe_scores[sorted_indices[i]]) for i in 1:top_k]
@@ -1022,8 +1124,7 @@ function select_action(state::StateSpace.DroneState, beliefs::Inference.DroneBel
         best_distance = filtered_distances[best_idx]
           println("Best EFE: $(best_efe), Action: $(best_action), Suitability: $(best_suitability)")
         println("Current distance to target: $(current_to_target_dist), Next distance: $(best_distance)")
-    end
-      # Return the valid actions (filtered to ensure minimum movement distance)
+    end    # Return the valid actions (filtered to ensure minimum movement distance)
     # If details are requested, return them along with the actions
     if get(kwargs, :return_details, false)
         details = Dict(
@@ -1034,7 +1135,16 @@ function select_action(state::StateSpace.DroneState, beliefs::Inference.DroneBel
         )
         return valid_actions, details
     else
-        return valid_actions
+        # Always return best suitability information along with actions
+        # This enables better decision making at higher levels
+        if !isempty(sorted_indices) && !isempty(efe_scores)
+            best_idx = sorted_indices[1]
+            best_suitability_value = filtered_suitabilities[best_idx]
+            # Return a tuple with actions and best suitability
+            return valid_actions, Dict("best_suitability" => best_suitability_value)
+        else
+            return valid_actions
+        end
     end
 end
 
