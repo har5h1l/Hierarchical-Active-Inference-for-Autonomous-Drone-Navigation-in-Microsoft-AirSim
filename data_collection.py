@@ -840,9 +840,9 @@ class Scanner:
         self.scan_cache_ttl = 0.1  # 100ms TTL for cached scan data
         self.cached_positions = []
         self.cached_distances = []
-        
-        # Parameters for directional scanning (used in real-time path monitoring)
+          # Parameters for directional scanning (used in real-time path monitoring)
         self.fov_angle = 120  # Field of view angle in degrees for forward scan
+    
     def fetch_density_distances(self, use_cache=False):
         """Get obstacle positions and distances with orientation-aware transformation
         
@@ -865,113 +865,134 @@ class Scanner:
 
             # Get drone state
             drone_state = self.client.getMultirotorState().kinematics_estimated
-            drone_pos = [drone_state.position.x_val, drone_state.position.y_val, drone_state.position.z_val]
-            drone_orientation = [
+            drone_pos = np.array([
+                drone_state.position.x_val, 
+                drone_state.position.y_val, 
+                drone_state.position.z_val
+            ])
+            
+            # Get drone orientation quaternion (w, x, y, z)
+            drone_quat = np.array([
                 drone_state.orientation.w_val,
                 drone_state.orientation.x_val, 
                 drone_state.orientation.y_val,
                 drone_state.orientation.z_val
-            ]
+            ])
             
             # Validate drone position
-            if any(np.isnan(x) or np.isinf(x) for x in drone_pos):
-                print("⚠️ Invalid drone position detected, using default [0,0,0]")
-                drone_pos = [0.0, 0.0, 0.0]
+            if np.any(np.isnan(drone_pos)) or np.any(np.isinf(drone_pos)):
+                logging.warning("Invalid drone position detected, using default [0,0,0]")
+                drone_pos = np.array([0.0, 0.0, 0.0])
+            
+            # Validate drone orientation
+            quat_norm = np.linalg.norm(drone_quat)
+            if quat_norm < 0.001 or np.any(np.isnan(drone_quat)) or np.any(np.isinf(drone_quat)):
+                logging.warning("Invalid drone orientation detected, using identity quaternion")
+                drone_quat = np.array([1.0, 0.0, 0.0, 0.0])  # Identity quaternion
+            else:
+                # Normalize quaternion
+                drone_quat = drone_quat / quat_norm
             
             # Get lidar data
             lidar_data = self.client.getLidarData()
             
             if len(lidar_data.point_cloud) < 3:
-                print("No lidar points detected")
+                logging.debug("No lidar points detected")
                 return [], []
             
             # Convert point cloud to positions
             try:
                 points = np.array(lidar_data.point_cloud, dtype=np.float32).reshape(-1, 3)
             except (ValueError, TypeError) as e:
-                print(f"⚠️ Error reshaping point cloud: {e}")
+                logging.error(f"Error reshaping point cloud: {e}")
                 return [], []
 
-            # Quaternion utility functions
+            # Improved quaternion utility functions with better numerical stability
             def quaternion_multiply(q1, q2):
+                """Multiply two quaternions (w, x, y, z format)"""
                 w1, x1, y1, z1 = q1
                 w2, x2, y2, z2 = q2
-                w = w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2
-                x = w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2
-                y = w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2
-                z = w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2
-                return [w, x, y, z]
+                return np.array([
+                    w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2,  # w
+                    w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2,  # x
+                    w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2,  # y
+                    w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2   # z
+                ])
             
             def quaternion_conjugate(q):
-                w, x, y, z = q
-                return [w, -x, -y, -z]
+                """Get quaternion conjugate (w, x, y, z) -> (w, -x, -y, -z)"""
+                return np.array([q[0], -q[1], -q[2], -q[3]])
             
-            def rotate_point_by_quaternion(point, quaternion):
-                # Convert point to quaternion form
-                point_quat = [0.0, point[0], point[1], point[2]]
-                q_conj = quaternion_conjugate(quaternion)
-                rotated = quaternion_multiply(
-                    quaternion_multiply(quaternion, point_quat),
-                    q_conj
-                )
-                return rotated[1:4]
+            def rotate_point_by_quaternion(point, quat):
+                """Rotate a 3D point by a quaternion using proper formula"""
+                # Convert point to pure quaternion (0, x, y, z)
+                point_quat = np.array([0.0, point[0], point[1], point[2]])
+                
+                # Apply rotation: q * p * q_conjugate
+                quat_conj = quaternion_conjugate(quat)
+                temp = quaternion_multiply(quat, point_quat)
+                rotated_quat = quaternion_multiply(temp, quat_conj)
+                
+                # Extract the vector part (x, y, z)
+                return rotated_quat[1:4]
 
             # Initialize voxel grid for improved point cloud processing
-            # Decreased voxel size for better resolution
-            voxel_size = 0.2  # Smaller voxels (in meters) for more precise detection (was implicitly larger)
+            voxel_size = 0.15  # Optimized voxel size for balance between precision and performance
             voxel_grid = {}
             
             # Process each point, placing them into voxels
+            processed_points = 0
+            valid_points = 0
+            
             for point in points:
                 # Skip invalid points
-                if np.isnan(point).any() or np.isinf(point).any():
+                if np.any(np.isnan(point)) or np.any(np.isinf(point)):
                     continue
+                    
+                processed_points += 1
                 
                 try:
-                    # Transform point to global reference frame
-                    global_point = rotate_point_by_quaternion(point, drone_orientation)
+                    # Transform point from drone's local coordinate system to global coordinates
+                    # The lidar data is in drone's body frame, need to rotate to world frame
+                    global_point = rotate_point_by_quaternion(point, drone_quat)
                     
-                    # Add drone position
-                    global_point = [
-                        global_point[0] + drone_pos[0],
-                        global_point[1] + drone_pos[1],
-                        global_point[2] + drone_pos[2]
-                    ]
+                    # Translate to world position
+                    global_point = global_point + drone_pos
                     
-                    # Calculate distance
-                    dist = np.sqrt(np.sum((np.array(drone_pos) - np.array(global_point)) ** 2))
+                    # Calculate distance from drone
+                    dist = np.linalg.norm(global_point - drone_pos)
                     
-                    # Skip invalid distances
-                    if np.isnan(dist) or np.isinf(dist):
+                    # Skip invalid distances and points too close (likely drone itself)
+                    if np.isnan(dist) or np.isinf(dist) or dist < 0.1:
                         continue
                     
                     # Only include obstacles within scan range
-                    if dist <= self.scan_range and dist > 0.0:
+                    if dist <= self.scan_range:
+                        valid_points += 1
+                        
                         # Calculate voxel index (discretize position)
-                        voxel_idx = (
-                            int(global_point[0] / voxel_size),
-                            int(global_point[1] / voxel_size),
-                            int(global_point[2] / voxel_size)
-                        )
+                        voxel_idx = tuple(np.floor(global_point / voxel_size).astype(int))
                         
                         # Add to voxel grid, keeping track of points and min distance
                         if voxel_idx in voxel_grid:
                             voxel_grid[voxel_idx]["count"] += 1
                             voxel_grid[voxel_idx]["min_dist"] = min(voxel_grid[voxel_idx]["min_dist"], dist)
+                            
                             # Update centroid with running average
                             current_count = voxel_grid[voxel_idx]["count"]
-                            voxel_grid[voxel_idx]["position"] = [
-                                (voxel_grid[voxel_idx]["position"][0] * (current_count-1) + global_point[0]) / current_count,
-                                (voxel_grid[voxel_idx]["position"][1] * (current_count-1) + global_point[1]) / current_count,
-                                (voxel_grid[voxel_idx]["position"][2] * (current_count-1) + global_point[2]) / current_count
-                            ]
+                            old_pos = np.array(voxel_grid[voxel_idx]["position"])
+                            voxel_grid[voxel_idx]["position"] = (
+                                (old_pos * (current_count - 1) + global_point) / current_count
+                            ).tolist()
                         else:
                             voxel_grid[voxel_idx] = {
                                 "count": 1,
-                                "position": global_point,
+                                "position": global_point.tolist(),
                                 "min_dist": dist
                             }
-                except Exception:
+                            
+                except Exception as e:
+                    logging.debug(f"Error processing point {point}: {e}")
                     continue
             
             # Extract obstacle positions and distances from voxels with sufficient density
@@ -986,12 +1007,16 @@ class Scanner:
             self.cached_distances = obstacle_distances
             self.last_scan_time = current_time
             
+            logging.debug(f"Processed {processed_points} points, {valid_points} valid, "
+                         f"found {len(obstacle_positions)} obstacles")
+            
             return obstacle_positions, obstacle_distances
         
         except Exception as e:
-            print(f"Error in fetch_density_distances: {e}")
+            logging.error(f"Error in fetch_density_distances: {e}")            
             traceback.print_exc()
             return [], []
+    
     def scan_path_for_obstacles(self, start_pos, end_pos, safety_radius=3.0):
         """Scan specifically for obstacles along a planned movement path
         
@@ -1004,71 +1029,12 @@ class Scanner:
             tuple: (obstacle_detected, obstacle_position, obstacle_distance)
         """
         try:
-            # Quick line of sight check using AirSim's built-in function first
-            start_vector = airsim.Vector3r(start_pos[0], start_pos[1], start_pos[2])
-            end_vector = airsim.Vector3r(end_pos[0], end_pos[1], end_pos[2])
+            # Convert positions to numpy arrays for calculations
+            start_pos = np.array(start_pos)
+            end_pos = np.array(end_pos)
             
-            # Get drone's current orientation to properly account for forward-facing sensors
-            try:
-                drone_orientation = self.client.simGetVehiclePose().orientation
-                current_yaw = airsim.to_eularian_angles(drone_orientation)[2]
-                forward_direction = np.array([
-                    math.cos(current_yaw),
-                    math.sin(current_yaw),
-                    0.0  # Keep in horizontal plane
-                ])
-            except Exception as e:
-                logging.warning(f"Failed to get drone orientation for path scanning: {e}")
-                forward_direction = None
-            
-            # This is much faster than processing point clouds for initial check
-            los_clear = self.client.simTestLineOfSightBetweenPoints(start_vector, end_vector)
-            
-            # If line of sight is blocked, we have a definite obstacle
-            if not los_clear:
-                # Try to locate the obstacle more precisely using raycasting
-                try:
-                    # Cast multiple rays to better pinpoint obstacle location
-                    movement_vector = np.array(end_pos) - np.array(start_pos)
-                    movement_dist = np.linalg.norm(movement_vector)
-                    
-                    # Normalize to get direction
-                    if movement_dist > 0:
-                        direction = movement_vector / movement_dist
-                    else:
-                        direction = np.array([1.0, 0.0, 0.0])
-                    
-                    # Create test points along path
-                    num_test_points = min(8, max(4, int(movement_dist / 1.5)))  # Increased number of test points
-                    distances = np.linspace(0.5, movement_dist - 0.5, num_test_points)
-                    
-                    # Check each test point
-                    for dist in distances:
-                        test_point = np.array(start_pos) + direction * dist
-                        test_vector = airsim.Vector3r(test_point[0], test_point[1], test_point[2])
-                        
-                        if not self.client.simTestLineOfSightBetweenPoints(start_vector, test_vector):
-                            # Found obstacle - return estimated position and distance
-                            obstacle_pos = test_point.tolist()
-                            obstacle_dist = dist
-                            return True, obstacle_pos, obstacle_dist
-                    
-                    # If no specific obstacle found but LOS check failed, use middle of path as estimate
-                    middle_point = np.array(start_pos) + direction * (movement_dist / 2)
-                    return True, middle_point.tolist(), movement_dist / 2
-                except Exception as e:
-                    # If precise location fails, log the error and just report an obstacle exists
-                    logging.warning(f"Error during precise obstacle location: {e}")
-                    return True, None, None
-            
-            # If built-in LOS check passed, do a more detailed check using point cloud for nearby obstacles
-            obstacle_positions, obstacle_distances = self.fetch_density_distances(use_cache=True)
-            
-            if not obstacle_positions:
-                return False, None, None  # No obstacles detected
-            
-            # Calculate path vector
-            path_vector = np.array(end_pos) - np.array(start_pos)
+            # Calculate path vector and properties
+            path_vector = end_pos - start_pos
             path_length = np.linalg.norm(path_vector)
             
             if path_length < 0.001:  # Effectively not moving
@@ -1076,94 +1042,174 @@ class Scanner:
                 
             path_direction = path_vector / path_length
             
-            # If we have forward direction available, calculate angle between path and forward direction
-            path_aligned_with_forward = True
-            if forward_direction is not None:
-                angle_cos = np.dot(path_direction, forward_direction)
-                # If path is roughly aligned with forward direction (within 45 degrees)
-                # use a smaller safety radius since our sensors are more accurate forward
-                path_aligned_with_forward = angle_cos > 0.7  # cos(45°) ≈ 0.7
+            # Get obstacle data from multiple sources for reliability
+            obstacle_positions, obstacle_distances = self.fetch_density_distances(use_cache=True)
             
-            # Check each obstacle to see if it's close to our path
-            closest_obstacle_pos = None
-            closest_obstacle_dist = float('inf')
-            closest_perp_dist = float('inf')
+            if not obstacle_positions:
+                return False, None, None
             
+            # Enhanced multi-stage obstacle detection
+            detected_obstacles = []
+            
+            # Stage 1: Check for obstacles very close to start position (drone body clearance)
+            drone_radius = 1.0  # Conservative drone body radius
             for i, obstacle_pos in enumerate(obstacle_positions):
-                obstacle_vector = np.array(obstacle_pos) - np.array(start_pos)
+                obstacle_pos = np.array(obstacle_pos)
+                dist_from_start = np.linalg.norm(obstacle_pos - start_pos)
                 
-                # Project obstacle vector onto path direction
-                projection = np.dot(obstacle_vector, path_direction)
-                  
-                # Only consider obstacles that are ahead of us along the path
-                # and within the path length (not past the destination)
-                if 0 <= projection <= path_length:
-                    # Calculate perpendicular distance from obstacle to path
-                    closest_point = np.array(start_pos) + projection * path_direction
-                    perpendicular_dist = np.linalg.norm(np.array(obstacle_pos) - closest_point)
+                # If obstacle is very close to drone's starting position, it's critical
+                if dist_from_start < drone_radius * 1.5:
+                    detected_obstacles.append({
+                        'position': obstacle_pos,
+                        'distance': obstacle_distances[i],
+                        'type': 'critical_proximity',
+                        'perpendicular_distance': 0,
+                        'priority': 1
+                    })
+            
+            # Stage 2: Check for large obstacles that might be partially detected
+            # Group nearby obstacles to detect large structures
+            obstacle_clusters = self._cluster_obstacles(obstacle_positions, cluster_radius=2.0)
+            
+            for cluster in obstacle_clusters:
+                if len(cluster['obstacles']) >= 3:  # Likely a large structure
+                    cluster_center = np.array(cluster['center'])
                     
-                    # Adaptive safety check: Use smaller safety radius for obstacles
-                    # that are farther along the path, as they're less likely to be
-                    # directly in our way when sensors are forward-facing
+                    # Check if this large obstacle intersects with our path
+                    path_to_cluster = cluster_center - start_pos
+                    projection = np.dot(path_to_cluster, path_direction)
                     
-                    # Calculate how far along the path this obstacle is (0.0 to 1.0)
-                    path_fraction = projection / path_length if path_length > 0 else 0
-                    
-                    # Calculate effective safety radius based on several factors
-                    effective_safety_radius = safety_radius
-                    
-                    # 1. Adjust based on path alignment with forward direction
-                    if path_aligned_with_forward:
-                        # If path is aligned with our sensors, we can be more precise
-                        effective_safety_radius *= 0.9  # 10% smaller radius for better precision
-                    else:
-                        # If path is not aligned with our sensors, be more conservative
-                        effective_safety_radius *= 1.1  # 10% larger radius for safety
-                    
-                    # 2. Adjust based on location along path
-                    if path_fraction > 0.5:
-                        # For obstacles in the second half of the path, reduce safety radius
-                        # This is especially important with forward-facing sensors
-                        distance_factor = 1.0 - ((path_fraction - 0.5) * 0.7)  # 1.0 at path_fraction=0.5, down to 0.65 at path_fraction=1.0
-                        effective_safety_radius *= distance_factor
-                    
-                    # If obstacle is within effective safety radius of path
-                    if perpendicular_dist <= effective_safety_radius:
-                        # For distant obstacles, check if they're actually directly in our path
-                        # by looking at the angle between our direction and the obstacle
-                        if path_fraction > 0.7 and projection > 3.0:  # Only for far obstacles
-                            # Get vector from start to obstacle
-                            to_obstacle_vec = np.array(obstacle_pos) - np.array(start_pos)
-                            to_obstacle_dist = np.linalg.norm(to_obstacle_vec)
-                            if to_obstacle_dist > 0.001:
-                                to_obstacle_vec = to_obstacle_vec / to_obstacle_dist
-                                
-                                # Calculate angle between path direction and obstacle direction
-                                angle_cos = np.dot(path_direction, to_obstacle_vec)
-                                
-                                # If angle is too large, this is likely a side obstacle that won't be in our way
-                                if angle_cos < 0.85:  # About 30 degrees
-                                    continue
+                    if 0 <= projection <= path_length:
+                        closest_point = start_pos + projection * path_direction
+                        perpendicular_dist = np.linalg.norm(cluster_center - closest_point)
                         
-                        # Keep track of the closest obstacle to the path
-                        obstacle_dist = obstacle_distances[i]
-                        if perpendicular_dist < closest_perp_dist:
-                            closest_perp_dist = perpendicular_dist
-                            closest_obstacle_pos = obstacle_pos
-                            closest_obstacle_dist = obstacle_dist
+                        # For large obstacles, use larger safety margin
+                        large_obstacle_safety = safety_radius + cluster['max_extent']
+                        
+                        if perpendicular_dist < large_obstacle_safety:
+                            avg_distance = np.mean([obstacle_distances[i] for i in cluster['indices']])
+                            detected_obstacles.append({
+                                'position': cluster_center,
+                                'distance': avg_distance,
+                                'type': 'large_structure',
+                                'perpendicular_distance': perpendicular_dist,
+                                'priority': 2
+                            })
             
-            # If we found an obstacle too close to the path, return it
-            if closest_obstacle_pos is not None:
-                return True, closest_obstacle_pos, closest_obstacle_dist
+            # Stage 3: Standard path obstacle checking with improved reliability
+            for i, obstacle_pos in enumerate(obstacle_positions):
+                obstacle_pos = np.array(obstacle_pos)
+                obstacle_vector = obstacle_pos - start_pos
+                
+                # Project obstacle onto path
+                projection = np.dot(obstacle_vector, path_direction)
+                
+                # Only consider obstacles along the path
+                if 0 <= projection <= path_length:
+                    closest_point = start_pos + projection * path_direction
+                    perpendicular_dist = np.linalg.norm(obstacle_pos - closest_point)
+                    
+                    # Use base safety radius without complex adaptive adjustments
+                    # that were causing false negatives
+                    base_safety = safety_radius
+                    
+                    # Only apply minimal adjustments for very distant obstacles
+                    if projection > path_length * 0.8 and perpendicular_dist > safety_radius * 0.5:
+                        # For obstacles very far along path and not too close, slightly reduce sensitivity
+                        base_safety *= 1.1
+                    
+                    if perpendicular_dist <= base_safety:
+                        detected_obstacles.append({
+                            'position': obstacle_pos,
+                            'distance': obstacle_distances[i],
+                            'type': 'path_obstacle',
+                            'perpendicular_distance': perpendicular_dist,
+                            'priority': 3
+                        })
             
-            # No obstacles detected near the path
+            # Stage 4: Line-of-sight validation for detected obstacles
+            if detected_obstacles:
+                # Sort by priority and distance
+                detected_obstacles.sort(key=lambda x: (x['priority'], x['distance']))
+                
+                # Verify the most critical obstacles with line-of-sight
+                for obstacle in detected_obstacles[:3]:  # Check top 3 most critical
+                    if obstacle['type'] == 'critical_proximity':
+                        # Always trust proximity detections
+                        return True, obstacle['position'].tolist(), obstacle['distance']
+                    
+                    # For other obstacles, do a quick line-of-sight verification
+                    start_vector = airsim.Vector3r(start_pos[0], start_pos[1], start_pos[2])
+                    obs_vector = airsim.Vector3r(
+                        obstacle['position'][0], 
+                        obstacle['position'][1], 
+                        obstacle['position'][2]
+                    )
+                    
+                    # If line of sight is blocked to this obstacle, it's real
+                    if not self.client.simTestLineOfSightBetweenPoints(start_vector, obs_vector):
+                        return True, obstacle['position'].tolist(), obstacle['distance']
+                
+                # If we have detected obstacles but LOS checks pass, 
+                # return the closest one as a precaution
+                closest_obstacle = detected_obstacles[0]
+                return True, closest_obstacle['position'].tolist(), closest_obstacle['distance']
+            
+            # Final verification: Enhanced line-of-sight check along path
+            start_vector = airsim.Vector3r(start_pos[0], start_pos[1], start_pos[2])
+            end_vector = airsim.Vector3r(end_pos[0], end_pos[1], end_pos[2])
+            
+            # Check multiple points along the path for better obstacle detection
+            num_test_points = max(3, min(8, int(path_length / 1.0)))
+            for i in range(num_test_points):
+                t = (i + 1) / (num_test_points + 1)  # Avoid endpoints
+                test_point = start_pos + t * path_vector
+                test_vector = airsim.Vector3r(test_point[0], test_point[1], test_point[2])
+                
+                if not self.client.simTestLineOfSightBetweenPoints(start_vector, test_vector):
+                    # Found obstacle along path
+                    return True, test_point.tolist(), t * path_length
+            
+            # No obstacles detected
             return False, None, None
             
         except Exception as e:
             logging.error(f"Error in scan_path_for_obstacles: {e}")
             traceback.print_exc()
             return False, None, None
+    
+    def _cluster_obstacles(self, obstacle_positions, cluster_radius=2.0):
+        """Group nearby obstacles to detect large structures"""
+        if not obstacle_positions:
+            return []
+        
+        obstacles = np.array(obstacle_positions)
+        clusters = []
+        processed = set()
+        
+        for i, obs in enumerate(obstacles):
+            if i in processed:
+                continue
+                
+            # Find all obstacles within cluster radius
+            distances = np.linalg.norm(obstacles - obs, axis=1)
+            cluster_indices = np.where(distances <= cluster_radius)[0]
             
+            if len(cluster_indices) > 0:
+                cluster_obstacles = obstacles[cluster_indices]
+                cluster_center = np.mean(cluster_obstacles, axis=0)
+                max_extent = np.max(np.linalg.norm(cluster_obstacles - cluster_center, axis=1))
+                
+                clusters.append({
+                    'center': cluster_center,
+                    'obstacles': cluster_obstacles,
+                    'indices': cluster_indices.tolist(),
+                    'max_extent': max_extent
+                })
+                
+                processed.update(cluster_indices)
+        return clusters
+    
     def scan_in_direction(self, direction, max_distance=10.0, cone_angle=45.0):
         """Scan for obstacles in a specific direction with a cone-shaped field of view
         
@@ -1191,7 +1237,7 @@ class Scanner:
                     drone_state.position.z_val
                 ])
                 
-                # Get drone orientation quaternion
+                # Get drone orientation quaternion (w, x, y, z)
                 drone_quat = np.array([
                     drone_state.orientation.w_val,
                     drone_state.orientation.x_val, 
@@ -1199,27 +1245,36 @@ class Scanner:
                     drone_state.orientation.z_val
                 ])
                 
-                # Calculate forward vector from drone's actual orientation
-                # Assuming NED coordinates where forward is along the x-axis (North) when the drone's yaw is 0
-                # This vector represents the local "forward" direction of the drone before any rotation
+                # Normalize quaternion if needed
+                quat_norm = np.linalg.norm(drone_quat)
+                if quat_norm > 0.001:
+                    drone_quat = drone_quat / quat_norm
+                else:
+                    drone_quat = np.array([1.0, 0.0, 0.0, 0.0])  # Identity quaternion
+                
+                # Calculate drone's actual forward direction in world coordinates
+                # In NED (North-East-Down) coordinates, forward is typically [1, 0, 0]
                 local_forward = np.array([1.0, 0.0, 0.0])  
                 
-                # Helper functions to rotate vectors using quaternions
+                # Helper functions for quaternion operations
                 def quaternion_multiply(q1, q2):
+                    """Multiply two quaternions"""
                     w1, x1, y1, z1 = q1
                     w2, x2, y2, z2 = q2
-                    w = w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2
-                    x = w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2
-                    y = w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2
-                    z = w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2
-                    return np.array([w, x, y, z])
+                    return np.array([
+                        w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2,
+                        w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2,
+                        w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2,
+                        w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2
+                    ])
                 
                 def quaternion_conjugate(q):
-                    w, x, y, z = q
-                    return np.array([w, -x, -y, -z])
+                    """Get quaternion conjugate"""
+                    return np.array([q[0], -q[1], -q[2], -q[3]])
                 
                 def rotate_vector_by_quaternion(v, q):
-                    # Convert vector to quaternion form (w=0)
+                    """Rotate a vector by a quaternion"""
+                    # Convert vector to pure quaternion (0, x, y, z)
                     v_quat = np.array([0.0, v[0], v[1], v[2]])
                     q_conj = quaternion_conjugate(q)
                     # Apply rotation: q * v * q^-1
@@ -1230,90 +1285,147 @@ class Scanner:
                     # Extract vector part
                     return rotated[1:4]
                 
-                # Calculate actual forward direction based on drone's orientation
+                # Calculate drone's actual forward direction
                 drone_forward = rotate_vector_by_quaternion(local_forward, drone_quat)
+                drone_forward = drone_forward / np.linalg.norm(drone_forward)
                 
-                # Normalize drone forward vector
-                drone_forward_norm = np.linalg.norm(drone_forward)
-                if drone_forward_norm > 0.001:
-                    drone_forward = drone_forward / drone_forward_norm
+                # For directional scanning, we want to bias toward the actual drone orientation
+                # but still use the provided direction as primary
+                direction = np.array(direction)
+                direction_norm = np.linalg.norm(direction)
+                
+                if direction_norm > 0.001:
+                    direction = direction / direction_norm
                     
-                # Use a weighted combination of the provided direction and drone's forward vector
-                # This ensures we primarily use the intended movement direction but
-                # also account for the drone's actual orientation
-                combined_direction = 0.7 * np.array(direction) + 0.3 * drone_forward
-                
-                # Normalize the combined direction
-                combined_norm = np.linalg.norm(combined_direction)
-                if combined_norm > 0.001:  # Avoid division by zero
-                    direction = combined_direction / combined_norm
+                    # Calculate the angle between requested direction and drone forward
+                    alignment = np.dot(direction, drone_forward)
+                    
+                    # If they're well aligned (>60 degrees), trust the direction
+                    # If not well aligned, blend them for better sensor coverage
+                    if alignment > 0.5:  # cos(60°) ≈ 0.5
+                        # Use mostly the requested direction
+                        final_direction = 0.8 * direction + 0.2 * drone_forward
+                    else:
+                        # Blend more heavily toward drone forward for better sensor alignment
+                        final_direction = 0.5 * direction + 0.5 * drone_forward
+                    
+                    # Normalize the final direction
+                    final_direction = final_direction / np.linalg.norm(final_direction)
                 else:
-                    # If normalization fails, fall back to drone's forward direction
-                    direction = drone_forward
+                    # If no valid direction provided, use drone forward
+                    final_direction = drone_forward
                     
-                logging.debug(f"Using combined direction vector for forward scanning: {direction}")
+                direction = final_direction
+                logging.debug(f"Using corrected direction vector: {direction}")
                 
             except Exception as e:
                 logging.warning(f"Error getting drone orientation for directional scan: {e}")
                 # Fall back to just using the provided direction vector
                 direction = np.array(direction)
+                direction_norm = np.linalg.norm(direction)
+                if direction_norm > 0.001:
+                    direction = direction / direction_norm
+                else:
+                    return [], []
+                drone_pos = np.array([0.0, 0.0, 0.0])  # Fallback position
             
-            # Normalize direction vector
-            direction = np.array(direction)
-            norm = np.linalg.norm(direction)
-            if norm < 0.001:  # Avoid division by zero
-                return [], []
-            direction = direction / norm
-            
-            # Calculate cosine of cone angle
+            # Calculate cosine of cone angle for dot product comparison
             cos_angle = np.cos(np.radians(cone_angle))
             
-            # Filter obstacles within the cone
-            in_cone_positions = []
-            in_cone_distances = []
+            # Multi-stage obstacle detection for improved reliability
+            detected_obstacles = []
+            
+            # Stage 1: Check for very close obstacles (critical proximity)
+            critical_distance = 2.0  # Critical proximity threshold
             
             for i, pos in enumerate(all_positions):
-                if i >= len(all_distances):  # Safety check
+                if i >= len(all_distances):
                     continue
-                    
-                # Skip if beyond max distance
-                if all_distances[i] > max_distance:
-                    continue
-                    
+                
+                obstacle_pos = np.array(pos)
+                distance_to_obstacle = all_distances[i]
+                
                 # Vector from drone to obstacle
-                to_obstacle = np.array(pos) - drone_pos
+                to_obstacle = obstacle_pos - drone_pos
                 to_obstacle_dist = np.linalg.norm(to_obstacle)
                 
-                if to_obstacle_dist < 0.001:  # Avoid division by zero
+                if to_obstacle_dist < 0.001:
                     continue
+                
+                # For very close obstacles, use a wider cone to ensure detection
+                if distance_to_obstacle <= critical_distance:
+                    # Use wider cone angle for close obstacles
+                    close_cos_angle = np.cos(np.radians(min(cone_angle * 1.5, 90.0)))
+                    to_obstacle_norm = to_obstacle / to_obstacle_dist
                     
-                # Normalize
-                to_obstacle = to_obstacle / to_obstacle_dist
+                    angle_cos = np.dot(direction, to_obstacle_norm)
+                    if angle_cos > close_cos_angle:
+                        detected_obstacles.append({
+                            'position': pos,
+                            'distance': distance_to_obstacle,
+                            'angle_cos': angle_cos,
+                            'priority': 1  # Highest priority for close obstacles
+                        })
+            
+            # Stage 2: Standard cone detection for medium-range obstacles
+            medium_distance = 6.0
+            
+            for i, pos in enumerate(all_positions):
+                if i >= len(all_distances):
+                    continue
                 
-                # Calculate dot product to get cosine of angle between vectors
-                angle_cos = np.dot(direction, to_obstacle)
+                obstacle_pos = np.array(pos)
+                distance_to_obstacle = all_distances[i]
                 
-                # Apply distance-based filtering:
-                # For farther obstacles, require them to be more closely aligned with the direction
-                # This prevents excessive false positives for obstacles that aren't directly in our path
-                required_cos_angle = cos_angle
+                # Skip if already detected in stage 1 or beyond max distance
+                if distance_to_obstacle <= critical_distance or distance_to_obstacle > max_distance:
+                    continue
                 
-                # For distant obstacles, tighten the cone angle
-                if to_obstacle_dist > 4.0:
-                    # Linearly increase required alignment from the base cos_angle at 4m
-                    # to a much tighter angle at max_distance
-                    # This makes the cone narrower for more distant obstacles, focusing only on
-                    # those directly in front when they're far away
-                    distance_factor = min(1.0, (to_obstacle_dist - 4.0) / (max_distance - 4.0))
+                # Vector from drone to obstacle
+                to_obstacle = obstacle_pos - drone_pos
+                to_obstacle_dist = np.linalg.norm(to_obstacle)
+                
+                if to_obstacle_dist < 0.001:
+                    continue
+                
+                to_obstacle_norm = to_obstacle / to_obstacle_dist
+                angle_cos = np.dot(direction, to_obstacle_norm)
+                
+                # For medium-range obstacles, use standard cone
+                if distance_to_obstacle <= medium_distance:
+                    if angle_cos > cos_angle:
+                        detected_obstacles.append({
+                            'position': pos,
+                            'distance': distance_to_obstacle,
+                            'angle_cos': angle_cos,
+                            'priority': 2
+                        })
+                else:
+                    # Stage 3: Distant obstacles - use narrower cone to reduce false positives
+                    # but only moderately to still detect large obstacles
+                    distance_factor = min(1.0, (distance_to_obstacle - medium_distance) / (max_distance - medium_distance))
                     
-                    # Calculate tighter cone angle - at max distance it will be about half the original cone angle
-                    narrowed_angle = cone_angle * (1.0 - 0.5 * distance_factor)
+                    # Narrow the cone gradually, but not too much to miss large obstacles
+                    narrowed_angle = cone_angle * (1.0 - 0.3 * distance_factor)  # Max 30% narrowing
                     required_cos_angle = np.cos(np.radians(narrowed_angle))
-                
-                # If obstacle is within the (potentially narrowed) cone
-                if angle_cos > required_cos_angle:
-                    in_cone_positions.append(pos)
-                    in_cone_distances.append(all_distances[i])
+                    
+                    if angle_cos > required_cos_angle:
+                        detected_obstacles.append({
+                            'position': pos,
+                            'distance': distance_to_obstacle,
+                            'angle_cos': angle_cos,
+                            'priority': 3
+                        })
+            
+            # Sort obstacles by priority, then by distance
+            detected_obstacles.sort(key=lambda x: (x['priority'], x['distance']))
+            
+            # Extract positions and distances
+            in_cone_positions = [obs['position'] for obs in detected_obstacles]
+            in_cone_distances = [obs['distance'] for obs in detected_obstacles]
+            
+            logging.debug(f"Directional scan found {len(in_cone_positions)} obstacles "
+                         f"in {cone_angle}° cone at direction {direction}")
             
             return in_cone_positions, in_cone_distances
             
@@ -3940,21 +4052,24 @@ def sample_visible_target(current_pos: List[float], distance_range: Tuple[float,
             # First check if the target is inside an enclosed structure (like a house)
             # This prevents generating targets inside inaccessible buildings
             is_enclosed_space = False
-            
             try:
-                # Test if position is inside an enclosed space by checking for obstacles in all directions
-                # For indoor spaces like houses, there should be obstacles in most or all directions
+                # Enhanced enclosure detection to prevent targets inside buildings, houses, etc.
+                # Check if position is inside an enclosed space by testing multiple strategies
                 
-                # Use more comprehensive directions to check for enclosure
+                # Strategy 1: Comprehensive directional testing with multiple distance ranges
                 enclosure_test_dirs = [
+                    # Primary axes (essential for basic enclosure detection)
                     np.array([1, 0, 0]), np.array([-1, 0, 0]),  # X axis
                     np.array([0, 1, 0]), np.array([0, -1, 0]),  # Y axis
                     np.array([0, 0, 1]), np.array([0, 0, -1]),  # Z axis (up/down)
-                    # Add diagonal directions for better coverage
+                    # Diagonal directions for comprehensive coverage
                     np.array([1, 1, 0]), np.array([-1, -1, 0]),
                     np.array([1, -1, 0]), np.array([-1, 1, 0]),
                     np.array([1, 0, 1]), np.array([-1, 0, 1]),
-                    np.array([0, 1, 1]), np.array([0, -1, 1])
+                    np.array([0, 1, 1]), np.array([0, -1, 1]),
+                    # Additional 3D diagonal directions for better detection
+                    np.array([1, 1, 1]), np.array([-1, -1, -1]),
+                    np.array([1, -1, 1]), np.array([-1, 1, -1])
                 ]
                 
                 # Normalize diagonal directions
@@ -3963,38 +4078,81 @@ def sample_visible_target(current_pos: List[float], distance_range: Tuple[float,
                     if norm > 0:
                         enclosure_test_dirs[i] = enclosure_test_dirs[i] / norm
                 
-                # Count obstacles in different directions
-                obstacles_detected = 0
-                max_enclosed_dist = 15  # Maximum distance to check for enclosure
+                # Multi-stage enclosure detection with different distance ranges
+                obstacles_detected_close = 0  # Within 5m (tight enclosure like rooms)
+                obstacles_detected_medium = 0  # Within 10m (medium enclosure like buildings)
+                obstacles_detected_far = 0  # Within 20m (large enclosure like compounds)
                 
                 for direction in enclosure_test_dirs:
-                    obstacle_detected = False
+                    close_blocked = False
+                    medium_blocked = False
+                    far_blocked = False
                     
-                    # Check at multiple distances to see if there's an obstacle
-                    for dist in range(2, max_enclosed_dist + 1, 2):  # Check every 2m up to max_enclosed_dist
+                    # Check at multiple distance ranges for more thorough detection
+                    for dist in range(1, 21):  # Check every 1m up to 20m
                         check_point = target_pos + (direction * dist)
                         check_vector = airsim.Vector3r(check_point[0], check_point[1], check_point[2])
                         
                         # If line of sight fails, we found an obstacle
                         if not client.simTestLineOfSightBetweenPoints(target_vector, check_vector):
-                            obstacle_detected = True
-                            obstacles_detected += 1
+                            if dist <= 5 and not close_blocked:
+                                obstacles_detected_close += 1
+                                close_blocked = True
+                            if dist <= 10 and not medium_blocked:
+                                obstacles_detected_medium += 1  
+                                medium_blocked = True
+                            if dist <= 20 and not far_blocked:
+                                obstacles_detected_far += 1
+                                far_blocked = True
                             break
                 
-                # If obstacles are detected in most directions, this is likely an enclosed space
-                enclosure_threshold = 0.75  # 75% of directions need to have obstacles
-                is_enclosed_space = obstacles_detected >= len(enclosure_test_dirs) * enclosure_threshold
+                # Strategy 2: Vertical clearance check (rooms typically have ceilings)
+                ceiling_check_failed = False
+                floor_check_failed = False
+                
+                # Check for ceiling (obstacles above)
+                for z_dist in range(3, 8):  # Check 3-7m above
+                    ceiling_point = target_pos + np.array([0, 0, -z_dist])  # More negative = higher in NED
+                    ceiling_vector = airsim.Vector3r(ceiling_point[0], ceiling_point[1], ceiling_point[2])
+                    if not client.simTestLineOfSightBetweenPoints(target_vector, ceiling_vector):
+                        ceiling_check_failed = True
+                        break
+                
+                # Check for floor/ground (obstacles below)
+                for z_dist in range(3, 8):  # Check 3-7m below
+                    floor_point = target_pos + np.array([0, 0, z_dist])  # More positive = lower in NED
+                    floor_vector = airsim.Vector3r(floor_point[0], floor_point[1], floor_point[2])
+                    if not client.simTestLineOfSightBetweenPoints(target_vector, floor_vector):
+                        floor_check_failed = True
+                        break
+                
+                # Enhanced enclosure detection logic with multiple criteria
+                num_test_dirs = len(enclosure_test_dirs)
+                
+                # Strict enclosure detection: Multiple thresholds for different scenarios
+                is_tight_enclosure = obstacles_detected_close >= num_test_dirs * 0.80  # 80% threshold for close obstacles (rooms)
+                is_medium_enclosure = obstacles_detected_medium >= num_test_dirs * 0.70  # 70% threshold for medium obstacles (buildings)
+                is_large_enclosure = obstacles_detected_far >= num_test_dirs * 0.60  # 60% threshold for far obstacles (compounds)
+                
+                # Additional criteria for indoor detection
+                likely_indoor = (ceiling_check_failed and floor_check_failed and 
+                               obstacles_detected_close >= num_test_dirs * 0.50)
+                
+                # Consider enclosed if any criteria are met
+                is_enclosed_space = (is_tight_enclosure or is_medium_enclosure or 
+                                   is_large_enclosure or likely_indoor)
                 
                 if is_enclosed_space:
-                    logging.debug(f"Target at {[round(p, 2) for p in target_pos.tolist()]} rejected - appears to be inside an enclosed structure")
+                    enclosure_type = "tight" if is_tight_enclosure else "medium" if is_medium_enclosure else "large" if is_large_enclosure else "indoor"
+                    logging.info(f"Target at {[round(p, 2) for p in target_pos.tolist()]} rejected - appears to be inside an enclosed structure ({enclosure_type}: close={obstacles_detected_close}/{num_test_dirs}, medium={obstacles_detected_medium}/{num_test_dirs}, far={obstacles_detected_far}/{num_test_dirs}, ceiling={ceiling_check_failed}, floor={floor_check_failed})")
                     continue  # Skip this target and try another one
                 else:
-                    logging.debug(f"Target at {[round(p, 2) for p in target_pos.tolist()]} is not in an enclosed space ({obstacles_detected}/{len(enclosure_test_dirs)} directions have obstacles)")
+                    logging.debug(f"Target at {[round(p, 2) for p in target_pos.tolist()]} passed enclosure check (close={obstacles_detected_close}/{num_test_dirs}, medium={obstacles_detected_medium}/{num_test_dirs}, far={obstacles_detected_far}/{num_test_dirs})")
             
             except Exception as e:
                 logging.warning(f"Error checking if target is in enclosed space: {e}")
                 # Be conservative - if we can't determine, assume it might be enclosed
-                logging.debug(f"Target at {[round(p, 2) for p in target_pos.tolist()]} skipped due to error checking enclosed space")
+                logging.info(f"Target at {[round(p, 2) for p in target_pos.tolist()]} skipped due to error checking enclosed space")
                 continue
             
             # Only add to valid targets if it passed the enclosed space check
@@ -4135,16 +4293,18 @@ def sample_visible_target(current_pos: List[float], distance_range: Tuple[float,
                 
                 if fallback_los_result:
                     # First check if the fallback target is inside an enclosed structure
-                    is_enclosed = False
+                    is_enclosed = False                    
                     try:
-                        # Test directions for enclosure
+                        # Enhanced enclosure detection for fallback targets
                         enclosure_test_dirs = [
                             np.array([1, 0, 0]), np.array([-1, 0, 0]),  # X axis
                             np.array([0, 1, 0]), np.array([0, -1, 0]),  # Y axis
                             np.array([0, 0, 1]), np.array([0, 0, -1]),  # Z axis
-                            # Add some diagonal directions
+                            # Add diagonal directions for better coverage
                             np.array([1, 1, 0]), np.array([-1, -1, 0]),
-                            np.array([1, -1, 0]), np.array([-1, 1, 0])
+                            np.array([1, -1, 0]), np.array([-1, 1, 0]),
+                            np.array([1, 0, 1]), np.array([-1, 0, 1]),
+                            np.array([0, 1, 1]), np.array([0, -1, 1])
                         ]
                         
                         # Normalize diagonal directions
@@ -4153,24 +4313,65 @@ def sample_visible_target(current_pos: List[float], distance_range: Tuple[float,
                             if norm > 0:
                                 enclosure_test_dirs[i] = enclosure_test_dirs[i] / norm
                         
-                        # Count obstacles in different directions
-                        obstacles_detected = 0
+                        # Enhanced multi-range obstacle detection
+                        obstacles_detected_close = 0  # Within 5m
+                        obstacles_detected_medium = 0  # Within 10m
+                        obstacles_detected_far = 0  # Within 15m
                         
                         for direction in enclosure_test_dirs:
-                            # Check if there's an obstacle within 15m
-                            for dist in range(2, 16, 2):  # Check every 2m up to 15m
+                            close_blocked = False
+                            medium_blocked = False
+                            far_blocked = False
+                            
+                            # Check multiple distance ranges
+                            for dist in range(1, 16):  # Every 1m up to 15m
                                 check_point = fallback_target_pos + (direction * dist)
                                 check_vector = airsim.Vector3r(check_point[0], check_point[1], check_point[2])
                                 
                                 if not client.simTestLineOfSightBetweenPoints(fallback_vector3r, check_vector):
-                                    obstacles_detected += 1
+                                    if dist <= 5 and not close_blocked:
+                                        obstacles_detected_close += 1
+                                        close_blocked = True
+                                    if dist <= 10 and not medium_blocked:
+                                        obstacles_detected_medium += 1
+                                        medium_blocked = True
+                                    if dist <= 15 and not far_blocked:
+                                        obstacles_detected_far += 1
+                                        far_blocked = True
                                     break
                         
-                        # If obstacles are detected in most directions, this is likely an enclosed space
-                        is_enclosed = obstacles_detected >= len(enclosure_test_dirs) * 0.75  # 75% threshold
+                        # Check for ceiling/floor constraints (indoor detection)
+                        ceiling_blocked = False
+                        floor_blocked = False
+                        
+                        # Check above (ceiling detection)
+                        for z_dist in range(3, 8):
+                            ceiling_point = fallback_target_pos + np.array([0, 0, -z_dist])
+                            ceiling_vector = airsim.Vector3r(ceiling_point[0], ceiling_point[1], ceiling_point[2])
+                            if not client.simTestLineOfSightBetweenPoints(fallback_vector3r, ceiling_vector):
+                                ceiling_blocked = True
+                                break
+                        
+                        # Check below (floor detection)
+                        for z_dist in range(3, 8):
+                            floor_point = fallback_target_pos + np.array([0, 0, z_dist])
+                            floor_vector = airsim.Vector3r(floor_point[0], floor_point[1], floor_point[2])
+                            if not client.simTestLineOfSightBetweenPoints(fallback_vector3r, floor_vector):
+                                floor_blocked = True
+                                break
+                        
+                        # Multi-criteria enclosure detection
+                        num_dirs = len(enclosure_test_dirs)
+                        is_tight_enclosed = obstacles_detected_close >= num_dirs * 0.80
+                        is_medium_enclosed = obstacles_detected_medium >= num_dirs * 0.70
+                        is_large_enclosed = obstacles_detected_far >= num_dirs * 0.60
+                        is_indoor = (ceiling_blocked and floor_blocked and obstacles_detected_close >= num_dirs * 0.50)
+                        
+                        is_enclosed = (is_tight_enclosed or is_medium_enclosed or is_large_enclosed or is_indoor)
                         
                         if is_enclosed:
-                            logging.debug(f"Fallback target rejected - appears to be inside an enclosed structure")
+                            enclosure_type = "tight" if is_tight_enclosed else "medium" if is_medium_enclosed else "large" if is_large_enclosed else "indoor"
+                            logging.info(f"Fallback target rejected - appears to be inside an enclosed structure ({enclosure_type}: close={obstacles_detected_close}/{num_dirs}, medium={obstacles_detected_medium}/{num_dirs}, far={obstacles_detected_far}/{num_dirs})")
                             continue  # Try next fallback target
                     
                     except Exception as e:
