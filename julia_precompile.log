@@ -58,5 +58,5 @@ Testing ZMQ functionality...
   ZMQ functionality: ✓
 ✓ All components successfully precompiled
 
-=== Active Inference Precompilation Completed in 53.9 seconds ===
+=== Active Inference Precompilation Completed in 39.3 seconds ===
 The system is now ready for efficient navigation

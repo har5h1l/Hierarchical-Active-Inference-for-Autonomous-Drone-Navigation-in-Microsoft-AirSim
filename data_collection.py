@@ -173,7 +173,7 @@ ZMQ_MAX_RETRIES = 3  # Maximum number of retries for ZMQ communication
 # Default experiment configuration
 DEFAULT_CONFIG = {
     "num_episodes": 5,
-    "target_distance_range": (20.0, 100.0),  # min, max in meters
+    "target_distance_range": (15.0, 50.0),  # min, max in meters
     "random_seed": 42,
     "max_steps_per_episode": 100,
     "output_dir": "experiment_results",
@@ -3798,18 +3798,19 @@ def main():
 def sample_visible_target(current_pos: List[float], distance_range: Tuple[float, float], 
                           client: airsim.MultirotorClient, max_attempts: int = 150,
                           episode_id: int = 0, seed: int = None, 
-                          ray_checks: int = 7) -> List[float]:    
+                          ray_checks: int = 7) -> List[float]:
     """Sample a random target position within distance bounds that is visible to the drone
     
-    Ultra-fast streamlined approach using only AirSim's raycasting APIs:
+    Optimized approach using position teleportation with collision checking:
     1. Generate random test locations at various altitudes above ground
-    2. Use raycasting to validate positions without moving the drone
-    3. Check line-of-sight from current position to potential targets
-    4. Return first valid target found
+    2. Teleport drone to test positions for accurate collision detection
+    3. Check for actual collisions at teleported positions
+    4. Use raycasting from teleported positions for enclosure detection
+    5. Restore drone to original position after testing
     
-    Note: This function does NOT move the drone at all - it only uses raycasting.
-    The caller should handle all drone state management.
-    Includes small timeout between raycasting checks for improved collision detection.
+    This hybrid approach avoids edge collision detection issues while being faster
+    than takeoff/landing operations. The drone is temporarily teleported to test
+    positions without expensive state changes.
     
     Args:
         current_pos: Current drone position [x, y, z] in NED coordinates
@@ -3826,16 +3827,20 @@ def sample_visible_target(current_pos: List[float], distance_range: Tuple[float,
     Raises:
         ValueError: If no valid target is found within max_attempts
     """
-    logging.debug(f"Starting ultra-fast target sampling for episode {episode_id}")
+    logging.debug(f"Starting optimized target sampling with position teleportation for episode {episode_id}")
+    
+    # Store original drone position for restoration
+    original_pose = client.simGetVehiclePose()
+    original_position = [original_pose.position.x_val, original_pose.position.y_val, original_pose.position.z_val]
+    logging.debug(f"Stored original position: {[round(p, 2) for p in original_position]}")
     
     # Setup random number generator
     if seed is not None:
         target_rng = random.Random(seed + episode_id)
-    else:
-        target_rng = random.Random()
+    else:        target_rng = random.Random()
     
     min_dist, max_dist = distance_range
-      # Adjust distance range based on episode progression
+    # Adjust distance range based on episode progression
     if episode_id > 0:
         episode_factor = min(1.0, episode_id / 20)  # Slower progression for larger range
         min_dist = min_dist + (episode_factor * 10)  # Gradually increase minimum distance
@@ -3845,117 +3850,152 @@ def sample_visible_target(current_pos: List[float], distance_range: Tuple[float,
     
     valid_targets = []
     
-    # Generate and test random locations using only raycasting
-    for attempt in range(max_attempts):
-        # Generate random direction (spherical coordinates)
-        theta = target_rng.uniform(0, 2 * math.pi)  # Azimuth
-        phi = target_rng.uniform(math.pi/6, math.pi/2)  # Elevation (30° to 90° from vertical)
-        
-        # Convert to cartesian
-        x = math.sin(phi) * math.cos(theta)
-        y = math.sin(phi) * math.sin(theta)
-        z = math.cos(phi)
-        
-        # Sample distance within range
-        distance = target_rng.uniform(min_dist, max_dist)
-        
-        # Generate target position 2-20 meters above ground
-        altitude_above_ground = target_rng.uniform(2.0, 20.0)
-        target_pos = [
-            current_pos[0] + x * distance,
-            current_pos[1] + y * distance,
-            -altitude_above_ground  # Negative Z in NED coordinates
-        ]
-        logging.debug(f"Testing target at {[round(p, 2) for p in target_pos]}, altitude: {altitude_above_ground:.2f}m")
-        
-        # Small timeout to ensure AirSim has time to process raycasting accurately
-        time.sleep(0.01)  # 10ms delay for better collision detection
-        
-        # Use raycasting to detect if position is enclosed or obstructed
-        is_valid = True
-        try:
-            # First, check if there's a direct line of sight from current position to target
-            start_vector = airsim.Vector3r(current_pos[0], current_pos[1], current_pos[2])
-            target_vector = airsim.Vector3r(target_pos[0], target_pos[1], target_pos[2])
+    try:
+        # Generate and test random locations using position teleportation with collision checking
+        for attempt in range(max_attempts):
+            # Generate random direction (spherical coordinates)
+            theta = target_rng.uniform(0, 2 * math.pi)  # Azimuth
+            phi = target_rng.uniform(math.pi/6, math.pi/2)  # Elevation (30° to 90° from vertical)
             
-            if not client.simTestLineOfSightBetweenPoints(start_vector, target_vector):
-                logging.debug(f"Target at {[round(p, 2) for p in target_pos]} rejected - no direct line of sight")
-                continue
+            # Convert to cartesian
+            x = math.sin(phi) * math.cos(theta)
+            y = math.sin(phi) * math.sin(theta)
+            z = math.cos(phi)
             
-            # Test rays in multiple directions from target to detect enclosure
-            test_directions = [
-                [1, 0, 0], [-1, 0, 0],  # X axis
-                [0, 1, 0], [0, -1, 0],  # Y axis
-                [0, 0, -1], [0, 0, 1],  # Z axis (up/down)
-                [1, 1, 0], [-1, -1, 0], [1, -1, 0], [-1, 1, 0]  # Diagonals
+            # Sample distance within range
+            distance = target_rng.uniform(min_dist, max_dist)
+            
+            # Generate target position 2-20 meters above ground
+            altitude_above_ground = target_rng.uniform(2.0, 20.0)
+            target_pos = [
+                current_pos[0] + x * distance,
+                current_pos[1] + y * distance,
+                -altitude_above_ground  # Negative Z in NED coordinates
             ]
+            logging.debug(f"Testing target at {[round(p, 2) for p in target_pos]}, altitude: {altitude_above_ground:.2f}m")
             
-            blocked_directions = 0
-            for direction in test_directions:
-                # Test line of sight in this direction for 10 meters
-                end_point = [
-                    target_pos[0] + direction[0] * 10,
-                    target_pos[1] + direction[1] * 10,
-                    target_pos[2] + direction[2] * 10
+            # Teleport drone to test position for collision checking
+            test_pose = airsim.Pose()
+            test_pose.position = airsim.Vector3r(target_pos[0], target_pos[1], target_pos[2])
+            test_pose.orientation = original_pose.orientation  # Keep original orientation
+            
+            try:
+                # Teleport to test position
+                client.simSetVehiclePose(test_pose, True)
+                time.sleep(0.02)  # Small delay for position to stabilize
+                
+                # Check for actual collision at this position
+                collision_info = client.simGetCollisionInfo()
+                if collision_info.has_collided:
+                    logging.debug(f"Target at {[round(p, 2) for p in target_pos]} rejected - collision detected")
+                    continue
+                
+                # Additional collision check - get current position after teleport
+                current_test_pose = client.simGetVehiclePose()
+                actual_pos = [current_test_pose.position.x_val, current_test_pose.position.y_val, current_test_pose.position.z_val]
+                
+                # Check if drone was moved significantly from intended position (indicates collision/obstruction)
+                position_diff = math.sqrt(sum((a - t)**2 for a, t in zip(actual_pos, target_pos)))
+                if position_diff > 0.5:  # More than 0.5m difference indicates obstruction
+                    logging.debug(f"Target at {[round(p, 2) for p in target_pos]} rejected - position obstruction (diff: {position_diff:.2f}m)")
+                    continue
+                
+                # From teleported position, check line-of-sight back to original position
+                start_vector = airsim.Vector3r(target_pos[0], target_pos[1], target_pos[2])
+                original_vector = airsim.Vector3r(original_position[0], original_position[1], original_position[2])
+                
+                if not client.simTestLineOfSightBetweenPoints(start_vector, original_vector):
+                    logging.debug(f"Target at {[round(p, 2) for p in target_pos]} rejected - no line of sight to original position")
+                    continue
+                
+                # Test rays in multiple directions from target to detect enclosure
+                test_directions = [
+                    [1, 0, 0], [-1, 0, 0],  # X axis
+                    [0, 1, 0], [0, -1, 0],  # Y axis
+                    [0, 0, -1], [0, 0, 1],  # Z axis (up/down)
+                    [1, 1, 0], [-1, -1, 0], [1, -1, 0], [-1, 1, 0]  # Diagonals
                 ]
                 
-                start_vec = airsim.Vector3r(target_pos[0], target_pos[1], target_pos[2])
-                end_vec = airsim.Vector3r(end_point[0], end_point[1], end_point[2])
+                blocked_directions = 0
+                for direction in test_directions:
+                    # Test line of sight in this direction for 10 meters
+                    end_point = [
+                        target_pos[0] + direction[0] * 10,
+                        target_pos[1] + direction[1] * 10,
+                        target_pos[2] + direction[2] * 10
+                    ]
+                    
+                    start_vec = airsim.Vector3r(target_pos[0], target_pos[1], target_pos[2])
+                    end_vec = airsim.Vector3r(end_point[0], end_point[1], end_point[2])
+                    
+                    if not client.simTestLineOfSightBetweenPoints(start_vec, end_vec):
+                        blocked_directions += 1
                 
-                if not client.simTestLineOfSightBetweenPoints(start_vec, end_vec):
-                    blocked_directions += 1
-            
-            # If more than 60% of directions are blocked, consider it enclosed
-            if blocked_directions >= len(test_directions) * 0.6:
-                logging.debug(f"Target at {[round(p, 2) for p in target_pos]} rejected - appears enclosed ({blocked_directions}/{len(test_directions)} directions blocked)")
-                continue
-            
-            # Additional validation with multiple rays from current position
-            valid_ray_count = 0
-            for ray_idx in range(ray_checks):
-                if ray_idx == 0:
-                    # Already tested direct line of sight above
-                    valid_ray_count += 1
-                else:
-                    # Add small perturbation for additional rays
+                # If more than 60% of directions are blocked, consider it enclosed
+                if blocked_directions >= len(test_directions) * 0.6:
+                    logging.debug(f"Target at {[round(p, 2) for p in target_pos]} rejected - appears enclosed ({blocked_directions}/{len(test_directions)} directions blocked)")
+                    continue
+                
+                # Additional validation with multiple rays from target position to nearby points
+                valid_ray_count = 1  # Already validated line of sight to original position
+                for ray_idx in range(1, ray_checks):
+                    # Add small perturbation for additional rays toward original position
                     perturb = 0.2 * ray_idx  # Increasing perturbation
                     offset_x = target_rng.uniform(-perturb, perturb)
                     offset_y = target_rng.uniform(-perturb, perturb)
                     offset_z = target_rng.uniform(-perturb/2, perturb/2)
                     
-                    perturbed_target = airsim.Vector3r(
-                        target_pos[0] + offset_x,
-                        target_pos[1] + offset_y,
-                        target_pos[2] + offset_z
+                    perturbed_original = airsim.Vector3r(
+                        original_position[0] + offset_x,
+                        original_position[1] + offset_y,
+                        original_position[2] + offset_z
                     )
                     
-                    if client.simTestLineOfSightBetweenPoints(start_vector, perturbed_target):
+                    if client.simTestLineOfSightBetweenPoints(start_vector, perturbed_original):
                         valid_ray_count += 1
-            
-            # Consider target valid if most rays pass
-            if valid_ray_count >= ray_checks * 0.7:
-                valid_targets.append(target_pos)
-                logging.info(f"Found valid target at {[round(p, 2) for p in target_pos]}, altitude: {altitude_above_ground:.2f}m (attempt {attempt+1})")
                 
-                # Visualize the target
-                try:
-                    client.simPlotPoints([airsim.Vector3r(target_pos[0], target_pos[1], target_pos[2])], 
-                                       color_rgba=[0.0, 1.0, 0.0, 1.0], 
-                                       size=15.0, 
-                                       duration=10.0, 
-                                       is_persistent=False)
-                except Exception as e:
-                    logging.debug(f"Failed to visualize target: {e}")
+                # Consider target valid if most rays pass
+                if valid_ray_count >= ray_checks * 0.7:
+                    valid_targets.append(target_pos)
+                    logging.info(f"Found valid target at {[round(p, 2) for p in target_pos]}, altitude: {altitude_above_ground:.2f}m (attempt {attempt+1})")
+                    
+                    # Visualize the target
+                    try:
+                        client.simPlotPoints([airsim.Vector3r(target_pos[0], target_pos[1], target_pos[2])], 
+                                           color_rgba=[0.0, 1.0, 0.0, 1.0], 
+                                           size=15.0, 
+                                           duration=10.0, 
+                                           is_persistent=False)
+                    except Exception as e:
+                        logging.debug(f"Failed to visualize target: {e}")
+                    
+                    # Found valid target, break out of attempt loop
+                    break
+                else:
+                    logging.debug(f"Target at {[round(p, 2) for p in target_pos]} rejected - visibility check failed ({valid_ray_count}/{ray_checks} rays passed)")
                 
-                # Return first valid target found
-                break
-            else:
-                logging.debug(f"Target at {[round(p, 2) for p in target_pos]} rejected - visibility check failed ({valid_ray_count}/{ray_checks} rays passed)")
-            
+            except Exception as e:
+                logging.warning(f"Error during position teleportation test: {e}")
+                continue
+    
+    finally:
+        # Always restore original drone position
+        try:
+            client.simSetVehiclePose(original_pose, True)
+            time.sleep(0.02)  # Small delay for position to stabilize
+            logging.debug(f"Restored drone to original position: {[round(p, 2) for p in original_position]}")
         except Exception as e:
-            logging.warning(f"Error in raycasting validation: {e}")
-            continue
-      # If no valid targets found, use fallback
+            logging.error(f"Failed to restore original drone position: {e}")
+            # Attempt alternative restoration
+            try:
+                restore_pose = airsim.Pose()
+                restore_pose.position = airsim.Vector3r(original_position[0], original_position[1], original_position[2])
+                restore_pose.orientation = airsim.Quaternionr(0, 0, 0, 1)  # Default orientation
+                client.simSetVehiclePose(restore_pose, True)
+                logging.debug("Alternative position restoration successful")
+            except Exception as e2:                logging.error(f"Alternative position restoration also failed: {e2}")
+    
+    # If no valid targets found, use fallback
     if not valid_targets:
         logging.warning("No valid targets found, using fallback position")
         fallback_target = [
