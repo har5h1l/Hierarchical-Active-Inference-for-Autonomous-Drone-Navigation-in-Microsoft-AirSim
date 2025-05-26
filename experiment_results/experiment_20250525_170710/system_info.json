@@ -1,0 +1,39 @@
+{
+  "timestamp": "2025-05-25 17:07:10",
+  "os": {
+    "name": "Windows",
+    "version": "10.0.26100",
+    "platform": "Windows-10-10.0.26100-SP0",
+    "release": "10",
+    "architecture": "AMD64"
+  },
+  "python": {
+    "version": "3.11.9",
+    "implementation": "CPython",
+    "compiler": "MSC v.1938 64 bit (AMD64)"
+  },
+  "julia": {
+    "error": "Command '['julia', '-e', 'using Pkg; Pkg.status()']' timed out after 10 seconds"
+  },
+  "cpu": {
+    "physical_cores": 16,
+    "total_cores": 22,
+    "usage_percent": 19.7
+  },
+  "memory": {
+    "total_gb": 15.37,
+    "available_gb": 1.21,
+    "used_percent": 92.1
+  },
+  "gpu": {
+    "note": "Could not detect GPU information"
+  },
+  "airsim": {
+    "version": "1.8.1"
+  },
+  "libraries": {
+    "numpy": "2.2.1",
+    "pandas": "2.2.3",
+    "zmq": "26.2.0"
+  }
+}

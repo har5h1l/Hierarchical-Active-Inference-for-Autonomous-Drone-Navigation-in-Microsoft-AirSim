@@ -1,5 +1,4 @@
   Activating project at `c:\Users\Satya\Autonomous-Drone-Navigation-in-AirSim-With-Active-Inference`
-    Updating registry at `C:\Users\Satya\.julia\registries\General.toml`
    Resolving package versions...
   No Changes to `C:\Users\Satya\Autonomous-Drone-Navigation-in-AirSim-With-Active-Inference\Project.toml`
   No Changes to `C:\Users\Satya\Autonomous-Drone-Navigation-in-AirSim-With-Active-Inference\Manifest.toml`
@@ -59,5 +58,5 @@ Testing ZMQ functionality...
   ZMQ functionality: ✓
 ✓ All components successfully precompiled
 
-=== Active Inference Precompilation Completed in 99.0 seconds ===
+=== Active Inference Precompilation Completed in 53.9 seconds ===
 The system is now ready for efficient navigation

@@ -172,8 +172,8 @@ ZMQ_MAX_RETRIES = 3  # Maximum number of retries for ZMQ communication
 
 # Default experiment configuration
 DEFAULT_CONFIG = {
-    "num_episodes": 30,
-    "target_distance_range": (15.0, 50.0),  # min, max in meters
+    "num_episodes": 5,
+    "target_distance_range": (20.0, 100.0),  # min, max in meters
     "random_seed": 42,
     "max_steps_per_episode": 100,
     "output_dir": "experiment_results",
@@ -3616,9 +3616,8 @@ def run_experiment(config: Dict[str, Any]) -> None:
                 # Get initial drone position to use as starting point for generating targets
                 drone_pose = client.simGetVehiclePose()
                 start_pos = [drone_pose.position.x_val, drone_pose.position.y_val, drone_pose.position.z_val]
-                
-                # Number of targets to pre-generate (1.5x the number of episodes to have extras)
-                num_targets = min(200, int(full_config["num_episodes"] * 1.5))
+                  # Number of targets to pre-generate (exactly the number of episodes needed)
+                num_targets = min(200, full_config["num_episodes"])
                 
                 # Generate the pool
                 target_pool = generate_target_pool(
@@ -3643,9 +3642,8 @@ def run_experiment(config: Dict[str, Any]) -> None:
                 # Try again with reduced parameters if the first attempt failed
                 try:
                     logging.warning("Retrying target pool generation with reduced parameters...")
-                    
-                    # Try with fewer targets and simpler validation
-                    reduced_targets = min(50, int(full_config["num_episodes"] * 0.75))
+                      # Try with fewer targets and simpler validation
+                    reduced_targets = min(50, full_config["num_episodes"])
                     target_pool = generate_target_pool(
                         start_pos, 
                         full_config["target_distance_range"],
@@ -3800,12 +3798,22 @@ def main():
 def sample_visible_target(current_pos: List[float], distance_range: Tuple[float, float], 
                           client: airsim.MultirotorClient, max_attempts: int = 150,
                           episode_id: int = 0, seed: int = None, 
-                          ray_checks: int = 7) -> List[float]:
+                          ray_checks: int = 7) -> List[float]:    
     """Sample a random target position within distance bounds that is visible to the drone
+    
+    Ultra-fast streamlined approach using only AirSim's raycasting APIs:
+    1. Generate random test locations at various altitudes above ground
+    2. Use raycasting to validate positions without moving the drone
+    3. Check line-of-sight from current position to potential targets
+    4. Return first valid target found
+    
+    Note: This function does NOT move the drone at all - it only uses raycasting.
+    The caller should handle all drone state management.
+    Includes small timeout between raycasting checks for improved collision detection.
     
     Args:
         current_pos: Current drone position [x, y, z] in NED coordinates
-        distance_range: (min_distance, max_distance) in meters
+        distance_range: (min_distance, max_distance) in meters (default config: 20-100m)
         client: AirSim client instance
         max_attempts: Maximum sampling attempts before giving up
         episode_id: Current episode ID to influence randomization
@@ -3818,671 +3826,148 @@ def sample_visible_target(current_pos: List[float], distance_range: Tuple[float,
     Raises:
         ValueError: If no valid target is found within max_attempts
     """
-    # Constants for target altitude constraints
-    MIN_TARGET_ALTITUDE = -10.0  # Max 10 meters above ground in NED (more negative is higher)
-    MAX_TARGET_ALTITUDE = -2.0   # Min 2 meters above ground in NED
-    min_dist, max_dist = distance_range
+    logging.debug(f"Starting ultra-fast target sampling for episode {episode_id}")
     
-    # Create a separate random generator for deterministic target generation
+    # Setup random number generator
     if seed is not None:
-        # Use episode_id to get different but deterministic targets for each episode
         target_rng = random.Random(seed + episode_id)
     else:
         target_rng = random.Random()
     
-    # Adapt the distance range based on the episode
-    # This creates a progression of targets with varying distances
+    min_dist, max_dist = distance_range
+      # Adjust distance range based on episode progression
     if episode_id > 0:
-        # The early episodes get shorter distances, later episodes get longer distances
-        episode_factor = min(1.0, episode_id / 10)  # Scales from 0.1 to 1.0 over first 10 episodes
-        
-        # Adjust the distance range
-        min_dist = min_dist + (episode_factor * 5)  # Gradually increase minimum distance
-        max_dist = min(max_dist, min_dist + 20 + (episode_factor * 30))  # Gradually increase range span
+        episode_factor = min(1.0, episode_id / 20)  # Slower progression for larger range
+        min_dist = min_dist + (episode_factor * 10)  # Gradually increase minimum distance
+        max_dist = min(max_dist, min_dist + 30 + (episode_factor * 50))  # Scale max distance appropriately
     
-    logging.info(f"Target distance range for episode {episode_id}: {min_dist:.1f}m - {max_dist:.1f}m")
-      # Verify the drone's position is valid for sampling
-    # In NED coordinates: Z is negative for altitude (more negative = higher altitude)
-    if current_pos[2] > -1.0:  
-        logging.warning(f"Sampling target with drone too close to ground (alt: {-current_pos[2]:.2f}m)")
-        # Force a minimum altitude for reliable sampling (-5.0 means 5m above ground in NED)
-        current_pos = [current_pos[0], current_pos[1], -5.0]
-        logging.info(f"Adjusted sampling position to ensure minimum altitude: {current_pos} (alt: {-current_pos[2]:.2f}m)")
+    logging.debug(f"Target distance range for episode {episode_id}: {min_dist:.1f}m - {max_dist:.1f}m")
     
-    valid_targets = []  # Track all valid targets for potential selection
-    best_target = None  # Best target based on obstacle clearance
-    best_obstacle_clearance = 0.0  # Track the best clearance found
+    valid_targets = []
     
-    # Distribution of attempts to improve sampling efficiency
-    # Start with wider distribution, then focus more narrowly if needed
-    attempt_phase = 0
-    phase_attempts = [max_attempts // 3, max_attempts // 3, max_attempts // 3 + max_attempts % 3]
-    attempted_directions = set()
-    
+    # Generate and test random locations using only raycasting
     for attempt in range(max_attempts):
-        # Determine which phase we're in based on attempt number
-        if attempt >= phase_attempts[0] + phase_attempts[1] and attempt_phase < 2:
-            attempt_phase = 2  # Final phase - more targeted sampling
-        elif attempt >= phase_attempts[0] and attempt_phase < 1:
-            attempt_phase = 1  # Second phase - medium distribution
-            
-            # If we already have some valid targets, try to refine them instead of new random sampling
-            if len(valid_targets) > 0:
-                logging.info(f"Phase 2: Found {len(valid_targets)} valid targets, focusing on refining these")
+        # Generate random direction (spherical coordinates)
+        theta = target_rng.uniform(0, 2 * math.pi)  # Azimuth
+        phi = target_rng.uniform(math.pi/6, math.pi/2)  # Elevation (30° to 90° from vertical)
         
-        # Sampling strategy based on phase
-        if attempt_phase == 0:
-            # Phase 1: Wide sampling across all directions
-            theta = target_rng.uniform(0, 2 * math.pi)  # Azimuth angle
-            phi = target_rng.uniform(math.pi/6, math.pi/2.5)  # Between ~30° and ~70° from vertical
-        elif attempt_phase == 1 and valid_targets:
-            # Phase 2: Refine existing valid targets
-            base_target = target_rng.choice(valid_targets)
-            base_direction = np.array(base_target) - np.array(current_pos)
-            base_distance = np.linalg.norm(base_direction)
-            
-            if base_distance > 0:
-                # Perturb the direction slightly
-                base_direction = base_direction / base_distance
-                perturb_angle = target_rng.uniform(-math.pi/6, math.pi/6)  # ±30° perturbation
-                
-                # Create perturbed direction - rotate around vertical axis
-                cos_angle = math.cos(perturb_angle)
-                sin_angle = math.sin(perturb_angle)
-                
-                # Simple rotation around vertical axis (approximation)
-                x = base_direction[0] * cos_angle - base_direction[1] * sin_angle
-                y = base_direction[0] * sin_angle + base_direction[1] * cos_angle
-                z = base_direction[2]
-                
-                # Normalize direction
-                direction = np.array([x, y, z])
-                direction = direction / np.linalg.norm(direction)
-                
-                # Convert back to spherical for consistent processing
-                theta = math.atan2(direction[1], direction[0])
-                phi = math.acos(direction[2])
-            else:
-                # Fallback to random sampling if base distance is too small
-                theta = target_rng.uniform(0, 2 * math.pi)
-                phi = target_rng.uniform(math.pi/6, math.pi/2.5)
-        else:
-            # Phase 3 or fallback: Try evenly spaced directions to cover more space efficiently
-            # Generate points roughly evenly distributed on a sphere using golden spiral method
-            n_points = 20  # Number of points for spiral distribution
-            i = attempt % n_points
-            golden_ratio = (1 + 5**0.5) / 2
-            
-            theta = 2 * math.pi * i / golden_ratio
-            phi = math.acos(1 - 2 * (i + 0.5) / n_points)
-            
-            # Skip directions too close to already attempted ones
-            direction_key = f"{round(theta, 1)}_{round(phi, 1)}"
-            if direction_key in attempted_directions:
-                continue
-            attempted_directions.add(direction_key)
-        
-        # Convert spherical to cartesian coordinates
+        # Convert to cartesian
         x = math.sin(phi) * math.cos(theta)
         y = math.sin(phi) * math.sin(theta)
         z = math.cos(phi)
-          # Sample random distance within range
-        if attempt_phase < 2:
-            # Normal random distance sampling for early phases
-            distance = target_rng.uniform(min_dist, max_dist)
-        else:
-            # In the final phase, try strategic distances
-            # For every third attempt, try the middle of the range which often works well
-            if attempt % 3 == 0:
-                distance = (min_dist + max_dist) / 2
-            # For other attempts, still use random sampling
-            else:
-                distance = target_rng.uniform(min_dist, max_dist)
         
-        # Sample a random altitude variation for the target
-        # In NED coordinates, values between MIN_TARGET_ALTITUDE and MAX_TARGET_ALTITUDE
-        altitude_variation = target_rng.uniform(MIN_TARGET_ALTITUDE, MAX_TARGET_ALTITUDE)
+        # Sample distance within range
+        distance = target_rng.uniform(min_dist, max_dist)
         
-        # Scale direction vector by distance
-        direction = np.array([x, y, z]) * distance
+        # Generate target position 2-20 meters above ground
+        altitude_above_ground = target_rng.uniform(2.0, 20.0)
+        target_pos = [
+            current_pos[0] + x * distance,
+            current_pos[1] + y * distance,
+            -altitude_above_ground  # Negative Z in NED coordinates
+        ]
+        logging.debug(f"Testing target at {[round(p, 2) for p in target_pos]}, altitude: {altitude_above_ground:.2f}m")
         
-        # Adjust z component for variable altitude
-        # Keep horizontal direction but replace vertical component with altitude variation
-        horizontal_direction = np.array([direction[0], direction[1], 0])
-        horizontal_distance = np.linalg.norm(horizontal_direction)        # Calculate target position in NED coordinates with variable altitude
-        if horizontal_distance > 0:
-            # Use the horizontal direction but replace z component with variable altitude
-            normalized_horizontal = horizontal_direction / horizontal_distance
-            target_pos = np.array([
-                current_pos[0] + normalized_horizontal[0] * distance,
-                current_pos[1] + normalized_horizontal[1] * distance,
-                altitude_variation  # Direct Z value for altitude (in NED)
-            ])
-        else:
-            # Fallback if horizontal distance is too small - straight up or down
-            target_pos = np.array([
-                current_pos[0],
-                current_pos[1],
-                altitude_variation  # Direct Z value for altitude (in NED)
-            ])
+        # Small timeout to ensure AirSim has time to process raycasting accurately
+        time.sleep(0.01)  # 10ms delay for better collision detection
         
-        # Log the target position for debugging
-        logging.debug(f"Sampled target at {[round(p, 2) for p in target_pos.tolist()]}, altitude: {-target_pos[2]:.2f}m")
-        
-        # Convert to Vector3r for line of sight test
-        start_vector = airsim.Vector3r(current_pos[0], current_pos[1], current_pos[2])
-        target_vector = airsim.Vector3r(target_pos[0], target_pos[1], target_pos[2])
-        
-        # Flag to track if this target is valid across all ray checks
-        target_valid = True
-        valid_ray_count = 0
-        
-        # Use multiple rays with slight perturbations to verify line of sight
-        # Adaptive ray pattern based on which phase we're in
-        actual_ray_checks = ray_checks
-        if attempt_phase == 2:
-            # Use more rays in the final phase for more thorough testing
-            actual_ray_checks = ray_checks + 2
+        # Use raycasting to detect if position is enclosed or obstructed
+        is_valid = True
+        try:
+            # First, check if there's a direct line of sight from current position to target
+            start_vector = airsim.Vector3r(current_pos[0], current_pos[1], current_pos[2])
+            target_vector = airsim.Vector3r(target_pos[0], target_pos[1], target_pos[2])
             
-        for ray_idx in range(actual_ray_checks):
-            try:
-                # For the first ray, test direct line of sight
-                if ray_idx == 0:
-                    # Use simTestLineOfSightBetweenPoints for better reliability
-                    los_result = client.simTestLineOfSightBetweenPoints(start_vector, target_vector)
-                else:
-                    # For additional rays, add small perturbation with increasing radius
-                    # Scale perturbation with ray index for better coverage
-                    perturb_base = 0.1  # Base 10cm perturbation
-                    perturb_scale = 1.0 + (ray_idx * 0.15)  # Scale up for later rays
-                    perturb = perturb_base * perturb_scale
-                    
-                    # Use spiral pattern for better spatial coverage
-                    golden_angle = math.pi * (3 - math.sqrt(5))  # Golden angle
-                    theta_offset = ray_idx * golden_angle
-                    z_offset = ray_idx / (actual_ray_checks - 1) * 2 - 1  # -1 to 1
-                    
-                    # Calculate offsets in a spiral pattern
-                    r_xy = math.sqrt(1 - z_offset**2) * perturb
-                    x_offset = r_xy * math.cos(theta_offset)
-                    y_offset = r_xy * math.sin(theta_offset)
-                    z_offset = z_offset * perturb * 0.5  # Reduce vertical perturbation
-                    
-                    offset = np.array([x_offset, y_offset, z_offset])
-                    
-                    # Create slightly perturbed start and end points
-                    perturbed_start = airsim.Vector3r(
-                        current_pos[0] + offset[0], 
-                        current_pos[1] + offset[1], 
-                        current_pos[2] + offset[2]
-                    )
-                    perturbed_target = airsim.Vector3r(
-                        target_pos[0] + offset[0], 
-                        target_pos[1] + offset[1], 
-                        target_pos[2] + offset[2]
-                    )
-                    
-                    # Check line of sight with perturbed rays
-                    los_result = client.simTestLineOfSightBetweenPoints(perturbed_start, perturbed_target)
-                
-                if los_result:
-                    valid_ray_count += 1
-                    # For faster testing, consider success early if most rays pass
-                    if valid_ray_count >= min(5, actual_ray_checks * 0.7):
-                        break
-                # If any ray test fails, mark the target as invalid
-                else:
-                    target_valid = False
-                    break
-                
-            except Exception as e:
-                logging.warning(f"Error in line of sight test for ray {ray_idx}: {e}")
-                target_valid = False
-                break
-                  # Consider target valid only if enough rays were valid
-        target_valid = target_valid and (valid_ray_count >= min(3, actual_ray_checks * 0.5))
-                  # Log target validation result with altitude information
-        if target_valid:
-            logging.debug(f"Valid target found at {[round(p, 2) for p in target_pos.tolist()]}, altitude: {-target_pos[2]:.2f}m")
-        else:
-            logging.debug(f"Target at {[round(p, 2) for p in target_pos.tolist()]}, altitude: {-target_pos[2]:.2f}m rejected - visibility check failed")
-            
-        # If target passed ray checks, proceed with validation
-        if target_valid:
-            # First check if the target is inside an enclosed structure (like a house)
-            # This prevents generating targets inside inaccessible buildings
-            is_enclosed_space = False
-            try:
-                # Enhanced enclosure detection to prevent targets inside buildings, houses, etc.
-                # Check if position is inside an enclosed space by testing multiple strategies
-                
-                # Strategy 1: Comprehensive directional testing with multiple distance ranges
-                enclosure_test_dirs = [
-                    # Primary axes (essential for basic enclosure detection)
-                    np.array([1, 0, 0]), np.array([-1, 0, 0]),  # X axis
-                    np.array([0, 1, 0]), np.array([0, -1, 0]),  # Y axis
-                    np.array([0, 0, 1]), np.array([0, 0, -1]),  # Z axis (up/down)
-                    # Diagonal directions for comprehensive coverage
-                    np.array([1, 1, 0]), np.array([-1, -1, 0]),
-                    np.array([1, -1, 0]), np.array([-1, 1, 0]),
-                    np.array([1, 0, 1]), np.array([-1, 0, 1]),
-                    np.array([0, 1, 1]), np.array([0, -1, 1]),
-                    # Additional 3D diagonal directions for better detection
-                    np.array([1, 1, 1]), np.array([-1, -1, -1]),
-                    np.array([1, -1, 1]), np.array([-1, 1, -1])
-                ]
-                
-                # Normalize diagonal directions
-                for i in range(6, len(enclosure_test_dirs)):
-                    norm = np.linalg.norm(enclosure_test_dirs[i])
-                    if norm > 0:
-                        enclosure_test_dirs[i] = enclosure_test_dirs[i] / norm
-                
-                # Multi-stage enclosure detection with different distance ranges
-                obstacles_detected_close = 0  # Within 5m (tight enclosure like rooms)
-                obstacles_detected_medium = 0  # Within 10m (medium enclosure like buildings)
-                obstacles_detected_far = 0  # Within 20m (large enclosure like compounds)
-                
-                for direction in enclosure_test_dirs:
-                    close_blocked = False
-                    medium_blocked = False
-                    far_blocked = False
-                    
-                    # Check at multiple distance ranges for more thorough detection
-                    for dist in range(1, 21):  # Check every 1m up to 20m
-                        check_point = target_pos + (direction * dist)
-                        check_vector = airsim.Vector3r(check_point[0], check_point[1], check_point[2])
-                        
-                        # If line of sight fails, we found an obstacle
-                        if not client.simTestLineOfSightBetweenPoints(target_vector, check_vector):
-                            if dist <= 5 and not close_blocked:
-                                obstacles_detected_close += 1
-                                close_blocked = True
-                            if dist <= 10 and not medium_blocked:
-                                obstacles_detected_medium += 1  
-                                medium_blocked = True
-                            if dist <= 20 and not far_blocked:
-                                obstacles_detected_far += 1
-                                far_blocked = True
-                            break
-                
-                # Strategy 2: Vertical clearance check (rooms typically have ceilings)
-                ceiling_check_failed = False
-                floor_check_failed = False
-                
-                # Check for ceiling (obstacles above)
-                for z_dist in range(3, 8):  # Check 3-7m above
-                    ceiling_point = target_pos + np.array([0, 0, -z_dist])  # More negative = higher in NED
-                    ceiling_vector = airsim.Vector3r(ceiling_point[0], ceiling_point[1], ceiling_point[2])
-                    if not client.simTestLineOfSightBetweenPoints(target_vector, ceiling_vector):
-                        ceiling_check_failed = True
-                        break
-                
-                # Check for floor/ground (obstacles below)
-                for z_dist in range(3, 8):  # Check 3-7m below
-                    floor_point = target_pos + np.array([0, 0, z_dist])  # More positive = lower in NED
-                    floor_vector = airsim.Vector3r(floor_point[0], floor_point[1], floor_point[2])
-                    if not client.simTestLineOfSightBetweenPoints(target_vector, floor_vector):
-                        floor_check_failed = True
-                        break
-                
-                # Enhanced enclosure detection logic with multiple criteria
-                num_test_dirs = len(enclosure_test_dirs)
-                
-                # Strict enclosure detection: Multiple thresholds for different scenarios
-                is_tight_enclosure = obstacles_detected_close >= num_test_dirs * 0.80  # 80% threshold for close obstacles (rooms)
-                is_medium_enclosure = obstacles_detected_medium >= num_test_dirs * 0.70  # 70% threshold for medium obstacles (buildings)
-                is_large_enclosure = obstacles_detected_far >= num_test_dirs * 0.60  # 60% threshold for far obstacles (compounds)
-                
-                # Additional criteria for indoor detection
-                likely_indoor = (ceiling_check_failed and floor_check_failed and 
-                               obstacles_detected_close >= num_test_dirs * 0.50)
-                
-                # Consider enclosed if any criteria are met
-                is_enclosed_space = (is_tight_enclosure or is_medium_enclosure or 
-                                   is_large_enclosure or likely_indoor)
-                
-                if is_enclosed_space:
-                    enclosure_type = "tight" if is_tight_enclosure else "medium" if is_medium_enclosure else "large" if is_large_enclosure else "indoor"
-                    logging.info(f"Target at {[round(p, 2) for p in target_pos.tolist()]} rejected - appears to be inside an enclosed structure ({enclosure_type}: close={obstacles_detected_close}/{num_test_dirs}, medium={obstacles_detected_medium}/{num_test_dirs}, far={obstacles_detected_far}/{num_test_dirs}, ceiling={ceiling_check_failed}, floor={floor_check_failed})")
-                    continue  # Skip this target and try another one
-                else:
-                    logging.debug(f"Target at {[round(p, 2) for p in target_pos.tolist()]} passed enclosure check (close={obstacles_detected_close}/{num_test_dirs}, medium={obstacles_detected_medium}/{num_test_dirs}, far={obstacles_detected_far}/{num_test_dirs})")
-            
-            except Exception as e:
-                logging.warning(f"Error checking if target is in enclosed space: {e}")
-                # Be conservative - if we can't determine, assume it might be enclosed
-                logging.info(f"Target at {[round(p, 2) for p in target_pos.tolist()]} skipped due to error checking enclosed space")
+            if not client.simTestLineOfSightBetweenPoints(start_vector, target_vector):
+                logging.debug(f"Target at {[round(p, 2) for p in target_pos]} rejected - no direct line of sight")
                 continue
             
-            # Only add to valid targets if it passed the enclosed space check
-            valid_targets.append(target_pos.tolist())
+            # Test rays in multiple directions from target to detect enclosure
+            test_directions = [
+                [1, 0, 0], [-1, 0, 0],  # X axis
+                [0, 1, 0], [0, -1, 0],  # Y axis
+                [0, 0, -1], [0, 0, 1],  # Z axis (up/down)
+                [1, 1, 0], [-1, -1, 0], [1, -1, 0], [-1, 1, 0]  # Diagonals
+            ]
             
-            # Check obstacle clearance around target
-            try:
-                # Use simplified clearance check with line of sight tests in multiple directions
-                clearance_dirs = [
-                    np.array([1, 0, 0]), np.array([-1, 0, 0]),
-                    np.array([0, 1, 0]), np.array([0, -1, 0]),
-                    np.array([0, 0, 1]), np.array([0, 0, -1])
+            blocked_directions = 0
+            for direction in test_directions:
+                # Test line of sight in this direction for 10 meters
+                end_point = [
+                    target_pos[0] + direction[0] * 10,
+                    target_pos[1] + direction[1] * 10,
+                    target_pos[2] + direction[2] * 10
                 ]
                 
-                min_obstacle_dist = float('inf')
+                start_vec = airsim.Vector3r(target_pos[0], target_pos[1], target_pos[2])
+                end_vec = airsim.Vector3r(end_point[0], end_point[1], end_point[2])
                 
-                for direction in clearance_dirs:
-                    # Check line of sight in this direction from target
-                    # Try distances from 1m to 10m
-                    for dist in range(1, 11):
-                        check_point = target_pos + (direction * dist)
-                        check_vector = airsim.Vector3r(check_point[0], check_point[1], check_point[2])
-                        
-                        # If line of sight fails, we found the obstacle distance
-                        if not client.simTestLineOfSightBetweenPoints(target_vector, check_vector):
-                            if dist < min_obstacle_dist:
-                                min_obstacle_dist = dist
-                            break
-                  # If we found a valid obstacle distance
-                if min_obstacle_dist < float('inf'):
-                    # Check if the target meets minimum clearance requirement (3m)
-                    if min_obstacle_dist >= 3.0:
-                        # If this target has better clearance than our previous best, update it
-                        if min_obstacle_dist > best_obstacle_clearance:
-                            best_obstacle_clearance = min_obstacle_dist
-                            best_target = target_pos.tolist()
-                            logging.debug(f"Better target found with {min_obstacle_dist:.2f}m obstacle clearance")
-                    else:
-                        # Target is too close to obstacles (< 3m) - mark as invalid
-                        logging.debug(f"Target rejected - insufficient obstacle clearance ({min_obstacle_dist:.2f}m < 3.0m)")
-                        # Skip this target and continue to the next iteration
-                        continue
+                if not client.simTestLineOfSightBetweenPoints(start_vec, end_vec):
+                    blocked_directions += 1
+            
+            # If more than 60% of directions are blocked, consider it enclosed
+            if blocked_directions >= len(test_directions) * 0.6:
+                logging.debug(f"Target at {[round(p, 2) for p in target_pos]} rejected - appears enclosed ({blocked_directions}/{len(test_directions)} directions blocked)")
+                continue
+            
+            # Additional validation with multiple rays from current position
+            valid_ray_count = 0
+            for ray_idx in range(ray_checks):
+                if ray_idx == 0:
+                    # Already tested direct line of sight above
+                    valid_ray_count += 1
+                else:
+                    # Add small perturbation for additional rays
+                    perturb = 0.2 * ray_idx  # Increasing perturbation
+                    offset_x = target_rng.uniform(-perturb, perturb)
+                    offset_y = target_rng.uniform(-perturb, perturb)
+                    offset_z = target_rng.uniform(-perturb/2, perturb/2)
+                    
+                    perturbed_target = airsim.Vector3r(
+                        target_pos[0] + offset_x,
+                        target_pos[1] + offset_y,
+                        target_pos[2] + offset_z
+                    )
+                    
+                    if client.simTestLineOfSightBetweenPoints(start_vector, perturbed_target):
+                        valid_ray_count += 1
+            
+            # Consider target valid if most rays pass
+            if valid_ray_count >= ray_checks * 0.7:
+                valid_targets.append(target_pos)
+                logging.info(f"Found valid target at {[round(p, 2) for p in target_pos]}, altitude: {altitude_above_ground:.2f}m (attempt {attempt+1})")
                 
-                # If we found a really good target (>5m clearance), stop early
-                if best_obstacle_clearance > 5.0:
-                    logging.info(f"Found excellent target with {best_obstacle_clearance:.2f}m obstacle clearance")
-                    return best_target
-            except Exception as e:
-                logging.debug(f"Error checking obstacle clearance near target: {e}")
-              # Log that we found a valid target
-            logging.debug(f"Found valid target at {[round(p, 2) for p in target_pos.tolist()]} (attempt {attempt+1})")
-            # If this is the first valid target, we'll use it as our initial best
-            if best_target is None:
-                best_target = target_pos.tolist()
-                logging.info(f"Found first valid target at {[round(p, 2) for p in best_target]}, altitude: {-best_target[2]:.2f}m")
-                
-                # Visualize the target in the simulator for debugging (if available)
+                # Visualize the target
                 try:
-                    client.simPlotPoints([airsim.Vector3r(best_target[0], best_target[1], best_target[2])], 
-                                       color_rgba=[1.0, 0.0, 0.0, 1.0], 
+                    client.simPlotPoints([airsim.Vector3r(target_pos[0], target_pos[1], target_pos[2])], 
+                                       color_rgba=[0.0, 1.0, 0.0, 1.0], 
                                        size=15.0, 
                                        duration=10.0, 
                                        is_persistent=False)
                 except Exception as e:
-                    logging.debug(f"Failed to visualize first target: {e}")
+                    logging.debug(f"Failed to visualize target: {e}")
+                
+                # Return first valid target found
+                break
+            else:
+                logging.debug(f"Target at {[round(p, 2) for p in target_pos]} rejected - visibility check failed ({valid_ray_count}/{ray_checks} rays passed)")
             
-            # If we've found several valid targets, we can start being selective
-            if len(valid_targets) >= 5 and attempt > max_attempts // 2:
-                # Return the best target we've found so far
-                if best_target:
-                    logging.info(f"Found {len(valid_targets)} valid targets, selecting best with {best_obstacle_clearance:.2f}m clearance at altitude: {-best_target[2]:.2f}m")
-                    
-                    # Visualize the selected target in the simulator
-                    try:
-                        client.simPlotPoints([airsim.Vector3r(best_target[0], best_target[1], best_target[2])], 
-                                           color_rgba=[0.0, 1.0, 0.0, 1.0], 
-                                           size=20.0, 
-                                           duration=15.0, 
-                                           is_persistent=False)
-                    except Exception as e:
-                        logging.debug(f"Failed to visualize target: {e}")
-                        
-                    return best_target
-                # Or just return the last valid target
-                return valid_targets[-1]
+        except Exception as e:
+            logging.warning(f"Error in raycasting validation: {e}")
+            continue
+      # If no valid targets found, use fallback
+    if not valid_targets:
+        logging.warning("No valid targets found, using fallback position")
+        fallback_target = [
+            current_pos[0] + min_dist * 1.2,  # Use closer to minimum distance for new range
+            current_pos[1],
+            -8.0  # 8 meters above ground for better visibility at longer distances
+        ]
+        valid_targets.append(fallback_target)
     
-    # After all attempts, return the best target if found
-    if best_target:
-        logging.info(f"Using best target found with {best_obstacle_clearance:.2f}m clearance")
-        return best_target
-    
-    # Or return any valid target we found
-    if valid_targets:
-        logging.info(f"No ideal target found, using one of {len(valid_targets)} valid targets")
-        return target_rng.choice(valid_targets)  # Random choice from valid targets
-    
-    # If we couldn't find ANY valid target, try one last direct check with a fixed target
-    logging.warning("No valid targets found with random sampling, trying fixed fallback targets")
-    
-    # Try several fallback directions in priority order
-    fallback_directions = [
-        np.array([1.0, 0.0, 0.0]),   # Forward
-        np.array([0.0, 1.0, 0.0]),   # Right
-        np.array([0.0, -1.0, 0.0]),  # Left
-        np.array([-1.0, 0.0, 0.0]),  # Behind
-        np.array([0.7, 0.7, 0.0]),   # Forward-right
-        np.array([0.7, -0.7, 0.0]),  # Forward-left
-    ]
-    
-    # Try multiple distances for each direction
-    fallback_distances = [min_dist, (min_dist + max_dist) / 2, max_dist * 0.8]
-    
-    for direction in fallback_directions:
-        for distance in fallback_distances:
-            try:                # Create fallback target with variable altitude
-                # Sample altitude variation for fallback targets
-                fallback_altitude = target_rng.uniform(MIN_TARGET_ALTITUDE, MAX_TARGET_ALTITUDE)
-                
-                # Create fallback target using horizontal component of direction with variable altitude
-                horizontal_dir = np.array([direction[0], direction[1], 0])
-                horizontal_dist = np.linalg.norm(horizontal_dir)
-                
-                if horizontal_dist > 0:
-                    normalized_horizontal = horizontal_dir / horizontal_dist
-                    fallback_target_pos = np.array([
-                        current_pos[0] + normalized_horizontal[0] * distance,
-                        current_pos[1] + normalized_horizontal[1] * distance,
-                        fallback_altitude  # Variable altitude
-                    ])
-                else:
-                    fallback_target_pos = np.array([
-                        current_pos[0] + direction[0] * distance,
-                        current_pos[1] + direction[1] * distance,
-                        fallback_altitude  # Variable altitude
-                    ])                # Check if this fallback target is valid
-                fallback_vector3r = airsim.Vector3r(fallback_target_pos[0], fallback_target_pos[1], fallback_target_pos[2])
-                fallback_los_result = client.simTestLineOfSightBetweenPoints(start_vector, fallback_vector3r)
-                
-                if fallback_los_result:
-                    # First check if the fallback target is inside an enclosed structure
-                    is_enclosed = False                    
-                    try:
-                        # Enhanced enclosure detection for fallback targets
-                        enclosure_test_dirs = [
-                            np.array([1, 0, 0]), np.array([-1, 0, 0]),  # X axis
-                            np.array([0, 1, 0]), np.array([0, -1, 0]),  # Y axis
-                            np.array([0, 0, 1]), np.array([0, 0, -1]),  # Z axis
-                            # Add diagonal directions for better coverage
-                            np.array([1, 1, 0]), np.array([-1, -1, 0]),
-                            np.array([1, -1, 0]), np.array([-1, 1, 0]),
-                            np.array([1, 0, 1]), np.array([-1, 0, 1]),
-                            np.array([0, 1, 1]), np.array([0, -1, 1])
-                        ]
-                        
-                        # Normalize diagonal directions
-                        for i in range(6, len(enclosure_test_dirs)):
-                            norm = np.linalg.norm(enclosure_test_dirs[i])
-                            if norm > 0:
-                                enclosure_test_dirs[i] = enclosure_test_dirs[i] / norm
-                        
-                        # Enhanced multi-range obstacle detection
-                        obstacles_detected_close = 0  # Within 5m
-                        obstacles_detected_medium = 0  # Within 10m
-                        obstacles_detected_far = 0  # Within 15m
-                        
-                        for direction in enclosure_test_dirs:
-                            close_blocked = False
-                            medium_blocked = False
-                            far_blocked = False
-                            
-                            # Check multiple distance ranges
-                            for dist in range(1, 16):  # Every 1m up to 15m
-                                check_point = fallback_target_pos + (direction * dist)
-                                check_vector = airsim.Vector3r(check_point[0], check_point[1], check_point[2])
-                                
-                                if not client.simTestLineOfSightBetweenPoints(fallback_vector3r, check_vector):
-                                    if dist <= 5 and not close_blocked:
-                                        obstacles_detected_close += 1
-                                        close_blocked = True
-                                    if dist <= 10 and not medium_blocked:
-                                        obstacles_detected_medium += 1
-                                        medium_blocked = True
-                                    if dist <= 15 and not far_blocked:
-                                        obstacles_detected_far += 1
-                                        far_blocked = True
-                                    break
-                        
-                        # Check for ceiling/floor constraints (indoor detection)
-                        ceiling_blocked = False
-                        floor_blocked = False
-                        
-                        # Check above (ceiling detection)
-                        for z_dist in range(3, 8):
-                            ceiling_point = fallback_target_pos + np.array([0, 0, -z_dist])
-                            ceiling_vector = airsim.Vector3r(ceiling_point[0], ceiling_point[1], ceiling_point[2])
-                            if not client.simTestLineOfSightBetweenPoints(fallback_vector3r, ceiling_vector):
-                                ceiling_blocked = True
-                                break
-                        
-                        # Check below (floor detection)
-                        for z_dist in range(3, 8):
-                            floor_point = fallback_target_pos + np.array([0, 0, z_dist])
-                            floor_vector = airsim.Vector3r(floor_point[0], floor_point[1], floor_point[2])
-                            if not client.simTestLineOfSightBetweenPoints(fallback_vector3r, floor_vector):
-                                floor_blocked = True
-                                break
-                        
-                        # Multi-criteria enclosure detection
-                        num_dirs = len(enclosure_test_dirs)
-                        is_tight_enclosed = obstacles_detected_close >= num_dirs * 0.80
-                        is_medium_enclosed = obstacles_detected_medium >= num_dirs * 0.70
-                        is_large_enclosed = obstacles_detected_far >= num_dirs * 0.60
-                        is_indoor = (ceiling_blocked and floor_blocked and obstacles_detected_close >= num_dirs * 0.50)
-                        
-                        is_enclosed = (is_tight_enclosed or is_medium_enclosed or is_large_enclosed or is_indoor)
-                        
-                        if is_enclosed:
-                            enclosure_type = "tight" if is_tight_enclosed else "medium" if is_medium_enclosed else "large" if is_large_enclosed else "indoor"
-                            logging.info(f"Fallback target rejected - appears to be inside an enclosed structure ({enclosure_type}: close={obstacles_detected_close}/{num_dirs}, medium={obstacles_detected_medium}/{num_dirs}, far={obstacles_detected_far}/{num_dirs})")
-                            continue  # Try next fallback target
-                    
-                    except Exception as e:
-                        logging.warning(f"Error checking if fallback target is in enclosed space: {e}")
-                        is_enclosed = True  # Be conservative - if we can't determine, skip this target
-                        continue
-                    
-                    # Now check obstacle clearance for this fallback target
-                    min_obstacle_dist = float('inf')
-                    clearance_dirs = [
-                        np.array([1, 0, 0]), np.array([-1, 0, 0]),
-                        np.array([0, 1, 0]), np.array([0, -1, 0]),
-                        np.array([0, 0, 1]), np.array([0, 0, -1])
-                    ]
-                    
-                    for clear_dir in clearance_dirs:
-                        for clear_dist in range(1, 11):
-                            check_point = fallback_target_pos + (clear_dir * clear_dist)
-                            check_vector = airsim.Vector3r(check_point[0], check_point[1], check_point[2])
-                            
-                            if not client.simTestLineOfSightBetweenPoints(fallback_vector3r, check_vector):
-                                if clear_dist < min_obstacle_dist:
-                                    min_obstacle_dist = clear_dist
-                                break
-                    
-                    # Only use targets with sufficient clearance and not in enclosed spaces
-                    if min_obstacle_dist >= 3.0 and not is_enclosed:
-                        logging.info(f"Using fallback target at {[round(p, 2) for p in fallback_target_pos.tolist()]} with {min_obstacle_dist}m clearance")
-                        return fallback_target_pos.tolist()
-                    else:
-                        logging.debug(f"Fallback target rejected - insufficient clearance ({min_obstacle_dist}m < 3.0m) or enclosed space")
-            except Exception as e:
-                logging.warning(f"Error checking fallback target: {e}")    # Last resort - try several directions for the default target to find one that's not inside a building
-    logging.error("Failed to find any valid target, trying multiple default positions")
-    
-    # Choose a random safe altitude for the default target
-    if seed is not None:
-        final_rng = random.Random(seed + episode_id + 9999)  # Create a new RNG for this final choice
-    else:
-        final_rng = random.Random()
-    
-    default_altitude = final_rng.uniform(MIN_TARGET_ALTITUDE, MAX_TARGET_ALTITUDE)
-    
-    # Try multiple default directions with increasing distances
-    default_directions = [
-        np.array([1.0, 0.0, 0.0]),   # Forward
-        np.array([0.0, 1.0, 0.0]),   # Right
-        np.array([0.0, -1.0, 0.0]),  # Left
-        np.array([-1.0, 0.0, 0.0]),  # Backward
-        np.array([0.7, 0.7, 0.0]),   # Forward-right
-        np.array([0.7, -0.7, 0.0])   # Forward-left
-    ]
-    
-    default_distances = [10.0, 15.0, 20.0, 25.0]
-    
-    for direction in default_directions:
-        for distance in default_distances:
-            default_target = [
-                current_pos[0] + direction[0] * distance,
-                current_pos[1] + direction[1] * distance,
-                default_altitude
-            ]
-            
-            # Check if this default target is inside an enclosed structure
-            try:
-                target_vector = airsim.Vector3r(default_target[0], default_target[1], default_target[2])
-                
-                # Do a quick LOS check first
-                if not client.simTestLineOfSightBetweenPoints(start_vector, target_vector):
-                    logging.debug(f"Default target at {[round(p, 2) for p in default_target]} - direct LOS check failed")
-                    continue
-                
-                # Check for enclosure (houses/buildings)
-                check_dirs = [
-                    np.array([1, 0, 0]), np.array([-1, 0, 0]),
-                    np.array([0, 1, 0]), np.array([0, -1, 0]),
-                    np.array([0, 0, 1]), np.array([0, 0, -1])
-                ]
-                
-                obstacles_count = 0
-                for check_dir in check_dirs:
-                    for check_dist in range(2, 16, 2):
-                        check_point = np.array(default_target) + (check_dir * check_dist)
-                        check_vector = airsim.Vector3r(check_point[0], check_point[1], check_point[2])
-                        
-                        if not client.simTestLineOfSightBetweenPoints(target_vector, check_vector):
-                            obstacles_count += 1
-                            break
-                
-                # If too many obstacles in different directions, it's likely inside a building
-                if obstacles_count >= len(check_dirs) * 0.7:  # 70% threshold
-                    logging.debug(f"Default target at {[round(p, 2) for p in default_target]} appears to be in enclosed space")
-                    continue
-                
-                # If we get here, we have a valid default target
-                logging.warning(f"Using default target at {[round(p, 2) for p in default_target]}, altitude: {-default_target[2]:.2f}m")
-                return default_target
-                
-            except Exception as e:
-                logging.warning(f"Error checking default target: {e}")
-                continue
-    
-    # If all default targets failed, use the most basic fallback - directly up and slightly forward
-    absolute_last_resort = [
-        current_pos[0] + 5.0,     # 5m forward
-        current_pos[1],           # Same Y position
-        current_pos[2] - 7.0      # 7m higher (more negative Z in NED)
-    ]
-    
-    logging.warning(f"All default targets failed, using absolute fallback at {[round(p, 2) for p in absolute_last_resort]}")
-    return absolute_last_resort
+    selected_target = valid_targets[0]
+    logging.debug(f"Selected target: {[round(p, 2) for p in selected_target]}")
+    return selected_target
 
 def visualize_raycasts(client, raycast_data_file, duration=60.0):
     """Visualize the results of raycasting tests by drawing lines in the AirSim environment

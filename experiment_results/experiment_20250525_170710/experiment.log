@@ -1,0 +1,37 @@
+2025-05-25 17:07:10,480 - INFO - Using random seed: 42
+2025-05-25 17:07:10,481 - INFO - Starting experiment with configuration:
+2025-05-25 17:07:10,482 - INFO -   num_episodes: 5
+2025-05-25 17:07:10,482 - INFO -   target_distance_range: (15.0, 50.0)
+2025-05-25 17:07:10,482 - INFO -   random_seed: 42
+2025-05-25 17:07:10,482 - INFO -   max_steps_per_episode: 100
+2025-05-25 17:07:10,483 - INFO -   output_dir: experiment_results
+2025-05-25 17:07:10,483 - INFO -   stuck_timeout: 15.0
+2025-05-25 17:07:10,483 - INFO -   stuck_check_interval: 3.0
+2025-05-25 17:07:10,483 - INFO -   episode_timeout: 120
+2025-05-25 17:07:10,484 - INFO -   precompile_julia: True
+2025-05-25 17:07:10,485 - INFO -   zmq_port: 5555
+2025-05-25 17:07:10,485 - INFO -   debug_raycasting: False
+2025-05-25 17:07:10,486 - INFO -   min_ray_checks: 3
+2025-05-25 17:07:10,486 - INFO -   max_ray_checks: 7
+2025-05-25 17:07:10,487 - INFO -   visualize_raycasts: False
+2025-05-25 17:07:10,488 - INFO -   visualization_duration: 60.0
+2025-05-25 17:07:21,923 - INFO - System information collected and saved
+2025-05-25 17:07:21,951 - INFO - AirSim connection established successfully
+2025-05-25 17:09:49,563 - INFO - Generating pool of 5 valid target locations...
+2025-05-25 17:09:49,564 - INFO - Target distance range for episode 0: 15.0m - 50.0m
+2025-05-25 17:09:49,564 - WARNING - Sampling target with drone too close to ground (alt: -0.05m)
+2025-05-25 17:09:49,565 - INFO - Adjusted sampling position to ensure minimum altitude: [0.0, 0.0, -5.0] (alt: 5.00m)
+2025-05-25 17:09:50,307 - INFO - Found first valid target at [-15.77, -18.92, -8.21], altitude: 8.21m
+2025-05-25 17:10:04,004 - INFO - Phase 2: Found 20 valid targets, focusing on refining these
+2025-05-25 17:10:12,596 - INFO - Found 32 valid targets, selecting best with 0.00m clearance at altitude: 8.21m
+2025-05-25 17:10:12,598 - INFO - Target distance range for episode 1: 15.5m - 38.5m
+2025-05-25 17:10:12,598 - WARNING - Sampling target with drone too close to ground (alt: -0.05m)
+2025-05-25 17:10:12,598 - INFO - Adjusted sampling position to ensure minimum altitude: [0.0, 0.0, -5.0] (alt: 5.00m)
+2025-05-25 17:10:13,377 - INFO - Found first valid target at [18.26, 4.51, -6.3], altitude: 6.30m
+2025-05-25 17:10:27,139 - INFO - Phase 2: Found 20 valid targets, focusing on refining these
+2025-05-25 17:10:35,844 - INFO - Found 32 valid targets, selecting best with 0.00m clearance at altitude: 6.30m
+2025-05-25 17:10:35,846 - INFO - Target distance range for episode 2: 16.0m - 42.0m
+2025-05-25 17:10:35,846 - WARNING - Sampling target with drone too close to ground (alt: -0.05m)
+2025-05-25 17:10:35,847 - INFO - Adjusted sampling position to ensure minimum altitude: [0.0, 0.0, -5.0] (alt: 5.00m)
+2025-05-25 17:10:36,551 - INFO - Found first valid target at [-32.24, 20.88, -8.59], altitude: 8.59m
+2025-05-25 17:10:50,427 - INFO - Phase 2: Found 20 valid targets, focusing on refining these

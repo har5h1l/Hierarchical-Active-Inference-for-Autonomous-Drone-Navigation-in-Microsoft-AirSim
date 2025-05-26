@@ -1,0 +1,41 @@
+{
+  "timestamp": "2025-05-25 17:23:08",
+  "os": {
+    "name": "Windows",
+    "version": "10.0.26100",
+    "platform": "Windows-10-10.0.26100-SP0",
+    "release": "10",
+    "architecture": "AMD64"
+  },
+  "python": {
+    "version": "3.11.9",
+    "implementation": "CPython",
+    "compiler": "MSC v.1938 64 bit (AMD64)"
+  },
+  "julia": {
+    "version": "julia version 1.11.5",
+    "path": "julia",
+    "packages": "Status `C:\\Users\\Satya\\.julia\\environments\\v1.11\\Project.toml`\n  [682c06a0] JSON v0.21.4\n  [9b87118b] PackageCompiler v2.2.0\n  [86711068] RxInfer v4.4.2"
+  },
+  "cpu": {
+    "physical_cores": 16,
+    "total_cores": 22,
+    "usage_percent": 14.8
+  },
+  "memory": {
+    "total_gb": 15.37,
+    "available_gb": 1.96,
+    "used_percent": 87.3
+  },
+  "gpu": {
+    "note": "Could not detect GPU information"
+  },
+  "airsim": {
+    "version": "1.8.1"
+  },
+  "libraries": {
+    "numpy": "2.2.1",
+    "pandas": "2.2.3",
+    "zmq": "26.2.0"
+  }
+}
