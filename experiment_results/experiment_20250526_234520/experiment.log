@@ -1,0 +1,300 @@
+2025-05-26 23:45:20,316 - INFO - Using random seed: 42
+2025-05-26 23:45:20,316 - INFO - Starting experiment with configuration:
+2025-05-26 23:45:20,317 - INFO -   num_episodes: 250
+2025-05-26 23:45:20,317 - INFO -   target_distance_range: (20.0, 100.0)
+2025-05-26 23:45:20,317 - INFO -   random_seed: 42
+2025-05-26 23:45:20,318 - INFO -   max_steps_per_episode: 200
+2025-05-26 23:45:20,318 - INFO -   output_dir: experiment_results
+2025-05-26 23:45:20,318 - INFO -   stuck_timeout: 15.0
+2025-05-26 23:45:20,319 - INFO -   stuck_check_interval: 3.0
+2025-05-26 23:45:20,319 - INFO -   episode_timeout: 240
+2025-05-26 23:45:20,319 - INFO -   precompile_julia: True
+2025-05-26 23:45:20,320 - INFO -   zmq_port: 5555
+2025-05-26 23:45:20,320 - INFO -   debug_raycasting: False
+2025-05-26 23:45:20,320 - INFO -   min_ray_checks: 3
+2025-05-26 23:45:20,320 - INFO -   max_ray_checks: 7
+2025-05-26 23:45:20,321 - INFO -   visualize_raycasts: False
+2025-05-26 23:45:20,321 - INFO -   visualization_duration: 60.0
+2025-05-26 23:45:23,370 - INFO - System information collected and saved
+2025-05-26 23:45:23,374 - INFO - AirSim connection established successfully
+2025-05-26 23:45:56,507 - INFO - Generating pool of 200 valid target locations...
+2025-05-26 23:45:56,590 - INFO - Found valid target at [-17.42, 9.3, -11.1], altitude: 11.10m (attempt 3)
+2025-05-26 23:45:56,675 - INFO - Found valid target at [-16.26, -30.32, -10.97], altitude: 10.97m (attempt 2)
+2025-05-26 23:45:56,759 - INFO - Found valid target at [2.05, 13.04, -2.16], altitude: 2.16m (attempt 2)
+2025-05-26 23:45:56,821 - INFO - Found valid target at [-2.89, 20.92, -8.1], altitude: 8.10m (attempt 1)
+2025-05-26 23:45:56,904 - INFO - Found valid target at [5.33, 39.28, -19.05], altitude: 19.05m (attempt 2)
+2025-05-26 23:45:57,009 - INFO - Found valid target at [19.67, 2.95, -19.38], altitude: 19.38m (attempt 3)
+2025-05-26 23:45:57,071 - INFO - Found valid target at [-32.27, -10.07, -7.44], altitude: 7.44m (attempt 1)
+2025-05-26 23:45:57,161 - INFO - Found valid target at [-13.92, -0.99, -15.25], altitude: 15.25m (attempt 2)
+2025-05-26 23:45:57,247 - INFO - Found valid target at [-27.85, 4.74, -7.71], altitude: 7.71m (attempt 2)
+2025-05-26 23:45:57,382 - INFO - Found valid target at [-51.63, -31.0, -9.27], altitude: 9.27m (attempt 4)
+2025-05-26 23:45:57,404 - INFO - Generated 10/200 targets in 0.9s (9 attempts)
+2025-05-26 23:45:57,445 - INFO - Found valid target at [35.28, -4.83, -10.71], altitude: 10.71m (attempt 1)
+2025-05-26 23:45:57,528 - INFO - Found valid target at [54.75, -22.89, -15.1], altitude: 15.10m (attempt 2)
+2025-05-26 23:45:57,589 - INFO - Found valid target at [31.47, -18.98, -10.69], altitude: 10.69m (attempt 1)
+2025-05-26 23:45:57,678 - INFO - Found valid target at [23.75, -36.79, -8.33], altitude: 8.33m (attempt 2)
+2025-05-26 23:45:57,803 - INFO - Found valid target at [10.47, 38.0, -18.73], altitude: 18.73m (attempt 4)
+2025-05-26 23:45:57,864 - INFO - Found valid target at [25.25, 6.92, -11.25], altitude: 11.25m (attempt 1)
+2025-05-26 23:45:57,952 - INFO - Found valid target at [42.74, 11.32, -7.18], altitude: 7.18m (attempt 2)
+2025-05-26 23:45:58,043 - INFO - Found valid target at [42.15, -60.44, -2.19], altitude: 2.19m (attempt 2)
+2025-05-26 23:45:58,112 - INFO - Found valid target at [-15.37, 40.44, -16.54], altitude: 16.54m (attempt 1)
+2025-05-26 23:45:58,177 - INFO - Found valid target at [-77.38, 2.68, -7.77], altitude: 7.77m (attempt 1)
+2025-05-26 23:45:58,198 - INFO - Generated 20/200 targets in 1.7s (19 attempts)
+2025-05-26 23:45:58,266 - INFO - Found valid target at [-53.26, 11.99, -11.14], altitude: 11.14m (attempt 2)
+2025-05-26 23:45:58,353 - INFO - Found valid target at [29.11, 17.72, -5.65], altitude: 5.65m (attempt 2)
+2025-05-26 23:45:58,465 - INFO - Found valid target at [19.18, -55.32, -13.75], altitude: 13.75m (attempt 3)
+2025-05-26 23:45:58,532 - INFO - Found valid target at [-56.29, 33.41, -9.99], altitude: 9.99m (attempt 1)
+2025-05-26 23:45:58,597 - INFO - Found valid target at [35.38, 16.87, -10.02], altitude: 10.02m (attempt 1)
+2025-05-26 23:45:58,662 - INFO - Found valid target at [84.81, 43.07, -9.48], altitude: 9.48m (attempt 1)
+2025-05-26 23:45:58,750 - INFO - Found valid target at [41.77, 34.99, -6.78], altitude: 6.78m (attempt 2)
+2025-05-26 23:45:58,838 - INFO - Found valid target at [-39.94, 74.83, -17.56], altitude: 17.56m (attempt 2)
+2025-05-26 23:45:58,906 - INFO - Found valid target at [38.75, -24.67, -4.45], altitude: 4.45m (attempt 1)
+2025-05-26 23:45:58,972 - INFO - Found valid target at [-12.61, 25.23, -19.69], altitude: 19.69m (attempt 1)
+2025-05-26 23:45:58,995 - INFO - Generated 30/200 targets in 2.5s (29 attempts)
+2025-05-26 23:45:59,066 - INFO - Found valid target at [-62.38, -17.69, -14.34], altitude: 14.34m (attempt 2)
+2025-05-26 23:45:59,135 - INFO - Found valid target at [-11.22, 59.2, -10.3], altitude: 10.30m (attempt 1)
+2025-05-26 23:45:59,204 - INFO - Found valid target at [21.1, -25.59, -4.17], altitude: 4.17m (attempt 1)
+2025-05-26 23:45:59,292 - INFO - Found valid target at [-27.47, -52.64, -14.11], altitude: 14.11m (attempt 2)
+2025-05-26 23:45:59,381 - INFO - Found valid target at [-31.03, 17.54, -17.13], altitude: 17.13m (attempt 2)
+2025-05-26 23:45:59,514 - INFO - Found valid target at [41.38, 7.45, -16.64], altitude: 16.64m (attempt 4)
+2025-05-26 23:45:59,578 - INFO - Found valid target at [21.81, -50.87, -15.15], altitude: 15.15m (attempt 1)
+2025-05-26 23:45:59,645 - INFO - Found valid target at [19.66, 25.46, -6.43], altitude: 6.43m (attempt 1)
+2025-05-26 23:45:59,711 - INFO - Found valid target at [-9.5, 69.95, -19.25], altitude: 19.25m (attempt 1)
+2025-05-26 23:45:59,800 - INFO - Found valid target at [19.85, -33.79, -15.73], altitude: 15.73m (attempt 2)
+2025-05-26 23:45:59,822 - INFO - Generated 40/200 targets in 3.3s (39 attempts)
+2025-05-26 23:45:59,870 - INFO - Found valid target at [34.56, 44.39, -19.44], altitude: 19.44m (attempt 1)
+2025-05-26 23:45:59,958 - INFO - Found valid target at [38.46, 12.27, -7.56], altitude: 7.56m (attempt 2)
+2025-05-26 23:46:00,089 - INFO - Found valid target at [1.72, -44.84, -18.04], altitude: 18.04m (attempt 4)
+2025-05-26 23:46:00,151 - INFO - Found valid target at [10.74, 32.78, -18.29], altitude: 18.29m (attempt 1)
+2025-05-26 23:46:00,211 - INFO - Found valid target at [12.07, -45.21, -7.71], altitude: 7.71m (attempt 1)
+2025-05-26 23:46:00,294 - INFO - Found valid target at [-10.06, 51.23, -7.9], altitude: 7.90m (attempt 2)
+2025-05-26 23:46:00,377 - INFO - Found valid target at [-84.0, -14.21, -14.35], altitude: 14.35m (attempt 2)
+2025-05-26 23:46:00,446 - INFO - Found valid target at [79.87, 44.63, -4.53], altitude: 4.53m (attempt 1)
+2025-05-26 23:46:00,532 - INFO - Found valid target at [-31.92, -35.93, -17.99], altitude: 17.99m (attempt 2)
+2025-05-26 23:46:00,624 - INFO - Found valid target at [76.8, -25.37, -10.38], altitude: 10.38m (attempt 2)
+2025-05-26 23:46:00,646 - INFO - Generated 50/200 targets in 4.1s (49 attempts)
+2025-05-26 23:46:00,724 - INFO - Found valid target at [-54.55, 29.52, -12.6], altitude: 12.60m (attempt 1)
+2025-05-26 23:46:00,839 - INFO - Found valid target at [19.3, 30.87, -4.14], altitude: 4.14m (attempt 3)
+2025-05-26 23:46:00,907 - INFO - Found valid target at [-28.87, -8.74, -9.75], altitude: 9.75m (attempt 1)
+2025-05-26 23:46:00,975 - INFO - Found valid target at [5.56, -86.96, -11.71], altitude: 11.71m (attempt 1)
+2025-05-26 23:46:01,041 - INFO - Found valid target at [-39.48, 41.73, -5.71], altitude: 5.71m (attempt 1)
+2025-05-26 23:46:01,129 - INFO - Found valid target at [17.87, -59.69, -2.75], altitude: 2.75m (attempt 2)
+2025-05-26 23:46:01,197 - INFO - Found valid target at [-33.36, 42.23, -3.06], altitude: 3.06m (attempt 1)
+2025-05-26 23:46:01,266 - INFO - Found valid target at [-23.43, 16.14, -6.47], altitude: 6.47m (attempt 1)
+2025-05-26 23:46:01,335 - INFO - Found valid target at [43.06, 56.0, -14.7], altitude: 14.70m (attempt 1)
+2025-05-26 23:46:01,425 - INFO - Found valid target at [-41.35, 8.66, -5.99], altitude: 5.99m (attempt 2)
+2025-05-26 23:46:01,447 - INFO - Generated 60/200 targets in 4.9s (59 attempts)
+2025-05-26 23:46:01,493 - INFO - Found valid target at [23.01, 30.91, -14.83], altitude: 14.83m (attempt 1)
+2025-05-26 23:46:01,582 - INFO - Found valid target at [8.99, 40.08, -4.19], altitude: 4.19m (attempt 2)
+2025-05-26 23:46:01,649 - INFO - Found valid target at [77.97, -20.04, -6.1], altitude: 6.10m (attempt 1)
+2025-05-26 23:46:01,715 - INFO - Found valid target at [47.77, -45.95, -19.13], altitude: 19.13m (attempt 1)
+2025-05-26 23:46:01,804 - INFO - Found valid target at [20.53, -42.93, -16.48], altitude: 16.48m (attempt 2)
+2025-05-26 23:46:01,937 - INFO - Found valid target at [31.56, -20.94, -5.37], altitude: 5.37m (attempt 4)
+2025-05-26 23:46:02,007 - INFO - Found valid target at [61.35, 65.76, -8.93], altitude: 8.93m (attempt 1)
+2025-05-26 23:46:02,075 - INFO - Found valid target at [-10.65, 56.65, -3.83], altitude: 3.83m (attempt 1)
+2025-05-26 23:46:02,145 - INFO - Found valid target at [64.25, -28.16, -6.46], altitude: 6.46m (attempt 1)
+2025-05-26 23:46:02,213 - INFO - Found valid target at [30.37, -57.66, -10.89], altitude: 10.89m (attempt 1)
+2025-05-26 23:46:02,235 - INFO - Generated 70/200 targets in 5.7s (69 attempts)
+2025-05-26 23:46:02,305 - INFO - Found valid target at [32.68, -23.04, -5.98], altitude: 5.98m (attempt 2)
+2025-05-26 23:46:02,372 - INFO - Found valid target at [78.31, 15.22, -2.32], altitude: 2.32m (attempt 1)
+2025-05-26 23:46:02,442 - INFO - Found valid target at [2.56, 44.82, -6.38], altitude: 6.38m (attempt 1)
+2025-05-26 23:46:02,512 - INFO - Found valid target at [20.07, -15.39, -4.02], altitude: 4.02m (attempt 1)
+2025-05-26 23:46:02,582 - INFO - Found valid target at [31.9, -66.31, -2.16], altitude: 2.16m (attempt 1)
+2025-05-26 23:46:02,673 - INFO - Found valid target at [-33.57, 22.31, -12.19], altitude: 12.19m (attempt 2)
+2025-05-26 23:46:02,805 - INFO - Found valid target at [24.11, -57.59, -2.1], altitude: 2.10m (attempt 4)
+2025-05-26 23:46:02,871 - INFO - Found valid target at [49.62, -24.77, -11.7], altitude: 11.70m (attempt 1)
+2025-05-26 23:46:02,938 - INFO - Found valid target at [-63.57, -5.98, -13.43], altitude: 13.43m (attempt 1)
+2025-05-26 23:46:03,006 - INFO - Found valid target at [44.74, 27.34, -18.46], altitude: 18.46m (attempt 1)
+2025-05-26 23:46:03,027 - INFO - Generated 80/200 targets in 6.5s (79 attempts)
+2025-05-26 23:46:03,094 - INFO - Found valid target at [-7.64, -59.65, -17.04], altitude: 17.04m (attempt 2)
+2025-05-26 23:46:03,182 - INFO - Found valid target at [29.35, -20.98, -7.98], altitude: 7.98m (attempt 2)
+2025-05-26 23:46:03,250 - INFO - Found valid target at [36.6, -9.21, -19.38], altitude: 19.38m (attempt 1)
+2025-05-26 23:46:03,318 - INFO - Found valid target at [48.09, -34.91, -7.42], altitude: 7.42m (attempt 1)
+2025-05-26 23:46:03,386 - INFO - Found valid target at [-50.27, -24.66, -13.61], altitude: 13.61m (attempt 1)
+2025-05-26 23:46:03,451 - INFO - Found valid target at [61.66, 17.74, -3.77], altitude: 3.77m (attempt 1)
+2025-05-26 23:46:03,542 - INFO - Found valid target at [46.47, 8.49, -6.53], altitude: 6.53m (attempt 2)
+2025-05-26 23:46:03,631 - INFO - Found valid target at [56.59, -47.8, -7.93], altitude: 7.93m (attempt 2)
+2025-05-26 23:46:03,735 - INFO - Found valid target at [62.08, -9.29, -14.06], altitude: 14.06m (attempt 3)
+2025-05-26 23:46:03,818 - INFO - Found valid target at [-41.74, 34.32, -12.69], altitude: 12.69m (attempt 2)
+2025-05-26 23:46:03,839 - INFO - Generated 90/200 targets in 7.3s (89 attempts)
+2025-05-26 23:46:03,901 - INFO - Found valid target at [-33.66, 89.76, -17.05], altitude: 17.05m (attempt 2)
+2025-05-26 23:46:03,964 - INFO - Found valid target at [-71.76, 2.78, -16.55], altitude: 16.55m (attempt 1)
+2025-05-26 23:46:04,073 - INFO - Found valid target at [39.64, 32.98, -6.48], altitude: 6.48m (attempt 3)
+2025-05-26 23:46:04,165 - INFO - Found valid target at [12.99, -27.2, -12.68], altitude: 12.68m (attempt 2)
+2025-05-26 23:46:04,229 - INFO - Found valid target at [-47.21, -24.32, -15.76], altitude: 15.76m (attempt 1)
+2025-05-26 23:46:04,318 - INFO - Found valid target at [-53.13, 74.32, -11.27], altitude: 11.27m (attempt 2)
+2025-05-26 23:46:04,386 - INFO - Found valid target at [23.02, 62.02, -5.75], altitude: 5.75m (attempt 1)
+2025-05-26 23:46:04,446 - INFO - Found valid target at [64.29, 0.61, -18.04], altitude: 18.04m (attempt 1)
+2025-05-26 23:46:04,529 - INFO - Found valid target at [28.11, 9.75, -5.41], altitude: 5.41m (attempt 2)
+2025-05-26 23:46:04,622 - INFO - Found valid target at [-7.89, -23.18, -12.1], altitude: 12.10m (attempt 2)
+2025-05-26 23:46:04,644 - INFO - Generated 100/200 targets in 8.1s (99 attempts)
+2025-05-26 23:46:04,688 - INFO - Found valid target at [-52.56, -30.02, -10.75], altitude: 10.75m (attempt 1)
+2025-05-26 23:46:04,754 - INFO - Found valid target at [27.29, -18.21, -6.07], altitude: 6.07m (attempt 1)
+2025-05-26 23:46:04,841 - INFO - Found valid target at [12.47, -31.55, -12.58], altitude: 12.58m (attempt 2)
+2025-05-26 23:46:04,974 - INFO - Found valid target at [25.6, 21.85, -7.71], altitude: 7.71m (attempt 4)
+2025-05-26 23:46:05,043 - INFO - Found valid target at [51.94, 57.69, -3.17], altitude: 3.17m (attempt 1)
+2025-05-26 23:46:05,107 - INFO - Found valid target at [-47.68, -37.1, -9.91], altitude: 9.91m (attempt 1)
+2025-05-26 23:46:05,192 - INFO - Found valid target at [-21.48, -45.01, -3.91], altitude: 3.91m (attempt 2)
+2025-05-26 23:46:05,252 - INFO - Found valid target at [25.37, 12.15, -2.99], altitude: 2.99m (attempt 1)
+2025-05-26 23:46:05,362 - INFO - Found valid target at [-45.64, 79.46, -9.97], altitude: 9.97m (attempt 3)
+2025-05-26 23:46:05,495 - INFO - Found valid target at [-9.69, -65.66, -12.05], altitude: 12.05m (attempt 4)
+2025-05-26 23:46:05,517 - INFO - Generated 110/200 targets in 9.0s (109 attempts)
+2025-05-26 23:46:05,562 - INFO - Found valid target at [32.02, -4.53, -19.49], altitude: 19.49m (attempt 1)
+2025-05-26 23:46:05,632 - INFO - Found valid target at [27.31, -1.14, -17.33], altitude: 17.33m (attempt 1)
+2025-05-26 23:46:05,720 - INFO - Found valid target at [-29.18, 10.77, -16.17], altitude: 16.17m (attempt 2)
+2025-05-26 23:46:05,787 - INFO - Found valid target at [-71.63, -39.9, -19.69], altitude: 19.69m (attempt 1)
+2025-05-26 23:46:05,873 - INFO - Found valid target at [10.09, 59.04, -4.45], altitude: 4.45m (attempt 2)
+2025-05-26 23:46:05,962 - INFO - Found valid target at [4.17, 35.42, -6.04], altitude: 6.04m (attempt 2)
+2025-05-26 23:46:06,050 - INFO - Found valid target at [-44.93, 25.27, -13.39], altitude: 13.39m (attempt 2)
+2025-05-26 23:46:06,118 - INFO - Found valid target at [-34.97, 27.29, -17.14], altitude: 17.14m (attempt 1)
+2025-05-26 23:46:06,187 - INFO - Found valid target at [23.41, 22.7, -12.58], altitude: 12.58m (attempt 1)
+2025-05-26 23:46:06,277 - INFO - Found valid target at [-46.22, -53.68, -14.62], altitude: 14.62m (attempt 2)
+2025-05-26 23:46:06,299 - INFO - Generated 120/200 targets in 9.8s (119 attempts)
+2025-05-26 23:46:06,366 - INFO - Found valid target at [-91.27, 0.29, -7.31], altitude: 7.31m (attempt 2)
+2025-05-26 23:46:06,433 - INFO - Found valid target at [-57.74, -15.38, -10.87], altitude: 10.87m (attempt 1)
+2025-05-26 23:46:06,517 - INFO - Found valid target at [-28.24, -21.92, -2.07], altitude: 2.07m (attempt 2)
+2025-05-26 23:46:06,674 - INFO - Found valid target at [6.04, 59.85, -14.12], altitude: 14.12m (attempt 2)
+2025-05-26 23:46:06,763 - INFO - Found valid target at [90.26, 20.21, -7.22], altitude: 7.22m (attempt 2)
+2025-05-26 23:46:06,834 - INFO - Found valid target at [4.57, 34.18, -19.4], altitude: 19.40m (attempt 1)
+2025-05-26 23:46:06,899 - INFO - Found valid target at [-1.38, -49.47, -5.99], altitude: 5.99m (attempt 1)
+2025-05-26 23:46:06,966 - INFO - Found valid target at [-2.21, 63.58, -4.21], altitude: 4.21m (attempt 1)
+2025-05-26 23:46:07,049 - INFO - Found valid target at [1.35, 27.64, -16.33], altitude: 16.33m (attempt 2)
+2025-05-26 23:46:07,110 - INFO - Found valid target at [17.45, -86.84, -4.12], altitude: 4.12m (attempt 1)
+2025-05-26 23:46:07,132 - INFO - Generated 130/200 targets in 10.6s (129 attempts)
+2025-05-26 23:46:07,193 - INFO - Found valid target at [46.04, -23.23, -19.17], altitude: 19.17m (attempt 2)
+2025-05-26 23:46:07,275 - INFO - Found valid target at [-71.11, -3.78, -9.32], altitude: 9.32m (attempt 2)
+2025-05-26 23:46:07,335 - INFO - Found valid target at [8.82, -24.93, -8.47], altitude: 8.47m (attempt 1)
+2025-05-26 23:46:07,422 - INFO - Found valid target at [-71.62, -1.29, -3.34], altitude: 3.34m (attempt 2)
+2025-05-26 23:46:07,597 - INFO - Found valid target at [-49.65, 15.85, -9.66], altitude: 9.66m (attempt 6)
+2025-05-26 23:46:07,684 - INFO - Found valid target at [17.06, -44.27, -17.12], altitude: 17.12m (attempt 2)
+2025-05-26 23:46:07,745 - INFO - Found valid target at [87.63, -29.31, -13.61], altitude: 13.61m (attempt 1)
+2025-05-26 23:46:07,827 - INFO - Found valid target at [-27.71, -2.91, -16.57], altitude: 16.57m (attempt 2)
+2025-05-26 23:46:07,888 - INFO - Found valid target at [42.6, 54.38, -4.2], altitude: 4.20m (attempt 1)
+2025-05-26 23:46:07,970 - INFO - Found valid target at [14.24, 37.35, -10.09], altitude: 10.09m (attempt 2)
+2025-05-26 23:46:07,992 - INFO - Generated 140/200 targets in 11.5s (139 attempts)
+2025-05-26 23:46:08,075 - INFO - Found valid target at [-35.48, 8.36, -5.84], altitude: 5.84m (attempt 3)
+2025-05-26 23:46:08,136 - INFO - Found valid target at [22.62, 18.22, -7.43], altitude: 7.43m (attempt 1)
+2025-05-26 23:46:08,253 - INFO - Found valid target at [-45.64, 79.12, -18.96], altitude: 18.96m (attempt 2)
+2025-05-26 23:46:08,378 - INFO - Found valid target at [32.37, -21.92, -5.75], altitude: 5.75m (attempt 4)
+2025-05-26 23:46:08,439 - INFO - Found valid target at [-30.63, 46.76, -10.08], altitude: 10.08m (attempt 1)
+2025-05-26 23:46:08,528 - INFO - Found valid target at [42.23, 6.5, -15.23], altitude: 15.23m (attempt 2)
+2025-05-26 23:46:08,680 - INFO - Found valid target at [13.97, -30.31, -10.56], altitude: 10.56m (attempt 5)
+2025-05-26 23:46:08,746 - INFO - Found valid target at [-38.37, 4.01, -11.9], altitude: 11.90m (attempt 1)
+2025-05-26 23:46:08,812 - INFO - Found valid target at [79.78, 40.39, -5.75], altitude: 5.75m (attempt 1)
+2025-05-26 23:46:08,902 - INFO - Found valid target at [37.16, 47.9, -10.63], altitude: 10.63m (attempt 2)
+2025-05-26 23:46:08,925 - INFO - Generated 150/200 targets in 12.4s (149 attempts)
+2025-05-26 23:46:08,972 - INFO - Found valid target at [-32.57, 33.26, -18.98], altitude: 18.98m (attempt 1)
+2025-05-26 23:46:09,041 - INFO - Found valid target at [-76.68, -31.36, -19.49], altitude: 19.49m (attempt 1)
+2025-05-26 23:46:09,111 - INFO - Found valid target at [9.03, -20.9, -8.96], altitude: 8.96m (attempt 1)
+2025-05-26 23:46:09,199 - INFO - Found valid target at [38.97, -46.25, -14.81], altitude: 14.81m (attempt 2)
+2025-05-26 23:46:09,287 - INFO - Found valid target at [15.77, 60.01, -16.4], altitude: 16.40m (attempt 2)
+2025-05-26 23:46:09,357 - INFO - Found valid target at [-18.76, -4.8, -5.38], altitude: 5.38m (attempt 1)
+2025-05-26 23:46:09,426 - INFO - Found valid target at [33.44, 11.56, -15.39], altitude: 15.39m (attempt 1)
+2025-05-26 23:46:09,492 - INFO - Found valid target at [-22.18, 32.97, -14.83], altitude: 14.83m (attempt 1)
+2025-05-26 23:46:09,580 - INFO - Found valid target at [14.13, -17.07, -9.92], altitude: 9.92m (attempt 2)
+2025-05-26 23:46:09,671 - INFO - Found valid target at [1.01, -59.68, -15.57], altitude: 15.57m (attempt 2)
+2025-05-26 23:46:09,693 - INFO - Generated 160/200 targets in 13.2s (159 attempts)
+2025-05-26 23:46:09,737 - INFO - Found valid target at [4.76, -54.44, -5.57], altitude: 5.57m (attempt 1)
+2025-05-26 23:46:09,869 - INFO - Found valid target at [33.28, -24.89, -19.84], altitude: 19.84m (attempt 4)
+2025-05-26 23:46:09,956 - INFO - Found valid target at [-59.88, 6.78, -4.84], altitude: 4.84m (attempt 2)
+2025-05-26 23:46:10,024 - INFO - Found valid target at [-59.33, 25.93, -10.94], altitude: 10.94m (attempt 1)
+2025-05-26 23:46:10,093 - INFO - Found valid target at [60.78, 3.31, -17.16], altitude: 17.16m (attempt 1)
+2025-05-26 23:46:10,182 - INFO - Found valid target at [27.4, 43.16, -14.51], altitude: 14.51m (attempt 2)
+2025-05-26 23:46:10,253 - INFO - Found valid target at [-6.0, 32.47, -16.35], altitude: 16.35m (attempt 1)
+2025-05-26 23:46:10,322 - INFO - Found valid target at [-47.61, -17.83, -7.15], altitude: 7.15m (attempt 1)
+2025-05-26 23:46:10,411 - INFO - Found valid target at [12.81, 22.69, -2.72], altitude: 2.72m (attempt 2)
+2025-05-26 23:46:10,477 - INFO - Found valid target at [-27.83, -12.02, -17.9], altitude: 17.90m (attempt 1)
+2025-05-26 23:46:10,498 - INFO - Generated 170/200 targets in 14.0s (169 attempts)
+2025-05-26 23:46:10,565 - INFO - Found valid target at [-19.64, -7.57, -16.85], altitude: 16.85m (attempt 2)
+2025-05-26 23:46:10,658 - INFO - Found valid target at [-40.64, -2.75, -11.38], altitude: 11.38m (attempt 2)
+2025-05-26 23:46:10,725 - INFO - Found valid target at [-39.53, -4.31, -11.72], altitude: 11.72m (attempt 1)
+2025-05-26 23:46:10,794 - INFO - Found valid target at [35.43, 10.06, -7.16], altitude: 7.16m (attempt 1)
+2025-05-26 23:46:10,882 - INFO - Found valid target at [-31.29, 30.32, -18.39], altitude: 18.39m (attempt 2)
+2025-05-26 23:46:10,948 - INFO - Found valid target at [32.13, -8.18, -6.5], altitude: 6.50m (attempt 1)
+2025-05-26 23:46:11,038 - INFO - Found valid target at [9.1, 32.01, -15.28], altitude: 15.28m (attempt 2)
+2025-05-26 23:46:11,108 - INFO - Found valid target at [-8.08, -23.96, -14.84], altitude: 14.84m (attempt 1)
+2025-05-26 23:46:11,176 - INFO - Found valid target at [-0.52, -32.97, -6.97], altitude: 6.97m (attempt 1)
+2025-05-26 23:46:11,266 - INFO - Found valid target at [6.21, 52.79, -10.13], altitude: 10.13m (attempt 2)
+2025-05-26 23:46:11,288 - INFO - Generated 180/200 targets in 14.8s (179 attempts)
+2025-05-26 23:46:11,332 - INFO - Found valid target at [6.45, -35.21, -2.53], altitude: 2.53m (attempt 1)
+2025-05-26 23:46:11,399 - INFO - Found valid target at [-23.59, 41.61, -11.59], altitude: 11.59m (attempt 1)
+2025-05-26 23:46:11,489 - INFO - Found valid target at [11.1, 77.57, -11.51], altitude: 11.51m (attempt 2)
+2025-05-26 23:46:11,557 - INFO - Found valid target at [-17.48, -53.85, -18.5], altitude: 18.50m (attempt 1)
+2025-05-26 23:46:11,645 - INFO - Found valid target at [71.97, 23.44, -8.93], altitude: 8.93m (attempt 2)
+2025-05-26 23:46:11,738 - INFO - Found valid target at [22.18, -52.21, -15.6], altitude: 15.60m (attempt 2)
+2025-05-26 23:46:11,804 - INFO - Found valid target at [37.75, -20.87, -6.07], altitude: 6.07m (attempt 1)
+2025-05-26 23:46:11,871 - INFO - Found valid target at [-45.55, -8.34, -16.32], altitude: 16.32m (attempt 1)
+2025-05-26 23:46:11,941 - INFO - Found valid target at [-19.89, -68.45, -17.94], altitude: 17.94m (attempt 1)
+2025-05-26 23:46:12,007 - INFO - Found valid target at [53.43, -69.32, -17.48], altitude: 17.48m (attempt 1)
+2025-05-26 23:46:12,029 - INFO - Generated 190/200 targets in 15.5s (189 attempts)
+2025-05-26 23:46:12,095 - INFO - Found valid target at [-9.56, 69.34, -9.53], altitude: 9.53m (attempt 2)
+2025-05-26 23:46:12,163 - INFO - Found valid target at [-25.43, -56.29, -16.4], altitude: 16.40m (attempt 1)
+2025-05-26 23:46:12,227 - INFO - Found valid target at [-48.65, 74.72, -18.62], altitude: 18.62m (attempt 1)
+2025-05-26 23:46:12,315 - INFO - Found valid target at [33.27, 4.65, -3.12], altitude: 3.12m (attempt 2)
+2025-05-26 23:46:12,406 - INFO - Found valid target at [-12.73, -47.8, -4.86], altitude: 4.86m (attempt 2)
+2025-05-26 23:46:12,498 - INFO - Found valid target at [49.16, 19.82, -18.79], altitude: 18.79m (attempt 2)
+2025-05-26 23:46:12,565 - INFO - Found valid target at [13.23, -44.62, -3.18], altitude: 3.18m (attempt 1)
+2025-05-26 23:46:12,628 - INFO - Found valid target at [29.25, 27.03, -3.86], altitude: 3.86m (attempt 1)
+2025-05-26 23:46:12,776 - INFO - Found valid target at [-48.07, -7.21, -19.66], altitude: 19.66m (attempt 5)
+2025-05-26 23:46:12,837 - INFO - Found valid target at [-20.07, -49.02, -14.63], altitude: 14.63m (attempt 1)
+2025-05-26 23:46:12,859 - INFO - Generated 200/200 targets in 16.4s (199 attempts)
+2025-05-26 23:46:12,859 - INFO - Successfully generated pool of 200 targets in 16.4s
+2025-05-26 23:46:12,863 - INFO - Saved pool of 200 targets to experiment_results\experiment_20250526_234520\target_pool.json
+2025-05-26 23:46:12,863 - INFO - Starting episode 0 of 250
+2025-05-26 23:46:12,864 - INFO - === Starting Episode 0 ===
+2025-05-26 23:46:12,866 - INFO - Episode 0: Taking off...
+2025-05-26 23:46:18,296 - INFO - Episode 0: Using pre-generated target 0 of 200
+2025-05-26 23:46:18,296 - INFO - Episode 0: Initial distance to target: 21.88m
+2025-05-26 23:46:18,298 - INFO - Episode 0: Initial position: [0.0, 0.0, -1.67]
+2025-05-26 23:46:18,298 - INFO - Episode 0: Target position: [-17.42, 9.3, -11.1]
+2025-05-26 23:46:18,298 - INFO - Episode 0: Initial distance: 21.88m
+2025-05-26 23:46:18,301 - INFO - Episode 0: Target verified with 3 rays
+2025-05-26 23:46:24,512 - WARNING - Episode 0: Step 0 took 6.21s (unusually long)
+2025-05-26 23:46:34,852 - WARNING - Collision detected during movement, cancelling task immediately
+2025-05-26 23:46:34,853 - INFO - Episode 0: Obstacle detected during movement, triggering immediate replanning
+2025-05-26 23:46:34,868 - INFO - Adding newly detected obstacle at [-14.29, 7.98, -8.41] to planning data
+2025-05-26 23:46:34,869 - INFO - Episode 0: Putting drone in hover mode before dynamic replanning
+2025-05-26 23:46:35,371 - INFO - Episode 0: Triggering dynamic replanning due to detected obstacle
+2025-05-26 23:46:35,390 - INFO - Enhanced planning parameters for obstacle avoidance: safety_margin=4.00, waypoint_count=150, obstacle_priority=3.00
+2025-05-26 23:46:35,407 - INFO - Episode 0: Executing replanned path to avoid obstacle
+2025-05-26 23:46:35,424 - WARNING - Collision detected during movement, cancelling task immediately
+2025-05-26 23:46:35,626 - WARNING - Episode 0: Collision detected at step 5
+2025-05-26 23:46:35,627 - INFO - Using collision normal for recovery: [0.57, -0.82, 0.00]
+2025-05-26 23:46:44,372 - WARNING - Recovery movement timed out after 8.0 seconds
+2025-05-26 23:46:44,373 - INFO - Episode 0: Collision recovery successful, moved 4.05m to new position: [-12.2, 4.85, -10.91]
+2025-05-26 23:46:47,679 - INFO - Episode 0: Clear path to target detected - moving directly toward goal
+2025-05-26 23:46:47,692 - WARNING - Collision detected during movement, cancelling task immediately
+2025-05-26 23:46:47,692 - INFO - Episode 0: Obstacle detected during movement, triggering immediate replanning
+2025-05-26 23:46:47,702 - INFO - Adding newly detected obstacle at [-14.37, 7.92, -8.33] to planning data
+2025-05-26 23:46:47,703 - INFO - Episode 0: Putting drone in hover mode before dynamic replanning
+2025-05-26 23:46:48,204 - INFO - Episode 0: Triggering dynamic replanning due to detected obstacle
+2025-05-26 23:46:48,223 - INFO - Enhanced planning parameters for obstacle avoidance: safety_margin=4.00, waypoint_count=150, obstacle_priority=3.00
+2025-05-26 23:46:48,234 - INFO - Episode 0: Executing replanned path to avoid obstacle
+2025-05-26 23:46:50,814 - WARNING - Collision detected during movement, cancelling task immediately
+2025-05-26 23:46:51,016 - WARNING - Episode 0: Step 5 took 15.39s (unusually long)
+2025-05-26 23:46:51,019 - WARNING - Episode 0: Collision detected at step 6
+2025-05-26 23:46:51,020 - INFO - Using collision normal for recovery: [0.89, -0.45, 0.00]
+2025-05-26 23:46:59,742 - WARNING - Recovery movement timed out after 8.0 seconds
+2025-05-26 23:46:59,743 - INFO - Episode 0: Collision recovery successful, moved 4.05m to new position: [-10.69, 6.71, -13.51]
+2025-05-26 23:47:03,270 - WARNING - Collision detected during movement, cancelling task immediately
+2025-05-26 23:47:03,271 - INFO - Episode 0: Obstacle detected during movement, triggering immediate replanning
+2025-05-26 23:47:03,280 - INFO - Adding newly detected obstacle at [-13.93, 8.24, -10.88] to planning data
+2025-05-26 23:47:03,281 - INFO - Episode 0: Putting drone in hover mode before dynamic replanning
+2025-05-26 23:47:03,783 - INFO - Episode 0: Triggering dynamic replanning due to detected obstacle
+2025-05-26 23:47:03,791 - INFO - Enhanced planning parameters for obstacle avoidance: safety_margin=4.00, waypoint_count=150, obstacle_priority=3.00
+2025-05-26 23:47:03,796 - INFO - Episode 0: Executing replanned path to avoid obstacle
+2025-05-26 23:47:10,412 - WARNING - Episode 0: Step 6 took 19.40s (unusually long)
+2025-05-26 23:47:10,425 - INFO - Episode 0: Clear path to target detected - moving directly toward goal
+2025-05-26 23:47:15,802 - WARNING - Episode 0: Step 7 took 5.39s (unusually long)
+2025-05-26 23:47:15,815 - INFO - Episode 0: Clear path to target detected - moving directly toward goal
+2025-05-26 23:47:21,823 - WARNING - Episode 0: Step 8 took 6.02s (unusually long)
+2025-05-26 23:47:21,824 - INFO - Episode 0: Target reached at step 9
+2025-05-26 23:47:21,828 - INFO - Episode 0: Skipping landing process and resetting drone for next episode
+2025-05-26 23:47:21,828 - INFO - Episode 0 completed: success
+2025-05-26 23:47:21,829 - INFO -   Steps: 9, Duration: 30.10s
+2025-05-26 23:47:21,829 - INFO -   Final distance: 0.58m, Collisions: 2
+2025-05-26 23:47:21,829 - INFO -   Dynamic replanning events: 3
+2025-05-26 23:47:21,844 - INFO - Saved recovery data for episode 0
+2025-05-26 23:47:21,844 - INFO - Starting episode 1 of 250
+2025-05-26 23:47:21,844 - INFO - === Starting Episode 1 ===
+2025-05-26 23:47:21,847 - INFO - Episode 1: Taking off...

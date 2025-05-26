@@ -1,0 +1,59 @@
+2025-05-26 23:40:27,328 - INFO - Using random seed: 42
+2025-05-26 23:40:27,328 - INFO - Starting experiment with configuration:
+2025-05-26 23:40:27,329 - INFO -   num_episodes: 5
+2025-05-26 23:40:27,329 - INFO -   target_distance_range: (15.0, 50.0)
+2025-05-26 23:40:27,329 - INFO -   random_seed: 42
+2025-05-26 23:40:27,329 - INFO -   max_steps_per_episode: 100
+2025-05-26 23:40:27,329 - INFO -   output_dir: experiment_results
+2025-05-26 23:40:27,330 - INFO -   stuck_timeout: 15.0
+2025-05-26 23:40:27,330 - INFO -   stuck_check_interval: 3.0
+2025-05-26 23:40:27,330 - INFO -   episode_timeout: 120
+2025-05-26 23:40:27,330 - INFO -   precompile_julia: True
+2025-05-26 23:40:27,331 - INFO -   zmq_port: 5555
+2025-05-26 23:40:27,331 - INFO -   debug_raycasting: False
+2025-05-26 23:40:27,331 - INFO -   min_ray_checks: 3
+2025-05-26 23:40:27,331 - INFO -   max_ray_checks: 7
+2025-05-26 23:40:27,331 - INFO -   visualize_raycasts: False
+2025-05-26 23:40:27,332 - INFO -   visualization_duration: 60.0
+2025-05-26 23:40:38,582 - INFO - System information collected and saved
+2025-05-26 23:40:38,588 - INFO - AirSim connection established successfully
+2025-05-26 23:41:45,588 - INFO - Generating pool of 5 valid target locations...
+2025-05-26 23:41:45,656 - INFO - Found valid target at [-3.7, -43.44, -3.56], altitude: 3.56m (attempt 2)
+2025-05-26 23:41:45,723 - INFO - Found valid target at [18.61, 4.6, -10.33], altitude: 10.33m (attempt 1)
+2025-05-26 23:41:45,811 - INFO - Found valid target at [1.63, 10.38, -2.16], altitude: 2.16m (attempt 2)
+2025-05-26 23:41:45,902 - INFO - Found valid target at [11.92, 5.82, -4.12], altitude: 4.12m (attempt 2)
+2025-05-26 23:41:45,973 - INFO - Found valid target at [22.5, -19.03, -17.48], altitude: 17.48m (attempt 1)
+2025-05-26 23:41:45,995 - INFO - Generated 5/5 targets in 0.4s (4 attempts)
+2025-05-26 23:41:45,995 - INFO - Successfully generated pool of 5 targets in 0.4s
+2025-05-26 23:41:45,996 - INFO - Saved pool of 5 targets to experiment_results\experiment_20250526_234027\target_pool.json
+2025-05-26 23:41:45,997 - INFO - Starting episode 0 of 5
+2025-05-26 23:41:45,997 - INFO - === Starting Episode 0 ===
+2025-05-26 23:41:45,999 - INFO - Episode 0: Taking off...
+2025-05-26 23:41:51,461 - INFO - Episode 0: Using pre-generated target 0 of 5
+2025-05-26 23:41:51,464 - INFO - Episode 0: Initial distance to target: 43.64m
+2025-05-26 23:41:51,465 - INFO - Episode 0: Initial position: [0.0, 0.0, -1.67]
+2025-05-26 23:41:51,465 - INFO - Episode 0: Target position: [-3.7, -43.44, -3.56]
+2025-05-26 23:41:51,465 - INFO - Episode 0: Initial distance: 43.64m
+2025-05-26 23:41:51,470 - INFO - Episode 0: Target verified with 3 rays
+2025-05-26 23:42:06,102 - WARNING - Episode 0: Step 0 took 14.63s (unusually long)
+2025-05-26 23:42:24,240 - WARNING - Episode 0: Step 5 took 5.22s (unusually long)
+2025-05-26 23:42:29,550 - WARNING - Episode 0: Step 6 took 5.31s (unusually long)
+2025-05-26 23:42:46,912 - WARNING - Episode 0: Step 11 took 7.05s (unusually long)
+2025-05-26 23:42:46,934 - INFO - Episode 0: Clear path to target detected - moving directly toward goal
+2025-05-26 23:42:52,053 - WARNING - Episode 0: Step 12 took 5.14s (unusually long)
+2025-05-26 23:42:52,053 - INFO - Episode 0: Target reached at step 13
+2025-05-26 23:42:52,057 - INFO - Episode 0: Skipping landing process and resetting drone for next episode
+2025-05-26 23:42:52,057 - INFO - Episode 0 completed: success
+2025-05-26 23:42:52,058 - INFO -   Steps: 13, Duration: 60.59s
+2025-05-26 23:42:52,058 - INFO -   Final distance: 0.53m, Collisions: 0
+2025-05-26 23:42:52,058 - INFO -   Dynamic replanning events: 0
+2025-05-26 23:42:52,078 - INFO - Saved recovery data for episode 0
+2025-05-26 23:42:52,079 - INFO - Starting episode 1 of 5
+2025-05-26 23:42:52,079 - INFO - === Starting Episode 1 ===
+2025-05-26 23:42:52,082 - INFO - Episode 1: Taking off...
+2025-05-26 23:42:57,538 - INFO - Episode 1: Using pre-generated target 1 of 5
+2025-05-26 23:42:57,538 - INFO - Episode 1: Initial distance to target: 21.03m
+2025-05-26 23:42:57,539 - INFO - Episode 1: Initial position: [0.0, 0.0, -1.67]
+2025-05-26 23:42:57,539 - INFO - Episode 1: Target position: [18.61, 4.6, -10.33]
+2025-05-26 23:42:57,539 - INFO - Episode 1: Initial distance: 21.03m
+2025-05-26 23:42:57,543 - INFO - Episode 1: Target verified with 3 rays

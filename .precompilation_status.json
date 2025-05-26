@@ -1,1 +1,1 @@
-{"status":"success","message":"✓ All components successfully precompiled","timestamp":"2025-05-25T22:45:40.267"}
+{"status":"error","message":"Failed to load actinf package: UndefVarError(:angle_weight, actinf.Planning)","timestamp":"2025-05-26T23:45:55.979"}

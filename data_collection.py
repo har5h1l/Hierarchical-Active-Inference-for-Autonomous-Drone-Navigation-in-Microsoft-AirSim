@@ -172,14 +172,14 @@ ZMQ_MAX_RETRIES = 3  # Maximum number of retries for ZMQ communication
 
 # Default experiment configuration
 DEFAULT_CONFIG = {
-    "num_episodes": 5,
-    "target_distance_range": (15.0, 50.0),  # min, max in meters
+    "num_episodes": 250,
+    "target_distance_range": (20.0, 100.0),  # min, max in meters
     "random_seed": 42,
-    "max_steps_per_episode": 100,
+    "max_steps_per_episode": 200,
     "output_dir": "experiment_results",
     "stuck_timeout": 15.0,  # seconds to consider the drone stuck
     "stuck_check_interval": 3.0,  # seconds between stuck checks
-    "episode_timeout": 120,  # maximum episode duration in seconds
+    "episode_timeout": 240,  # maximum episode duration in seconds
     "precompile_julia": True,  # whether to precompile Julia packages
     "zmq_port": DEFAULT_ZMQ_PORT,  # ZMQ server port
     
