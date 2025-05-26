@@ -1,5 +1,5 @@
 {
-  "timestamp": "2025-05-26 23:45:20",
+  "timestamp": "2025-05-26 17:19:57",
   "os": {
     "name": "Windows",
     "version": "10.0.26100",
@@ -20,12 +20,12 @@
   "cpu": {
     "physical_cores": 4,
     "total_cores": 8,
-    "usage_percent": 32.0
+    "usage_percent": 43.9
   },
   "memory": {
     "total_gb": 27.95,
-    "available_gb": 20.65,
-    "used_percent": 26.1
+    "available_gb": 19.76,
+    "used_percent": 29.3
   },
   "gpu": {
     "note": "No GPU detected"
