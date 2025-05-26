@@ -31,21 +31,21 @@ mutable struct DroneBeliefs
 end
 
 """
-    initialize_beliefs(state::StateSpace.DroneState; num_bins=50)
+    initialize_beliefs(state::StateSpace.DroneState; num_bins=100)
 
 Initialize uniform beliefs and update with current state observation.
 """
 function initialize_beliefs(state::StateSpace.DroneState; num_bins=50, voxel_grid=Vector{SVector{3, Float64}}(), obstacle_density=0.0)
     # Define ranges for each state variable
-    distance_range = collect(range(0.0, stop=50.0, length=num_bins))
+    distance_range = collect(range(0.0, stop=125.0, length=(num_bins+25)))
     azimuth_range = collect(range(-π, stop=π, length=num_bins))
     elevation_range = collect(range(-π/2, stop=π/2, length=num_bins))
     suitability_range = collect(range(0.0, stop=1.0, length=num_bins))
     density_range = collect(range(0.0, stop=1.0, length=num_bins))
     
-    # Initialize with uniform distributions
-    distance_belief = ones(num_bins) / num_bins
-    azimuth_belief = ones(num_bins) / num_bins
+    # Initialize with uniform distributions using correct bin counts
+    distance_belief = ones(num_bins+25) / (num_bins+25)  # 75 bins for distance
+    azimuth_belief = ones(num_bins) / num_bins  # 50 bins for angles
     elevation_belief = ones(num_bins) / num_bins
     suitability_belief = ones(num_bins) / num_bins
     density_belief = ones(num_bins) / num_bins
@@ -79,7 +79,7 @@ Uses a Gaussian kernel to update beliefs with stronger weighting for target-rela
 """
 function update_beliefs!(beliefs::DroneBeliefs, state::StateSpace.DroneState; kernel_width=0.1, voxel_grid=nothing, obstacle_density=0.0)
     # Adjust kernel widths based on state variables
-    distance_kernel = kernel_width * (1.0 + 0.5 * state.distance/50.0)  # Wider kernel for larger distances
+    distance_kernel = kernel_width * (1.0 + 0.5 * state.distance/100.0)  # Wider kernel for larger distances
     azimuth_kernel = kernel_width * 2.0  # Wider kernel for angles
     elevation_kernel = kernel_width * 2.0
     
@@ -239,20 +239,24 @@ end
 Reconstruct beliefs from serialized data.
 """
 function deserialize_beliefs(data::Dict)
-    # Set default values for missing data
-    default_bins = 50
-    default_belief = ones(default_bins) ./ default_bins
-    default_distance_range = collect(range(0.0, stop=50.0, length=default_bins))
-    default_angle_range = collect(range(-π, stop=π, length=default_bins))
-    default_elev_range = collect(range(-π/2, stop=π/2, length=default_bins))
-    default_unit_range = collect(range(0.0, stop=1.0, length=default_bins))
+    # Set default values for missing data - updated to match new bin counts
+    default_num_bins = 50
+    default_distance_bins = default_num_bins + 25  # 75 bins for distance
+    
+    default_distance_belief = ones(default_distance_bins) ./ default_distance_bins
+    default_angle_belief = ones(default_num_bins) ./ default_num_bins
+    
+    default_distance_range = collect(range(0.0, stop=125.0, length=default_distance_bins))
+    default_angle_range = collect(range(-π, stop=π, length=default_num_bins))
+    default_elev_range = collect(range(-π/2, stop=π/2, length=default_num_bins))
+    default_unit_range = collect(range(0.0, stop=1.0, length=default_num_bins))
     
     # Get values with defaults
-    distance_belief = get(data, "distance_belief", copy(default_belief))
-    azimuth_belief = get(data, "azimuth_belief", copy(default_belief))
-    elevation_belief = get(data, "elevation_belief", copy(default_belief))
-    suitability_belief = get(data, "suitability_belief", copy(default_belief))
-    density_belief = get(data, "density_belief", copy(default_belief))
+    distance_belief = get(data, "distance_belief", copy(default_distance_belief))
+    azimuth_belief = get(data, "azimuth_belief", copy(default_angle_belief))
+    elevation_belief = get(data, "elevation_belief", copy(default_angle_belief))
+    suitability_belief = get(data, "suitability_belief", copy(default_angle_belief))
+    density_belief = get(data, "density_belief", copy(default_angle_belief))
     
     distance_range = get(data, "distance_range", default_distance_range)
     azimuth_range = get(data, "azimuth_range", default_angle_range)

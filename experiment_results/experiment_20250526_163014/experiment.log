@@ -1,0 +1,778 @@
+2025-05-26 16:30:14,880 - INFO - Using random seed: 42
+2025-05-26 16:30:14,881 - INFO - Starting experiment with configuration:
+2025-05-26 16:30:14,881 - INFO -   num_episodes: 50
+2025-05-26 16:30:14,881 - INFO -   target_distance_range: (15.0, 100.0)
+2025-05-26 16:30:14,881 - INFO -   random_seed: 42
+2025-05-26 16:30:14,881 - INFO -   max_steps_per_episode: 250
+2025-05-26 16:30:14,881 - INFO -   output_dir: experiment_results
+2025-05-26 16:30:14,881 - INFO -   stuck_timeout: 15.0
+2025-05-26 16:30:14,882 - INFO -   stuck_check_interval: 3.0
+2025-05-26 16:30:14,882 - INFO -   episode_timeout: 250
+2025-05-26 16:30:14,883 - INFO -   precompile_julia: True
+2025-05-26 16:30:14,883 - INFO -   zmq_port: 5555
+2025-05-26 16:30:14,883 - INFO -   debug_raycasting: False
+2025-05-26 16:30:14,883 - INFO -   min_ray_checks: 3
+2025-05-26 16:30:14,883 - INFO -   max_ray_checks: 7
+2025-05-26 16:30:14,883 - INFO -   visualize_raycasts: False
+2025-05-26 16:30:14,884 - INFO -   visualization_duration: 60.0
+2025-05-26 16:30:23,923 - INFO - System information collected and saved
+2025-05-26 16:30:23,927 - INFO - AirSim connection established successfully
+2025-05-26 16:31:35,941 - INFO - Generating pool of 50 valid target locations...
+2025-05-26 16:31:36,032 - INFO - Found valid target at [-15.6, 8.34, -11.1], altitude: 11.10m (attempt 3)
+2025-05-26 16:31:36,094 - INFO - Found valid target at [18.61, 4.6, -10.33], altitude: 10.33m (attempt 1)
+2025-05-26 16:31:36,155 - INFO - Found valid target at [-34.38, 22.27, -5.18], altitude: 5.18m (attempt 1)
+2025-05-26 16:31:36,216 - INFO - Found valid target at [-2.31, 16.67, -8.1], altitude: 8.10m (attempt 1)
+2025-05-26 16:31:36,278 - INFO - Found valid target at [25.04, -21.18, -17.48], altitude: 17.48m (attempt 1)
+2025-05-26 16:31:36,368 - INFO - Found valid target at [-15.43, -1.21, -9.53], altitude: 9.53m (attempt 2)
+2025-05-26 16:31:36,435 - INFO - Found valid target at [-29.34, -9.16, -7.44], altitude: 7.44m (attempt 1)
+2025-05-26 16:31:36,504 - INFO - Found valid target at [17.72, 7.92, -15.54], altitude: 15.54m (attempt 1)
+2025-05-26 16:31:36,573 - INFO - Found valid target at [-36.57, 0.57, -6.36], altitude: 6.36m (attempt 1)
+2025-05-26 16:31:36,663 - INFO - Found valid target at [7.09, 60.37, -9.15], altitude: 9.15m (attempt 2)
+2025-05-26 16:31:36,686 - INFO - Generated 10/50 targets in 0.7s (9 attempts)
+2025-05-26 16:31:36,729 - INFO - Found valid target at [32.56, -4.46, -10.71], altitude: 10.71m (attempt 1)
+2025-05-26 16:31:36,796 - INFO - Found valid target at [-34.42, -31.18, -14.81], altitude: 14.81m (attempt 1)
+2025-05-26 16:31:36,863 - INFO - Found valid target at [28.82, -17.38, -10.69], altitude: 10.69m (attempt 1)
+2025-05-26 16:31:36,931 - INFO - Found valid target at [26.0, 16.58, -15.31], altitude: 15.31m (attempt 1)
+2025-05-26 16:31:36,997 - INFO - Found valid target at [46.2, -10.05, -11.42], altitude: 11.42m (attempt 1)
+2025-05-26 16:31:37,087 - INFO - Found valid target at [64.28, -9.5, -13.45], altitude: 13.45m (attempt 2)
+2025-05-26 16:31:37,157 - INFO - Found valid target at [-40.0, -22.24, -19.04], altitude: 19.04m (attempt 1)
+2025-05-26 16:31:37,226 - INFO - Found valid target at [14.83, 90.63, -2.41], altitude: 2.41m (attempt 1)
+2025-05-26 16:31:37,318 - INFO - Found valid target at [-68.38, 14.29, -16.26], altitude: 16.26m (attempt 2)
+2025-05-26 16:31:37,383 - INFO - Found valid target at [-76.53, 2.65, -7.77], altitude: 7.77m (attempt 1)
+2025-05-26 16:31:37,405 - INFO - Generated 20/50 targets in 1.5s (19 attempts)
+2025-05-26 16:31:37,466 - INFO - Found valid target at [-50.13, 11.29, -11.14], altitude: 11.14m (attempt 2)
+2025-05-26 16:31:37,550 - INFO - Found valid target at [25.29, 15.4, -5.65], altitude: 5.65m (attempt 2)
+2025-05-26 16:31:37,631 - INFO - Found valid target at [77.37, 8.22, -16.47], altitude: 16.47m (attempt 2)
+2025-05-26 16:31:37,713 - INFO - Found valid target at [-44.22, -8.07, -13.51], altitude: 13.51m (attempt 2)
+2025-05-26 16:31:37,774 - INFO - Found valid target at [32.56, 15.52, -10.02], altitude: 10.02m (attempt 1)
+2025-05-26 16:31:37,841 - INFO - Found valid target at [84.69, 43.01, -9.48], altitude: 9.48m (attempt 1)
+2025-05-26 16:31:37,976 - INFO - Found valid target at [-76.73, -26.88, -2.75], altitude: 2.75m (attempt 4)
+2025-05-26 16:31:38,079 - INFO - Found valid target at [-57.09, 33.99, -16.95], altitude: 16.95m (attempt 3)
+2025-05-26 16:31:38,168 - INFO - Found valid target at [47.8, -1.48, -12.76], altitude: 12.76m (attempt 2)
+2025-05-26 16:31:38,236 - INFO - Found valid target at [-10.56, 21.14, -19.69], altitude: 19.69m (attempt 1)
+2025-05-26 16:31:38,258 - INFO - Generated 30/50 targets in 2.3s (29 attempts)
+2025-05-26 16:31:38,304 - INFO - Found valid target at [80.94, 40.24, -8.19], altitude: 8.19m (attempt 1)
+2025-05-26 16:31:38,373 - INFO - Found valid target at [-10.87, 57.35, -10.3], altitude: 10.30m (attempt 1)
+2025-05-26 16:31:38,438 - INFO - Found valid target at [18.63, -22.6, -4.17], altitude: 4.17m (attempt 1)
+2025-05-26 16:31:38,505 - INFO - Found valid target at [-22.26, 7.1, -15.82], altitude: 15.82m (attempt 1)
+2025-05-26 16:31:38,577 - INFO - Found valid target at [-27.45, 29.03, -7.35], altitude: 7.35m (attempt 1)
+2025-05-26 16:31:38,687 - INFO - Found valid target at [35.37, 45.88, -17.32], altitude: 17.32m (attempt 3)
+2025-05-26 16:31:38,754 - INFO - Found valid target at [21.73, -50.66, -15.15], altitude: 15.15m (attempt 1)
+2025-05-26 16:31:38,817 - INFO - Found valid target at [17.67, 22.88, -6.43], altitude: 6.43m (attempt 1)
+2025-05-26 16:31:38,908 - INFO - Found valid target at [-31.89, 34.35, -11.9], altitude: 11.90m (attempt 2)
+2025-05-26 16:31:38,974 - INFO - Found valid target at [-56.15, -2.1, -8.92], altitude: 8.92m (attempt 1)
+2025-05-26 16:31:38,996 - INFO - Generated 40/50 targets in 3.1s (39 attempts)
+2025-05-26 16:31:39,041 - INFO - Found valid target at [33.25, 42.71, -19.44], altitude: 19.44m (attempt 1)
+2025-05-26 16:31:39,131 - INFO - Found valid target at [34.85, 11.12, -7.56], altitude: 7.56m (attempt 2)
+2025-05-26 16:31:39,199 - INFO - Found valid target at [-3.21, -27.5, -2.08], altitude: 2.08m (attempt 1)
+2025-05-26 16:31:39,267 - INFO - Found valid target at [9.46, 28.87, -18.29], altitude: 18.29m (attempt 1)
+2025-05-26 16:31:39,334 - INFO - Found valid target at [11.96, -44.79, -7.71], altitude: 7.71m (attempt 1)
+2025-05-26 16:31:39,399 - INFO - Found valid target at [35.33, 46.12, -11.73], altitude: 11.73m (attempt 1)
+2025-05-26 16:31:39,490 - INFO - Found valid target at [-83.3, -14.09, -14.35], altitude: 14.35m (attempt 2)
+2025-05-26 16:31:39,557 - INFO - Found valid target at [79.87, 44.62, -4.53], altitude: 4.53m (attempt 1)
+2025-05-26 16:31:39,626 - INFO - Found valid target at [12.43, 41.48, -12.55], altitude: 12.55m (attempt 1)
+2025-05-26 16:31:39,714 - INFO - Found valid target at [75.59, -24.98, -10.38], altitude: 10.38m (attempt 2)
+2025-05-26 16:31:39,735 - INFO - Generated 50/50 targets in 3.8s (49 attempts)
+2025-05-26 16:31:39,735 - INFO - Successfully generated pool of 50 targets in 3.8s
+2025-05-26 16:31:39,737 - INFO - Saved pool of 50 targets to experiment_results\experiment_20250526_163014\target_pool.json
+2025-05-26 16:31:39,737 - INFO - Starting episode 0 of 50
+2025-05-26 16:31:39,737 - INFO - === Starting Episode 0 ===
+2025-05-26 16:31:39,740 - INFO - Episode 0: Taking off...
+2025-05-26 16:31:45,146 - INFO - Episode 0: Using pre-generated target 0 of 50
+2025-05-26 16:31:45,146 - INFO - Episode 0: Initial distance to target: 20.05m
+2025-05-26 16:31:45,147 - INFO - Episode 0: Initial position: [0.0, 0.0, -1.67]
+2025-05-26 16:31:45,147 - INFO - Episode 0: Target position: [-15.6, 8.34, -11.1]
+2025-05-26 16:31:45,147 - INFO - Episode 0: Initial distance: 20.05m
+2025-05-26 16:31:45,152 - INFO - Episode 0: Target verified with 3 rays
+2025-05-26 16:31:51,379 - WARNING - Episode 0: Step 0 took 6.23s (unusually long)
+2025-05-26 16:32:01,112 - WARNING - Collision detected during movement, cancelling task immediately
+2025-05-26 16:32:01,113 - INFO - Episode 0: Obstacle detected during movement, triggering immediate replanning
+2025-05-26 16:32:01,127 - INFO - Adding newly detected obstacle at [-14.25, 8.0, -9.73] to planning data
+2025-05-26 16:32:01,127 - INFO - Episode 0: Putting drone in hover mode before dynamic replanning
+2025-05-26 16:32:01,629 - INFO - Episode 0: Triggering dynamic replanning due to detected obstacle
+2025-05-26 16:32:01,648 - INFO - Enhanced planning parameters for obstacle avoidance: safety_margin=4.00, waypoint_count=150, obstacle_priority=3.00
+2025-05-26 16:32:01,658 - INFO - Episode 0: Executing replanned path to avoid obstacle
+2025-05-26 16:32:01,674 - WARNING - Collision detected during movement, cancelling task immediately
+2025-05-26 16:32:01,877 - WARNING - Episode 0: Collision detected at step 4
+2025-05-26 16:32:01,878 - INFO - Using collision normal for recovery: [0.57, -0.82, 0.00]
+2025-05-26 16:32:10,604 - WARNING - Recovery movement timed out after 8.0 seconds
+2025-05-26 16:32:10,605 - INFO - Episode 0: Collision recovery successful, moved 4.05m to new position: [-12.15, 4.86, -12.28]
+2025-05-26 16:32:13,894 - INFO - Episode 0: Clear path to target detected - moving directly toward goal
+2025-05-26 16:32:13,907 - WARNING - Collision detected during movement, cancelling task immediately
+2025-05-26 16:32:13,908 - INFO - Episode 0: Obstacle detected during movement, triggering immediate replanning
+2025-05-26 16:32:13,917 - INFO - Adding newly detected obstacle at [-14.34, 7.94, -9.71] to planning data
+2025-05-26 16:32:13,918 - INFO - Episode 0: Putting drone in hover mode before dynamic replanning
+2025-05-26 16:32:14,419 - INFO - Episode 0: Triggering dynamic replanning due to detected obstacle
+2025-05-26 16:32:14,428 - INFO - Enhanced planning parameters for obstacle avoidance: safety_margin=4.00, waypoint_count=150, obstacle_priority=3.00
+2025-05-26 16:32:14,434 - INFO - Episode 0: Executing replanned path to avoid obstacle
+2025-05-26 16:32:20,569 - WARNING - Episode 0: Step 4 took 18.69s (unusually long)
+2025-05-26 16:32:20,586 - INFO - Episode 0: Clear path to target detected - moving directly toward goal
+2025-05-26 16:32:25,861 - WARNING - Episode 0: Step 5 took 5.29s (unusually long)
+2025-05-26 16:32:25,882 - INFO - Episode 0: Clear path to target detected - moving directly toward goal
+2025-05-26 16:32:30,894 - WARNING - Movement taking too long, cancelling and replanning
+2025-05-26 16:32:30,895 - INFO - Episode 0: Obstacle detected during movement, triggering immediate replanning
+2025-05-26 16:32:30,906 - INFO - Adding newly detected obstacle at [-15.55, 8.55, -11.3] to planning data
+2025-05-26 16:32:30,906 - INFO - Episode 0: Putting drone in hover mode before dynamic replanning
+2025-05-26 16:32:31,408 - INFO - Episode 0: Triggering dynamic replanning due to detected obstacle
+2025-05-26 16:32:31,417 - INFO - Enhanced planning parameters for obstacle avoidance: safety_margin=4.00, waypoint_count=150, obstacle_priority=3.00
+2025-05-26 16:32:31,422 - INFO - Episode 0: Executing replanned path to avoid obstacle
+2025-05-26 16:32:35,999 - WARNING - Episode 0: Step 6 took 10.14s (unusually long)
+2025-05-26 16:32:36,015 - INFO - Episode 0: Clear path to target detected - moving directly toward goal
+2025-05-26 16:32:41,646 - WARNING - Episode 0: Step 7 took 5.65s (unusually long)
+2025-05-26 16:32:41,647 - INFO - Episode 0: Target reached at step 8
+2025-05-26 16:32:41,649 - INFO - Episode 0: Skipping landing process and resetting drone for next episode
+2025-05-26 16:32:41,650 - INFO - Episode 0 completed: success
+2025-05-26 16:32:41,650 - INFO -   Steps: 8, Duration: 39.07s
+2025-05-26 16:32:41,650 - INFO -   Final distance: 1.16m, Collisions: 1
+2025-05-26 16:32:41,651 - INFO -   Dynamic replanning events: 3
+2025-05-26 16:32:41,667 - INFO - Saved recovery data for episode 0
+2025-05-26 16:32:41,668 - INFO - Starting episode 1 of 50
+2025-05-26 16:32:41,668 - INFO - === Starting Episode 1 ===
+2025-05-26 16:32:41,671 - INFO - Episode 1: Taking off...
+2025-05-26 16:32:47,085 - INFO - Episode 1: Using pre-generated target 1 of 50
+2025-05-26 16:32:47,085 - INFO - Episode 1: Initial distance to target: 21.03m
+2025-05-26 16:32:47,086 - INFO - Episode 1: Initial position: [0.0, 0.0, -1.67]
+2025-05-26 16:32:47,086 - INFO - Episode 1: Target position: [18.61, 4.6, -10.33]
+2025-05-26 16:32:47,086 - INFO - Episode 1: Initial distance: 21.03m
+2025-05-26 16:32:47,091 - INFO - Episode 1: Target verified with 3 rays
+2025-05-26 16:33:03,660 - INFO - Episode 1: Target reached at step 5
+2025-05-26 16:33:03,662 - INFO - Episode 1: Skipping landing process and resetting drone for next episode
+2025-05-26 16:33:03,662 - INFO - Episode 1 completed: success
+2025-05-26 16:33:03,663 - INFO -   Steps: 5, Duration: 16.58s
+2025-05-26 16:33:03,663 - INFO -   Final distance: 1.07m, Collisions: 0
+2025-05-26 16:33:03,663 - INFO -   Dynamic replanning events: 0
+2025-05-26 16:33:03,670 - INFO - Saved recovery data for episode 1
+2025-05-26 16:33:03,671 - INFO - Starting episode 2 of 50
+2025-05-26 16:33:03,671 - INFO - === Starting Episode 2 ===
+2025-05-26 16:33:03,675 - INFO - Episode 2: Taking off...
+2025-05-26 16:33:09,081 - INFO - Episode 2: Using pre-generated target 2 of 50
+2025-05-26 16:33:09,081 - INFO - Episode 2: Initial distance to target: 41.11m
+2025-05-26 16:33:09,082 - INFO - Episode 2: Initial position: [0.0, 0.0, -1.67]
+2025-05-26 16:33:09,082 - INFO - Episode 2: Target position: [-34.38, 22.27, -5.18]
+2025-05-26 16:33:09,082 - INFO - Episode 2: Initial distance: 41.11m
+2025-05-26 16:33:09,088 - INFO - Episode 2: Target verified with 3 rays
+2025-05-26 16:33:14,974 - WARNING - Episode 2: Step 0 took 5.89s (unusually long)
+2025-05-26 16:33:30,373 - WARNING - Collision detected during movement, cancelling task immediately
+2025-05-26 16:33:30,374 - INFO - Episode 2: Obstacle detected during movement, triggering immediate replanning
+2025-05-26 16:33:30,393 - INFO - Adding newly detected obstacle at [-13.3, 14.18, -2.23] to planning data
+2025-05-26 16:33:30,393 - INFO - Episode 2: Putting drone in hover mode before dynamic replanning
+2025-05-26 16:33:30,894 - INFO - Episode 2: Triggering dynamic replanning due to detected obstacle
+2025-05-26 16:33:30,919 - INFO - Enhanced planning parameters for obstacle avoidance: safety_margin=4.00, waypoint_count=150, obstacle_priority=3.00
+2025-05-26 16:33:30,924 - INFO - Episode 2: Executing replanned path to avoid obstacle
+2025-05-26 16:33:30,950 - WARNING - Collision detected during movement, cancelling task immediately
+2025-05-26 16:33:31,153 - WARNING - Episode 2: Collision detected at step 6
+2025-05-26 16:33:31,154 - INFO - Using collision normal for recovery: [0.66, 0.76, 0.00]
+2025-05-26 16:33:39,881 - WARNING - Recovery movement timed out after 8.0 seconds
+2025-05-26 16:33:39,882 - WARNING - Episode 2: Collision recovery barely moved the drone (0.00m), retrying with emergency protocol
+2025-05-26 16:33:40,383 - INFO - Episode 2: Attempting emergency vertical escape to altitude -7.453945636749268
+2025-05-26 16:33:45,411 - INFO - Episode 2: Emergency recovery successful, moved 4.95m
+2025-05-26 16:33:49,307 - WARNING - Collision detected during movement, cancelling task immediately
+2025-05-26 16:33:49,308 - INFO - Episode 2: Obstacle detected during movement, triggering immediate replanning
+2025-05-26 16:33:49,324 - INFO - Adding newly detected obstacle at [-13.62, 14.32, -2.28] to planning data
+2025-05-26 16:33:49,325 - INFO - Episode 2: Putting drone in hover mode before dynamic replanning
+2025-05-26 16:33:49,826 - INFO - Episode 2: Triggering dynamic replanning due to detected obstacle
+2025-05-26 16:33:49,844 - INFO - Enhanced planning parameters for obstacle avoidance: safety_margin=4.00, waypoint_count=150, obstacle_priority=3.00
+2025-05-26 16:33:49,848 - INFO - Episode 2: Executing replanned path to avoid obstacle
+2025-05-26 16:33:54,731 - WARNING - Episode 2: Step 6 took 23.58s (unusually long)
+2025-05-26 16:34:01,072 - WARNING - Episode 2: Step 7 took 6.34s (unusually long)
+2025-05-26 16:34:10,404 - WARNING - Collision detected during movement, cancelling task immediately
+2025-05-26 16:34:10,405 - INFO - Episode 2: Obstacle detected during movement, triggering immediate replanning
+2025-05-26 16:34:10,426 - INFO - Adding newly detected obstacle at [-28.54, 19.54, -7.82] to planning data
+2025-05-26 16:34:10,427 - INFO - Episode 2: Putting drone in hover mode before dynamic replanning
+2025-05-26 16:34:10,928 - INFO - Episode 2: Triggering dynamic replanning due to detected obstacle
+2025-05-26 16:34:10,946 - INFO - Enhanced planning parameters for obstacle avoidance: safety_margin=4.00, waypoint_count=150, obstacle_priority=3.00
+2025-05-26 16:34:10,951 - INFO - Episode 2: Executing replanned path to avoid obstacle
+2025-05-26 16:34:10,971 - WARNING - Collision detected during movement, cancelling task immediately
+2025-05-26 16:34:11,175 - WARNING - Episode 2: Collision detected at step 12
+2025-05-26 16:34:11,177 - INFO - Using collision normal for recovery: [1.00, -0.00, 0.00]
+2025-05-26 16:34:19,901 - WARNING - Recovery movement timed out after 8.0 seconds
+2025-05-26 16:34:19,903 - INFO - Episode 2: Collision recovery successful, moved 4.05m to new position: [-24.79, 19.78, -10.29]
+2025-05-26 16:34:23,276 - WARNING - Collision detected during movement, cancelling task immediately
+2025-05-26 16:34:23,276 - INFO - Episode 2: Obstacle detected during movement, triggering immediate replanning
+2025-05-26 16:34:23,294 - INFO - Adding newly detected obstacle at [-28.54, 19.61, -7.78] to planning data
+2025-05-26 16:34:23,294 - INFO - Episode 2: Putting drone in hover mode before dynamic replanning
+2025-05-26 16:34:23,796 - INFO - Episode 2: Triggering dynamic replanning due to detected obstacle
+2025-05-26 16:34:23,811 - INFO - Enhanced planning parameters for obstacle avoidance: safety_margin=4.00, waypoint_count=150, obstacle_priority=3.00
+2025-05-26 16:34:23,815 - INFO - Episode 2: Executing replanned path to avoid obstacle
+2025-05-26 16:34:28,551 - WARNING - Episode 2: Step 12 took 17.38s (unusually long)
+2025-05-26 16:34:34,970 - WARNING - Episode 2: Step 13 took 6.42s (unusually long)
+2025-05-26 16:34:34,971 - WARNING - Episode 2: Collision detected at step 14
+2025-05-26 16:34:34,972 - INFO - Using collision normal for recovery: [1.00, 0.00, 0.00]
+2025-05-26 16:34:43,696 - WARNING - Recovery movement timed out after 8.0 seconds
+2025-05-26 16:34:43,697 - INFO - Episode 2: Collision recovery successful, moved 4.03m to new position: [-24.76, 20.62, -13.13]
+2025-05-26 16:34:51,188 - WARNING - Episode 2: Step 14 took 16.22s (unusually long)
+2025-05-26 16:34:51,190 - WARNING - Episode 2: Drone revisited position (np.int64(-28), np.int64(21), np.int64(-11)) 2 times
+2025-05-26 16:34:51,191 - WARNING - Episode 2: Collision detected at step 15
+2025-05-26 16:34:51,192 - INFO - Using collision normal for recovery: [0.98, -0.20, 0.00]
+2025-05-26 16:34:59,915 - WARNING - Recovery movement timed out after 8.0 seconds
+2025-05-26 16:34:59,916 - INFO - Episode 2: Collision recovery successful, moved 4.06m to new position: [-24.38, 20.45, -13.96]
+2025-05-26 16:35:06,562 - WARNING - Episode 2: Step 15 took 15.37s (unusually long)
+2025-05-26 16:35:06,899 - WARNING - Collision detected during movement, cancelling task immediately
+2025-05-26 16:35:06,900 - INFO - Episode 2: Obstacle detected during movement, triggering immediate replanning
+2025-05-26 16:35:06,914 - INFO - Adding newly detected obstacle at [-28.01, 20.74, -11.97] to planning data
+2025-05-26 16:35:06,914 - INFO - Episode 2: Putting drone in hover mode before dynamic replanning
+2025-05-26 16:35:07,415 - INFO - Episode 2: Triggering dynamic replanning due to detected obstacle
+2025-05-26 16:35:07,427 - INFO - Enhanced planning parameters for obstacle avoidance: safety_margin=4.00, waypoint_count=150, obstacle_priority=3.00
+2025-05-26 16:35:07,433 - INFO - Episode 2: Executing replanned path to avoid obstacle
+2025-05-26 16:35:07,450 - WARNING - Collision detected during movement, cancelling task immediately
+2025-05-26 16:35:19,825 - WARNING - Movement taking too long, cancelling and replanning
+2025-05-26 16:35:19,826 - INFO - Episode 2: Obstacle detected during movement, triggering immediate replanning
+2025-05-26 16:35:19,841 - INFO - Adding newly detected obstacle at [-33.19, 22.05, -6.4] to planning data
+2025-05-26 16:35:19,841 - INFO - Episode 2: Putting drone in hover mode before dynamic replanning
+2025-05-26 16:35:20,342 - INFO - Episode 2: Triggering dynamic replanning due to detected obstacle
+2025-05-26 16:35:20,356 - INFO - Enhanced planning parameters for obstacle avoidance: safety_margin=4.00, waypoint_count=150, obstacle_priority=3.00
+2025-05-26 16:35:20,363 - INFO - Episode 2: Executing replanned path to avoid obstacle
+2025-05-26 16:35:32,518 - WARNING - Movement taking too long, cancelling and replanning
+2025-05-26 16:35:32,720 - WARNING - Episode 2: Step 17 took 25.07s (unusually long)
+2025-05-26 16:35:32,720 - ERROR - Episode 2: Drone stuck for 26.2s (>= 15.0s), aborting episode
+2025-05-26 16:35:32,722 - INFO - Episode 2: Skipping landing process and resetting drone for next episode
+2025-05-26 16:35:32,722 - INFO - Episode 2 completed: stuck
+2025-05-26 16:35:32,723 - INFO -   Steps: 18, Duration: 40.83s
+2025-05-26 16:35:32,723 - INFO -   Final distance: 9.81m, Collisions: 4
+2025-05-26 16:35:32,723 - INFO -   Dynamic replanning events: 6
+2025-05-26 16:35:32,733 - INFO - Saved recovery data for episode 2
+2025-05-26 16:35:32,735 - INFO - Starting episode 3 of 50
+2025-05-26 16:35:32,735 - INFO - === Starting Episode 3 ===
+2025-05-26 16:35:32,736 - INFO - Episode 3: Taking off...
+2025-05-26 16:35:38,149 - INFO - Episode 3: Using pre-generated target 3 of 50
+2025-05-26 16:35:38,149 - INFO - Episode 3: Initial distance to target: 18.01m
+2025-05-26 16:35:38,150 - INFO - Episode 3: Initial position: [0.0, 0.0, -1.67]
+2025-05-26 16:35:38,150 - INFO - Episode 3: Target position: [-2.31, 16.67, -8.1]
+2025-05-26 16:35:38,150 - INFO - Episode 3: Initial distance: 18.01m
+2025-05-26 16:35:38,154 - INFO - Episode 3: Target verified with 3 rays
+2025-05-26 16:35:44,091 - WARNING - Episode 3: Step 0 took 5.94s (unusually long)
+2025-05-26 16:35:55,357 - WARNING - Episode 3: Step 3 took 5.73s (unusually long)
+2025-05-26 16:35:55,377 - INFO - Episode 3: Clear path to target detected - moving directly toward goal
+2025-05-26 16:36:00,868 - WARNING - Episode 3: Step 4 took 5.51s (unusually long)
+2025-05-26 16:36:00,870 - INFO - Episode 3: Target reached at step 5
+2025-05-26 16:36:00,872 - INFO - Episode 3: Skipping landing process and resetting drone for next episode
+2025-05-26 16:36:00,873 - INFO - Episode 3 completed: success
+2025-05-26 16:36:00,873 - INFO -   Steps: 5, Duration: 22.72s
+2025-05-26 16:36:00,873 - INFO -   Final distance: 0.59m, Collisions: 0
+2025-05-26 16:36:00,873 - INFO -   Dynamic replanning events: 0
+2025-05-26 16:36:00,885 - INFO - Saved recovery data for episode 3
+2025-05-26 16:36:00,886 - INFO - Starting episode 4 of 50
+2025-05-26 16:36:00,886 - INFO - === Starting Episode 4 ===
+2025-05-26 16:36:00,887 - INFO - Episode 4: Taking off...
+2025-05-26 16:36:06,293 - INFO - Episode 4: Using pre-generated target 4 of 50
+2025-05-26 16:36:06,293 - INFO - Episode 4: Initial distance to target: 36.41m
+2025-05-26 16:36:06,294 - INFO - Episode 4: Initial position: [0.0, 0.0, -1.67]
+2025-05-26 16:36:06,294 - INFO - Episode 4: Target position: [25.04, -21.18, -17.48]
+2025-05-26 16:36:06,294 - INFO - Episode 4: Initial distance: 36.41m
+2025-05-26 16:36:06,298 - INFO - Episode 4: Target verified with 3 rays
+2025-05-26 16:36:11,339 - WARNING - Episode 4: Step 0 took 5.04s (unusually long)
+2025-05-26 16:36:21,031 - WARNING - Collision detected during movement, cancelling task immediately
+2025-05-26 16:36:21,032 - INFO - Episode 4: Obstacle detected during movement, triggering immediate replanning
+2025-05-26 16:36:21,048 - INFO - Adding newly detected obstacle at [11.64, -10.22, -7.37] to planning data
+2025-05-26 16:36:21,048 - INFO - Episode 4: Putting drone in hover mode before dynamic replanning
+2025-05-26 16:36:21,549 - INFO - Episode 4: Triggering dynamic replanning due to detected obstacle
+2025-05-26 16:36:21,583 - INFO - Enhanced planning parameters for obstacle avoidance: safety_margin=4.00, waypoint_count=150, obstacle_priority=3.00
+2025-05-26 16:36:21,592 - INFO - Episode 4: Executing replanned path to avoid obstacle
+2025-05-26 16:36:21,609 - WARNING - Collision detected during movement, cancelling task immediately
+2025-05-26 16:36:21,811 - WARNING - Episode 4: Collision detected at step 5
+2025-05-26 16:36:21,813 - INFO - Using collision normal for recovery: [0.62, 0.79, 0.00]
+2025-05-26 16:36:30,537 - WARNING - Recovery movement timed out after 8.0 seconds
+2025-05-26 16:36:30,537 - INFO - Episode 4: Collision recovery successful, moved 4.11m to new position: [13.98, -7.3, -9.87]
+2025-05-26 16:36:32,890 - WARNING - Collision detected during movement, cancelling task immediately
+2025-05-26 16:36:32,891 - INFO - Episode 4: Obstacle detected during movement, triggering immediate replanning
+2025-05-26 16:36:32,905 - INFO - Adding newly detected obstacle at [11.64, -10.22, -7.37] to planning data
+2025-05-26 16:36:32,905 - INFO - Episode 4: Putting drone in hover mode before dynamic replanning
+2025-05-26 16:36:33,407 - INFO - Episode 4: Triggering dynamic replanning due to detected obstacle
+2025-05-26 16:36:33,416 - INFO - Enhanced planning parameters for obstacle avoidance: safety_margin=4.00, waypoint_count=150, obstacle_priority=3.00
+2025-05-26 16:36:33,421 - INFO - Episode 4: Executing replanned path to avoid obstacle
+2025-05-26 16:36:36,891 - WARNING - Episode 4: Step 5 took 15.08s (unusually long)
+2025-05-26 16:36:42,014 - WARNING - Episode 4: Step 6 took 5.12s (unusually long)
+2025-05-26 16:36:53,005 - INFO - Episode 4: Target reached at step 10
+2025-05-26 16:36:53,007 - INFO - Episode 4: Skipping landing process and resetting drone for next episode
+2025-05-26 16:36:53,008 - INFO - Episode 4 completed: success
+2025-05-26 16:36:53,008 - INFO -   Steps: 10, Duration: 30.49s
+2025-05-26 16:36:53,008 - INFO -   Final distance: 1.01m, Collisions: 1
+2025-05-26 16:36:53,008 - INFO -   Dynamic replanning events: 2
+2025-05-26 16:36:53,018 - INFO - Saved recovery data for episode 4
+2025-05-26 16:36:53,018 - INFO - Starting episode 5 of 50
+2025-05-26 16:36:53,018 - INFO - === Starting Episode 5 ===
+2025-05-26 16:36:53,021 - INFO - Episode 5: Taking off...
+2025-05-26 16:36:58,427 - INFO - Episode 5: Using pre-generated target 5 of 50
+2025-05-26 16:36:58,427 - INFO - Episode 5: Initial distance to target: 17.36m
+2025-05-26 16:36:58,428 - INFO - Episode 5: Initial position: [0.0, 0.0, -1.67]
+2025-05-26 16:36:58,428 - INFO - Episode 5: Target position: [-15.43, -1.21, -9.53]
+2025-05-26 16:36:58,428 - INFO - Episode 5: Initial distance: 17.36m
+2025-05-26 16:36:58,433 - INFO - Episode 5: Target verified with 3 rays
+2025-05-26 16:37:04,860 - WARNING - Episode 5: Step 0 took 6.43s (unusually long)
+2025-05-26 16:37:14,099 - INFO - Episode 5: Target reached at step 4
+2025-05-26 16:37:14,101 - INFO - Episode 5: Skipping landing process and resetting drone for next episode
+2025-05-26 16:37:14,102 - INFO - Episode 5 completed: success
+2025-05-26 16:37:14,102 - INFO -   Steps: 4, Duration: 15.67s
+2025-05-26 16:37:14,102 - INFO -   Final distance: 1.15m, Collisions: 0
+2025-05-26 16:37:14,102 - INFO -   Dynamic replanning events: 0
+2025-05-26 16:37:14,113 - INFO - Saved recovery data for episode 5
+2025-05-26 16:37:14,115 - INFO - Starting episode 6 of 50
+2025-05-26 16:37:14,115 - INFO - === Starting Episode 6 ===
+2025-05-26 16:37:14,117 - INFO - Episode 6: Taking off...
+2025-05-26 16:37:19,524 - INFO - Episode 6: Using pre-generated target 6 of 50
+2025-05-26 16:37:19,524 - INFO - Episode 6: Initial distance to target: 31.27m
+2025-05-26 16:37:19,525 - INFO - Episode 6: Initial position: [0.0, 0.0, -1.67]
+2025-05-26 16:37:19,525 - INFO - Episode 6: Target position: [-29.34, -9.16, -7.44]
+2025-05-26 16:37:19,525 - INFO - Episode 6: Initial distance: 31.27m
+2025-05-26 16:37:19,529 - INFO - Episode 6: Target verified with 3 rays
+2025-05-26 16:37:25,827 - WARNING - Episode 6: Step 0 took 6.30s (unusually long)
+2025-05-26 16:37:44,684 - WARNING - Episode 6: Step 6 took 5.68s (unusually long)
+2025-05-26 16:37:44,706 - INFO - Episode 6: Clear path to target detected - moving directly toward goal
+2025-05-26 16:37:50,114 - WARNING - Episode 6: Step 7 took 5.43s (unusually long)
+2025-05-26 16:37:50,114 - INFO - Episode 6: Target reached at step 8
+2025-05-26 16:37:50,118 - INFO - Episode 6: Skipping landing process and resetting drone for next episode
+2025-05-26 16:37:50,119 - INFO - Episode 6 completed: success
+2025-05-26 16:37:50,119 - INFO -   Steps: 8, Duration: 30.59s
+2025-05-26 16:37:50,119 - INFO -   Final distance: 0.68m, Collisions: 0
+2025-05-26 16:37:50,120 - INFO -   Dynamic replanning events: 0
+2025-05-26 16:37:50,130 - INFO - Saved recovery data for episode 6
+2025-05-26 16:37:50,131 - INFO - Starting episode 7 of 50
+2025-05-26 16:37:50,131 - INFO - === Starting Episode 7 ===
+2025-05-26 16:37:50,133 - INFO - Episode 7: Taking off...
+2025-05-26 16:37:55,539 - INFO - Episode 7: Using pre-generated target 7 of 50
+2025-05-26 16:37:55,540 - INFO - Episode 7: Initial distance to target: 23.85m
+2025-05-26 16:37:55,540 - INFO - Episode 7: Initial position: [0.0, 0.0, -1.67]
+2025-05-26 16:37:55,540 - INFO - Episode 7: Target position: [17.72, 7.92, -15.54]
+2025-05-26 16:37:55,541 - INFO - Episode 7: Initial distance: 23.85m
+2025-05-26 16:37:55,545 - INFO - Episode 7: Target verified with 3 rays
+2025-05-26 16:38:13,430 - INFO - Episode 7: Clear path to target detected - moving directly toward goal
+2025-05-26 16:38:15,195 - INFO - Episode 7: Target reached at step 6
+2025-05-26 16:38:15,197 - INFO - Episode 7: Skipping landing process and resetting drone for next episode
+2025-05-26 16:38:15,198 - INFO - Episode 7 completed: success
+2025-05-26 16:38:15,198 - INFO -   Steps: 6, Duration: 19.66s
+2025-05-26 16:38:15,199 - INFO -   Final distance: 0.50m, Collisions: 0
+2025-05-26 16:38:15,199 - INFO -   Dynamic replanning events: 0
+2025-05-26 16:38:15,211 - INFO - Saved recovery data for episode 7
+2025-05-26 16:38:15,212 - INFO - Starting episode 8 of 50
+2025-05-26 16:38:15,212 - INFO - === Starting Episode 8 ===
+2025-05-26 16:38:15,215 - INFO - Episode 8: Taking off...
+2025-05-26 16:38:20,622 - INFO - Episode 8: Using pre-generated target 8 of 50
+2025-05-26 16:38:20,622 - INFO - Episode 8: Initial distance to target: 36.88m
+2025-05-26 16:38:20,623 - INFO - Episode 8: Initial position: [0.0, 0.0, -1.67]
+2025-05-26 16:38:20,623 - INFO - Episode 8: Target position: [-36.57, 0.57, -6.36]
+2025-05-26 16:38:20,623 - INFO - Episode 8: Initial distance: 36.88m
+2025-05-26 16:38:20,628 - INFO - Episode 8: Target verified with 3 rays
+2025-05-26 16:38:27,034 - WARNING - Episode 8: Step 0 took 6.41s (unusually long)
+2025-05-26 16:38:51,465 - WARNING - Episode 8: Step 8 took 6.31s (unusually long)
+2025-05-26 16:38:51,540 - INFO - Episode 8: Clear path to target detected - moving directly toward goal
+2025-05-26 16:38:56,721 - WARNING - Episode 8: Step 9 took 5.26s (unusually long)
+2025-05-26 16:38:56,723 - INFO - Episode 8: Target reached at step 10
+2025-05-26 16:38:56,725 - INFO - Episode 8: Skipping landing process and resetting drone for next episode
+2025-05-26 16:38:56,726 - INFO - Episode 8 completed: success
+2025-05-26 16:38:56,726 - INFO -   Steps: 10, Duration: 36.10s
+2025-05-26 16:38:56,726 - INFO -   Final distance: 0.63m, Collisions: 0
+2025-05-26 16:38:56,726 - INFO -   Dynamic replanning events: 0
+2025-05-26 16:38:56,739 - INFO - Saved recovery data for episode 8
+2025-05-26 16:38:56,740 - INFO - Starting episode 9 of 50
+2025-05-26 16:38:56,740 - INFO - === Starting Episode 9 ===
+2025-05-26 16:38:56,743 - INFO - Episode 9: Taking off...
+2025-05-26 16:39:02,150 - INFO - Episode 9: Using pre-generated target 9 of 50
+2025-05-26 16:39:02,150 - INFO - Episode 9: Initial distance to target: 61.24m
+2025-05-26 16:39:02,151 - INFO - Episode 9: Initial position: [0.0, 0.0, -1.67]
+2025-05-26 16:39:02,151 - INFO - Episode 9: Target position: [7.09, 60.37, -9.15]
+2025-05-26 16:39:02,151 - INFO - Episode 9: Initial distance: 61.24m
+2025-05-26 16:39:02,157 - INFO - Episode 9: Target verified with 3 rays
+2025-05-26 16:39:07,930 - WARNING - Episode 9: Step 0 took 5.77s (unusually long)
+2025-05-26 16:39:20,782 - WARNING - Episode 9: Step 3 took 5.60s (unusually long)
+2025-05-26 16:39:26,514 - WARNING - Episode 9: Step 4 took 5.73s (unusually long)
+2025-05-26 16:40:02,350 - INFO - Episode 9: Target reached at step 17
+2025-05-26 16:40:02,353 - INFO - Episode 9: Skipping landing process and resetting drone for next episode
+2025-05-26 16:40:02,353 - INFO - Episode 9 completed: success
+2025-05-26 16:40:02,354 - INFO -   Steps: 17, Duration: 60.20s
+2025-05-26 16:40:02,354 - INFO -   Final distance: 1.01m, Collisions: 0
+2025-05-26 16:40:02,354 - INFO -   Dynamic replanning events: 0
+2025-05-26 16:40:02,367 - INFO - Saved recovery data for episode 9
+2025-05-26 16:40:02,368 - INFO - Starting episode 10 of 50
+2025-05-26 16:40:02,368 - INFO - === Starting Episode 10 ===
+2025-05-26 16:40:02,371 - INFO - Episode 10: Taking off...
+2025-05-26 16:40:07,777 - INFO - Episode 10: Using pre-generated target 10 of 50
+2025-05-26 16:40:07,777 - INFO - Episode 10: Initial distance to target: 34.09m
+2025-05-26 16:40:07,778 - INFO - Episode 10: Initial position: [0.0, 0.0, -1.67]
+2025-05-26 16:40:07,778 - INFO - Episode 10: Target position: [32.56, -4.46, -10.71]
+2025-05-26 16:40:07,778 - INFO - Episode 10: Initial distance: 34.09m
+2025-05-26 16:40:07,782 - INFO - Episode 10: Target verified with 3 rays
+2025-05-26 16:40:32,167 - INFO - Episode 10: Target reached at step 8
+2025-05-26 16:40:32,169 - INFO - Episode 10: Skipping landing process and resetting drone for next episode
+2025-05-26 16:40:32,170 - INFO - Episode 10 completed: success
+2025-05-26 16:40:32,170 - INFO -   Steps: 8, Duration: 24.39s
+2025-05-26 16:40:32,170 - INFO -   Final distance: 1.30m, Collisions: 0
+2025-05-26 16:40:32,170 - INFO -   Dynamic replanning events: 0
+2025-05-26 16:40:32,182 - INFO - Saved recovery data for episode 10
+2025-05-26 16:40:32,183 - INFO - Starting episode 11 of 50
+2025-05-26 16:40:32,183 - INFO - === Starting Episode 11 ===
+2025-05-26 16:40:32,186 - INFO - Episode 11: Taking off...
+2025-05-26 16:40:37,598 - INFO - Episode 11: Using pre-generated target 11 of 50
+2025-05-26 16:40:37,598 - INFO - Episode 11: Initial distance to target: 48.26m
+2025-05-26 16:40:37,599 - INFO - Episode 11: Initial position: [0.0, 0.0, -1.67]
+2025-05-26 16:40:37,599 - INFO - Episode 11: Target position: [-34.42, -31.18, -14.81]
+2025-05-26 16:40:37,599 - INFO - Episode 11: Initial distance: 48.26m
+2025-05-26 16:40:37,603 - INFO - Episode 11: Target verified with 3 rays
+2025-05-26 16:40:43,843 - WARNING - Episode 11: Step 0 took 6.24s (unusually long)
+2025-05-26 16:40:54,275 - WARNING - Episode 11: Step 2 took 5.73s (unusually long)
+2025-05-26 16:41:00,066 - WARNING - Episode 11: Step 3 took 5.79s (unusually long)
+2025-05-26 16:41:05,771 - WARNING - Episode 11: Step 4 took 5.70s (unusually long)
+2025-05-26 16:41:17,519 - WARNING - Collision detected during movement, cancelling task immediately
+2025-05-26 16:41:17,521 - INFO - Episode 11: Obstacle detected during movement, triggering immediate replanning
+2025-05-26 16:41:17,539 - INFO - Adding newly detected obstacle at [-17.51, -17.48, -4.68] to planning data
+2025-05-26 16:41:17,539 - INFO - Episode 11: Putting drone in hover mode before dynamic replanning
+2025-05-26 16:41:18,041 - INFO - Episode 11: Triggering dynamic replanning due to detected obstacle
+2025-05-26 16:41:18,061 - INFO - Enhanced planning parameters for obstacle avoidance: safety_margin=4.00, waypoint_count=150, obstacle_priority=3.00
+2025-05-26 16:41:18,065 - INFO - Episode 11: Executing replanned path to avoid obstacle
+2025-05-26 16:41:18,090 - WARNING - Collision detected during movement, cancelling task immediately
+2025-05-26 16:41:18,291 - WARNING - Episode 11: Collision detected at step 9
+2025-05-26 16:41:18,294 - INFO - Using collision normal for recovery: [1.00, -0.00, 0.00]
+2025-05-26 16:41:27,020 - WARNING - Recovery movement timed out after 8.0 seconds
+2025-05-26 16:41:27,021 - INFO - Episode 11: Collision recovery successful, moved 4.06m to new position: [-13.73, -17.46, -7.22]
+2025-05-26 16:41:30,328 - WARNING - Collision detected during movement, cancelling task immediately
+2025-05-26 16:41:30,328 - INFO - Episode 11: Obstacle detected during movement, triggering immediate replanning
+2025-05-26 16:41:30,344 - INFO - Adding newly detected obstacle at [-17.51, -17.47, -4.65] to planning data
+2025-05-26 16:41:30,344 - INFO - Episode 11: Putting drone in hover mode before dynamic replanning
+2025-05-26 16:41:30,845 - INFO - Episode 11: Triggering dynamic replanning due to detected obstacle
+2025-05-26 16:41:30,861 - INFO - Enhanced planning parameters for obstacle avoidance: safety_margin=4.00, waypoint_count=150, obstacle_priority=3.00
+2025-05-26 16:41:30,866 - INFO - Episode 11: Executing replanned path to avoid obstacle
+2025-05-26 16:41:35,646 - WARNING - Episode 11: Step 9 took 17.36s (unusually long)
+2025-05-26 16:41:41,799 - WARNING - Episode 11: Step 10 took 6.15s (unusually long)
+2025-05-26 16:41:56,970 - INFO - Episode 11: Target reached at step 16
+2025-05-26 16:41:56,974 - INFO - Episode 11: Skipping landing process and resetting drone for next episode
+2025-05-26 16:41:56,975 - INFO - Episode 11 completed: success
+2025-05-26 16:41:56,975 - INFO -   Steps: 16, Duration: 37.97s
+2025-05-26 16:41:56,975 - INFO -   Final distance: 1.11m, Collisions: 1
+2025-05-26 16:41:56,975 - INFO -   Dynamic replanning events: 2
+2025-05-26 16:41:56,991 - INFO - Saved recovery data for episode 11
+2025-05-26 16:41:56,992 - INFO - Starting episode 12 of 50
+2025-05-26 16:41:56,993 - INFO - === Starting Episode 12 ===
+2025-05-26 16:41:56,994 - INFO - Episode 12: Taking off...
+2025-05-26 16:42:02,400 - INFO - Episode 12: Using pre-generated target 12 of 50
+2025-05-26 16:42:02,400 - INFO - Episode 12: Initial distance to target: 34.85m
+2025-05-26 16:42:02,401 - INFO - Episode 12: Initial position: [0.0, 0.0, -1.67]
+2025-05-26 16:42:02,401 - INFO - Episode 12: Target position: [28.82, -17.38, -10.69]
+2025-05-26 16:42:02,401 - INFO - Episode 12: Initial distance: 34.85m
+2025-05-26 16:42:02,405 - INFO - Episode 12: Target verified with 3 rays
+2025-05-26 16:42:28,138 - INFO - Episode 12: Target reached at step 8
+2025-05-26 16:42:28,142 - INFO - Episode 12: Skipping landing process and resetting drone for next episode
+2025-05-26 16:42:28,143 - INFO - Episode 12 completed: success
+2025-05-26 16:42:28,143 - INFO -   Steps: 8, Duration: 25.74s
+2025-05-26 16:42:28,143 - INFO -   Final distance: 1.44m, Collisions: 0
+2025-05-26 16:42:28,144 - INFO -   Dynamic replanning events: 0
+2025-05-26 16:42:28,159 - INFO - Saved recovery data for episode 12
+2025-05-26 16:42:28,160 - INFO - Starting episode 13 of 50
+2025-05-26 16:42:28,160 - INFO - === Starting Episode 13 ===
+2025-05-26 16:42:28,161 - INFO - Episode 13: Taking off...
+2025-05-26 16:42:33,567 - INFO - Episode 13: Using pre-generated target 13 of 50
+2025-05-26 16:42:33,567 - INFO - Episode 13: Initial distance to target: 33.72m
+2025-05-26 16:42:33,568 - INFO - Episode 13: Initial position: [0.0, 0.0, -1.67]
+2025-05-26 16:42:33,568 - INFO - Episode 13: Target position: [26.0, 16.58, -15.31]
+2025-05-26 16:42:33,568 - INFO - Episode 13: Initial distance: 33.72m
+2025-05-26 16:42:33,573 - INFO - Episode 13: Target verified with 3 rays
+2025-05-26 16:42:43,452 - WARNING - Episode 13: Step 1 took 5.32s (unusually long)
+2025-05-26 16:43:03,085 - INFO - Episode 13: Clear path to target detected - moving directly toward goal
+2025-05-26 16:43:05,861 - INFO - Episode 13: Target reached at step 9
+2025-05-26 16:43:05,864 - INFO - Episode 13: Skipping landing process and resetting drone for next episode
+2025-05-26 16:43:05,865 - INFO - Episode 13 completed: success
+2025-05-26 16:43:05,865 - INFO -   Steps: 9, Duration: 32.29s
+2025-05-26 16:43:05,865 - INFO -   Final distance: 0.59m, Collisions: 0
+2025-05-26 16:43:05,865 - INFO -   Dynamic replanning events: 0
+2025-05-26 16:43:05,883 - INFO - Saved recovery data for episode 13
+2025-05-26 16:43:05,884 - INFO - Starting episode 14 of 50
+2025-05-26 16:43:05,884 - INFO - === Starting Episode 14 ===
+2025-05-26 16:43:05,887 - INFO - Episode 14: Taking off...
+2025-05-26 16:43:11,293 - INFO - Episode 14: Using pre-generated target 14 of 50
+2025-05-26 16:43:11,293 - INFO - Episode 14: Initial distance to target: 48.27m
+2025-05-26 16:43:11,294 - INFO - Episode 14: Initial position: [0.0, 0.0, -1.67]
+2025-05-26 16:43:11,294 - INFO - Episode 14: Target position: [46.2, -10.05, -11.42]
+2025-05-26 16:43:11,294 - INFO - Episode 14: Initial distance: 48.27m
+2025-05-26 16:43:11,299 - INFO - Episode 14: Target verified with 3 rays
+2025-05-26 16:43:49,794 - INFO - Episode 14: Target reached at step 12
+2025-05-26 16:43:49,797 - INFO - Episode 14: Skipping landing process and resetting drone for next episode
+2025-05-26 16:43:49,798 - INFO - Episode 14 completed: success
+2025-05-26 16:43:49,798 - INFO -   Steps: 12, Duration: 38.50s
+2025-05-26 16:43:49,799 - INFO -   Final distance: 1.41m, Collisions: 0
+2025-05-26 16:43:49,799 - INFO -   Dynamic replanning events: 0
+2025-05-26 16:43:49,817 - INFO - Saved recovery data for episode 14
+2025-05-26 16:43:49,817 - INFO - Starting episode 15 of 50
+2025-05-26 16:43:49,818 - INFO - === Starting Episode 15 ===
+2025-05-26 16:43:49,820 - INFO - Episode 15: Taking off...
+2025-05-26 16:43:55,225 - INFO - Episode 15: Using pre-generated target 15 of 50
+2025-05-26 16:43:55,225 - INFO - Episode 15: Initial distance to target: 66.04m
+2025-05-26 16:43:55,226 - INFO - Episode 15: Initial position: [0.0, 0.0, -1.67]
+2025-05-26 16:43:55,226 - INFO - Episode 15: Target position: [64.28, -9.5, -13.45]
+2025-05-26 16:43:55,227 - INFO - Episode 15: Initial distance: 66.04m
+2025-05-26 16:43:55,229 - INFO - Episode 15: Target verified with 3 rays
+2025-05-26 16:44:18,737 - WARNING - Episode 15: Step 5 took 5.63s (unusually long)
+2025-05-26 16:44:39,702 - WARNING - Episode 15: Step 10 took 5.23s (unusually long)
+2025-05-26 16:44:59,267 - INFO - Episode 15: Clear path to target detected - moving directly toward goal
+2025-05-26 16:45:04,281 - WARNING - Movement taking too long, cancelling and replanning
+2025-05-26 16:45:04,281 - INFO - Episode 15: Obstacle detected during movement, triggering immediate replanning
+2025-05-26 16:45:04,291 - INFO - Adding newly detected obstacle at [64.1, -9.46, -13.22] to planning data
+2025-05-26 16:45:04,291 - INFO - Episode 15: Putting drone in hover mode before dynamic replanning
+2025-05-26 16:45:04,793 - INFO - Episode 15: Triggering dynamic replanning due to detected obstacle
+2025-05-26 16:45:04,800 - INFO - Enhanced planning parameters for obstacle avoidance: safety_margin=4.00, waypoint_count=150, obstacle_priority=3.00
+2025-05-26 16:45:04,805 - INFO - Episode 15: Executing replanned path to avoid obstacle
+2025-05-26 16:45:07,493 - WARNING - Episode 15: Step 17 took 8.24s (unusually long)
+2025-05-26 16:45:07,495 - INFO - Episode 15: Target reached at step 18
+2025-05-26 16:45:07,497 - INFO - Episode 15: Skipping landing process and resetting drone for next episode
+2025-05-26 16:45:07,497 - INFO - Episode 15 completed: success
+2025-05-26 16:45:07,497 - INFO -   Steps: 18, Duration: 72.27s
+2025-05-26 16:45:07,497 - INFO -   Final distance: 1.21m, Collisions: 0
+2025-05-26 16:45:07,498 - INFO -   Dynamic replanning events: 1
+2025-05-26 16:45:07,514 - INFO - Saved recovery data for episode 15
+2025-05-26 16:45:07,515 - INFO - Starting episode 16 of 50
+2025-05-26 16:45:07,515 - INFO - === Starting Episode 16 ===
+2025-05-26 16:45:07,516 - INFO - Episode 16: Taking off...
+2025-05-26 16:45:12,921 - INFO - Episode 16: Using pre-generated target 16 of 50
+2025-05-26 16:45:12,921 - INFO - Episode 16: Initial distance to target: 48.95m
+2025-05-26 16:45:12,922 - INFO - Episode 16: Initial position: [0.0, 0.0, -1.67]
+2025-05-26 16:45:12,922 - INFO - Episode 16: Target position: [-40.0, -22.24, -19.04]
+2025-05-26 16:45:12,922 - INFO - Episode 16: Initial distance: 48.95m
+2025-05-26 16:45:12,926 - INFO - Episode 16: Target verified with 3 rays
+2025-05-26 16:45:19,417 - WARNING - Episode 16: Step 0 took 6.49s (unusually long)
+2025-05-26 16:45:25,066 - WARNING - Episode 16: Step 1 took 5.65s (unusually long)
+2025-05-26 16:45:30,590 - WARNING - Episode 16: Step 2 took 5.52s (unusually long)
+2025-05-26 16:45:36,326 - WARNING - Episode 16: Step 3 took 5.74s (unusually long)
+2025-05-26 16:45:41,973 - WARNING - Episode 16: Step 4 took 5.65s (unusually long)
+2025-05-26 16:45:47,702 - WARNING - Episode 16: Step 5 took 5.73s (unusually long)
+2025-05-26 16:45:52,747 - WARNING - Episode 16: Step 6 took 5.04s (unusually long)
+2025-05-26 16:46:15,578 - WARNING - Episode 16: Step 13 took 6.64s (unusually long)
+2025-05-26 16:46:15,579 - INFO - Episode 16: Target reached at step 14
+2025-05-26 16:46:15,582 - INFO - Episode 16: Skipping landing process and resetting drone for next episode
+2025-05-26 16:46:15,582 - INFO - Episode 16 completed: success
+2025-05-26 16:46:15,583 - INFO -   Steps: 14, Duration: 62.66s
+2025-05-26 16:46:15,583 - INFO -   Final distance: 1.33m, Collisions: 0
+2025-05-26 16:46:15,583 - INFO -   Dynamic replanning events: 0
+2025-05-26 16:46:15,600 - INFO - Saved recovery data for episode 16
+2025-05-26 16:46:15,601 - INFO - Starting episode 17 of 50
+2025-05-26 16:46:15,601 - INFO - === Starting Episode 17 ===
+2025-05-26 16:46:15,602 - INFO - Episode 17: Taking off...
+2025-05-26 16:46:21,009 - INFO - Episode 17: Using pre-generated target 17 of 50
+2025-05-26 16:46:21,009 - INFO - Episode 17: Initial distance to target: 91.84m
+2025-05-26 16:46:21,010 - INFO - Episode 17: Initial position: [0.0, 0.0, -1.67]
+2025-05-26 16:46:21,010 - INFO - Episode 17: Target position: [14.83, 90.63, -2.41]
+2025-05-26 16:46:21,010 - INFO - Episode 17: Initial distance: 91.84m
+2025-05-26 16:46:21,014 - INFO - Episode 17: Target verified with 3 rays
+2025-05-26 16:46:26,678 - WARNING - Episode 17: Step 0 took 5.66s (unusually long)
+2025-05-26 16:46:58,474 - WARNING - Episode 17: Step 11 took 5.36s (unusually long)
+2025-05-26 16:47:04,272 - WARNING - Episode 17: Step 12 took 5.80s (unusually long)
+2025-05-26 16:47:09,932 - WARNING - Episode 17: Step 13 took 5.66s (unusually long)
+2025-05-26 16:47:12,256 - WARNING - Collision detected during movement, cancelling task immediately
+2025-05-26 16:47:12,257 - INFO - Episode 17: Obstacle detected during movement, triggering immediate replanning
+2025-05-26 16:47:12,280 - INFO - Adding newly detected obstacle at [5.43, 51.75, -3.14] to planning data
+2025-05-26 16:47:12,280 - INFO - Episode 17: Putting drone in hover mode before dynamic replanning
+2025-05-26 16:47:12,782 - INFO - Episode 17: Triggering dynamic replanning due to detected obstacle
+2025-05-26 16:47:12,810 - INFO - Enhanced planning parameters for obstacle avoidance: safety_margin=4.00, waypoint_count=150, obstacle_priority=3.00
+2025-05-26 16:47:12,813 - INFO - Episode 17: Executing replanned path to avoid obstacle
+2025-05-26 16:47:12,835 - WARNING - Collision detected during movement, cancelling task immediately
+2025-05-26 16:47:13,038 - WARNING - Episode 17: Collision detected at step 15
+2025-05-26 16:47:13,039 - INFO - Using collision normal for recovery: [0.50, -0.87, 0.00]
+2025-05-26 16:47:21,765 - WARNING - Recovery movement timed out after 8.0 seconds
+2025-05-26 16:47:21,766 - INFO - Episode 17: Collision recovery successful, moved 4.07m to new position: [7.07, 48.42, -5.64]
+2025-05-26 16:47:25,265 - WARNING - Collision detected during movement, cancelling task immediately
+2025-05-26 16:47:25,267 - INFO - Episode 17: Obstacle detected during movement, triggering immediate replanning
+2025-05-26 16:47:25,282 - INFO - Adding newly detected obstacle at [5.43, 51.75, -3.1] to planning data
+2025-05-26 16:47:25,283 - INFO - Episode 17: Putting drone in hover mode before dynamic replanning
+2025-05-26 16:47:25,784 - INFO - Episode 17: Triggering dynamic replanning due to detected obstacle
+2025-05-26 16:47:25,800 - INFO - Enhanced planning parameters for obstacle avoidance: safety_margin=4.00, waypoint_count=150, obstacle_priority=3.00
+2025-05-26 16:47:25,803 - INFO - Episode 17: Executing replanned path to avoid obstacle
+2025-05-26 16:47:30,437 - WARNING - Episode 17: Step 15 took 17.40s (unusually long)
+2025-05-26 16:47:36,017 - WARNING - Episode 17: Step 16 took 5.58s (unusually long)
+2025-05-26 16:47:36,019 - WARNING - Episode 17: Collision detected at step 17
+2025-05-26 16:47:36,020 - INFO - Using collision normal for recovery: [-0.00, -1.00, 0.00]
+2025-05-26 16:47:44,745 - WARNING - Recovery movement timed out after 8.0 seconds
+2025-05-26 16:47:44,747 - INFO - Episode 17: Collision recovery successful, moved 4.11m to new position: [5.49, 47.94, -10.27]
+2025-05-26 16:47:50,983 - WARNING - Episode 17: Step 17 took 14.97s (unusually long)
+2025-05-26 16:47:52,929 - WARNING - Collision detected during movement, cancelling task immediately
+2025-05-26 16:47:52,930 - INFO - Episode 17: Obstacle detected during movement, triggering immediate replanning
+2025-05-26 16:47:52,942 - INFO - Adding newly detected obstacle at [5.33, 51.91, -10.73] to planning data
+2025-05-26 16:47:52,942 - INFO - Episode 17: Putting drone in hover mode before dynamic replanning
+2025-05-26 16:47:53,443 - INFO - Episode 17: Triggering dynamic replanning due to detected obstacle
+2025-05-26 16:47:53,458 - INFO - Enhanced planning parameters for obstacle avoidance: safety_margin=4.00, waypoint_count=150, obstacle_priority=3.00
+2025-05-26 16:47:53,463 - INFO - Episode 17: Executing replanned path to avoid obstacle
+2025-05-26 16:47:53,476 - WARNING - Collision detected during movement, cancelling task immediately
+2025-05-26 16:47:53,678 - WARNING - Episode 17: Collision detected at step 19
+2025-05-26 16:47:53,680 - INFO - Using collision normal for recovery: [-0.56, 0.83, 0.00]
+2025-05-26 16:48:02,406 - WARNING - Recovery movement timed out after 8.0 seconds
+2025-05-26 16:48:02,407 - INFO - Episode 17: Collision recovery successful, moved 4.06m to new position: [3.41, 55.04, -13.22]
+2025-05-26 16:48:05,829 - WARNING - Collision detected during movement, cancelling task immediately
+2025-05-26 16:48:05,831 - INFO - Episode 17: Obstacle detected during movement, triggering immediate replanning
+2025-05-26 16:48:05,838 - INFO - Adding newly detected obstacle at [5.34, 51.9, -10.68] to planning data
+2025-05-26 16:48:05,838 - INFO - Episode 17: Putting drone in hover mode before dynamic replanning
+2025-05-26 16:48:06,340 - INFO - Episode 17: Triggering dynamic replanning due to detected obstacle
+2025-05-26 16:48:06,349 - INFO - Enhanced planning parameters for obstacle avoidance: safety_margin=4.00, waypoint_count=150, obstacle_priority=3.00
+2025-05-26 16:48:06,354 - INFO - Episode 17: Executing replanned path to avoid obstacle
+2025-05-26 16:48:11,038 - WARNING - Episode 17: Step 19 took 17.36s (unusually long)
+2025-05-26 16:48:21,543 - WARNING - Episode 17: Step 21 took 5.75s (unusually long)
+2025-05-26 16:48:50,237 - INFO - Episode 17: Clear path to target detected - moving directly toward goal
+2025-05-26 16:49:10,955 - WARNING - Episode 17: Step 31 took 20.74s (unusually long)
+2025-05-26 16:49:10,956 - INFO - Episode 17: Target reached at step 32
+2025-05-26 16:49:10,958 - INFO - Episode 17: Skipping landing process and resetting drone for next episode
+2025-05-26 16:49:10,958 - INFO - Episode 17 completed: success
+2025-05-26 16:49:10,959 - INFO -   Steps: 32, Duration: 76.57s
+2025-05-26 16:49:10,959 - INFO -   Final distance: 0.31m, Collisions: 3
+2025-05-26 16:49:10,959 - INFO -   Dynamic replanning events: 4
+2025-05-26 16:49:10,980 - INFO - Saved recovery data for episode 17
+2025-05-26 16:49:10,981 - INFO - Starting episode 18 of 50
+2025-05-26 16:49:10,981 - INFO - === Starting Episode 18 ===
+2025-05-26 16:49:10,984 - INFO - Episode 18: Taking off...
+2025-05-26 16:49:16,388 - INFO - Episode 18: Using pre-generated target 18 of 50
+2025-05-26 16:49:16,388 - INFO - Episode 18: Initial distance to target: 71.37m
+2025-05-26 16:49:16,389 - INFO - Episode 18: Initial position: [0.0, 0.0, -1.67]
+2025-05-26 16:49:16,389 - INFO - Episode 18: Target position: [-68.38, 14.29, -16.26]
+2025-05-26 16:49:16,389 - INFO - Episode 18: Initial distance: 71.37m
+2025-05-26 16:49:16,392 - INFO - Episode 18: Target verified with 3 rays
+2025-05-26 16:49:22,755 - WARNING - Episode 18: Step 0 took 6.36s (unusually long)
+2025-05-26 16:49:51,071 - WARNING - Episode 18: Step 8 took 5.50s (unusually long)
+2025-05-26 16:49:56,674 - WARNING - Episode 18: Step 9 took 5.60s (unusually long)
+2025-05-26 16:50:02,386 - WARNING - Episode 18: Step 10 took 5.71s (unusually long)
+2025-05-26 16:50:03,747 - WARNING - Collision detected during movement, cancelling task immediately
+2025-05-26 16:50:03,748 - INFO - Episode 18: Obstacle detected during movement, triggering immediate replanning
+2025-05-26 16:50:03,769 - INFO - Adding newly detected obstacle at [-36.77, 7.89, -4.57] to planning data
+2025-05-26 16:50:03,770 - INFO - Episode 18: Putting drone in hover mode before dynamic replanning
+2025-05-26 16:50:04,271 - INFO - Episode 18: Triggering dynamic replanning due to detected obstacle
+2025-05-26 16:50:04,293 - INFO - Enhanced planning parameters for obstacle avoidance: safety_margin=4.00, waypoint_count=150, obstacle_priority=3.00
+2025-05-26 16:50:04,297 - INFO - Episode 18: Executing replanned path to avoid obstacle
+2025-05-26 16:50:04,314 - WARNING - Collision detected during movement, cancelling task immediately
+2025-05-26 16:50:04,516 - WARNING - Episode 18: Collision detected at step 12
+2025-05-26 16:50:04,519 - INFO - Using collision normal for recovery: [-0.18, -0.98, 0.00]
+2025-05-26 16:50:13,245 - WARNING - Recovery movement timed out after 8.0 seconds
+2025-05-26 16:50:13,246 - INFO - Episode 18: Collision recovery successful, moved 4.10m to new position: [-37.5, 4.12, -7.06]
+2025-05-26 16:50:16,516 - WARNING - Collision detected during movement, cancelling task immediately
+2025-05-26 16:50:16,517 - INFO - Episode 18: Obstacle detected during movement, triggering immediate replanning
+2025-05-26 16:50:16,535 - INFO - Adding newly detected obstacle at [-36.76, 7.9, -4.52] to planning data
+2025-05-26 16:50:16,535 - INFO - Episode 18: Putting drone in hover mode before dynamic replanning
+2025-05-26 16:50:17,036 - INFO - Episode 18: Triggering dynamic replanning due to detected obstacle
+2025-05-26 16:50:17,051 - INFO - Enhanced planning parameters for obstacle avoidance: safety_margin=4.00, waypoint_count=150, obstacle_priority=3.00
+2025-05-26 16:50:17,054 - INFO - Episode 18: Executing replanned path to avoid obstacle
+2025-05-26 16:50:21,816 - WARNING - Episode 18: Step 12 took 17.30s (unusually long)
+2025-05-26 16:50:28,089 - WARNING - Episode 18: Step 13 took 6.27s (unusually long)
+2025-05-26 16:50:37,591 - WARNING - Collision detected during movement, cancelling task immediately
+2025-05-26 16:50:37,592 - INFO - Episode 18: Obstacle detected during movement, triggering immediate replanning
+2025-05-26 16:50:37,605 - INFO - Adding newly detected obstacle at [-52.83, 8.49, -11.08] to planning data
+2025-05-26 16:50:37,605 - INFO - Episode 18: Putting drone in hover mode before dynamic replanning
+2025-05-26 16:50:38,107 - INFO - Episode 18: Triggering dynamic replanning due to detected obstacle
+2025-05-26 16:50:38,119 - INFO - Enhanced planning parameters for obstacle avoidance: safety_margin=4.00, waypoint_count=150, obstacle_priority=3.00
+2025-05-26 16:50:38,123 - INFO - Episode 18: Executing replanned path to avoid obstacle
+2025-05-26 16:50:38,137 - WARNING - Collision detected during movement, cancelling task immediately
+2025-05-26 16:50:50,165 - WARNING - Episode 18: Step 20 took 6.57s (unusually long)
+2025-05-26 16:50:50,165 - INFO - Episode 18: Target reached at step 21
+2025-05-26 16:50:50,167 - INFO - Episode 18: Skipping landing process and resetting drone for next episode
+2025-05-26 16:50:50,167 - INFO - Episode 18 completed: success
+2025-05-26 16:50:50,168 - INFO -   Steps: 21, Duration: 44.94s
+2025-05-26 16:50:50,168 - INFO -   Final distance: 1.48m, Collisions: 1
+2025-05-26 16:50:50,168 - INFO -   Dynamic replanning events: 3
+2025-05-26 16:50:50,188 - INFO - Saved recovery data for episode 18
+2025-05-26 16:50:50,189 - INFO - Starting episode 19 of 50
+2025-05-26 16:50:50,190 - INFO - === Starting Episode 19 ===
+2025-05-26 16:50:50,191 - INFO - Episode 19: Taking off...
+2025-05-26 16:50:55,594 - INFO - Episode 19: Using pre-generated target 19 of 50
+2025-05-26 16:50:55,594 - INFO - Episode 19: Initial distance to target: 76.82m
+2025-05-26 16:50:55,594 - INFO - Episode 19: Initial position: [0.0, 0.0, -1.67]
+2025-05-26 16:50:55,594 - INFO - Episode 19: Target position: [-76.53, 2.65, -7.77]
+2025-05-26 16:50:55,595 - INFO - Episode 19: Initial distance: 76.82m
+2025-05-26 16:50:55,601 - INFO - Episode 19: Target verified with 3 rays
+2025-05-26 16:51:01,988 - WARNING - Episode 19: Step 0 took 6.39s (unusually long)
+2025-05-26 16:51:31,985 - WARNING - Episode 19: Step 9 took 5.59s (unusually long)
+2025-05-26 16:51:43,422 - WARNING - Episode 19: Step 12 took 5.96s (unusually long)
+2025-05-26 16:51:48,882 - WARNING - Episode 19: Step 13 took 5.46s (unusually long)
+2025-05-26 16:52:09,043 - INFO - Episode 19: Target reached at step 21
+2025-05-26 16:52:09,046 - INFO - Episode 19: Skipping landing process and resetting drone for next episode
+2025-05-26 16:52:09,046 - INFO - Episode 19 completed: success
+2025-05-26 16:52:09,047 - INFO -   Steps: 21, Duration: 73.45s
+2025-05-26 16:52:09,047 - INFO -   Final distance: 1.35m, Collisions: 0
+2025-05-26 16:52:09,047 - INFO -   Dynamic replanning events: 0
+2025-05-26 16:52:09,074 - INFO - Saved recovery data for episode 19
+2025-05-26 16:52:09,076 - INFO - Starting episode 20 of 50
+2025-05-26 16:52:09,076 - INFO - === Starting Episode 20 ===
+2025-05-26 16:52:09,079 - INFO - Episode 20: Taking off...
+2025-05-26 16:52:14,483 - INFO - Episode 20: Using pre-generated target 20 of 50
+2025-05-26 16:52:14,483 - INFO - Episode 20: Initial distance to target: 52.25m
+2025-05-26 16:52:14,484 - INFO - Episode 20: Initial position: [0.0, 0.0, -1.67]
+2025-05-26 16:52:14,484 - INFO - Episode 20: Target position: [-50.13, 11.29, -11.14]
+2025-05-26 16:52:14,484 - INFO - Episode 20: Initial distance: 52.25m
+2025-05-26 16:52:14,489 - INFO - Episode 20: Target verified with 3 rays
+2025-05-26 16:52:20,729 - WARNING - Episode 20: Step 0 took 6.24s (unusually long)
+2025-05-26 16:52:29,201 - WARNING - Episode 20: Step 2 took 5.52s (unusually long)
+2025-05-26 16:52:34,763 - WARNING - Episode 20: Step 3 took 5.56s (unusually long)
+2025-05-26 16:52:40,516 - WARNING - Episode 20: Step 4 took 5.75s (unusually long)
+2025-05-26 16:52:51,373 - WARNING - Episode 20: Step 7 took 5.37s (unusually long)
+2025-05-26 16:53:13,682 - WARNING - Episode 20: Step 14 took 6.36s (unusually long)
+2025-05-26 16:53:13,705 - INFO - Episode 20: Clear path to target detected - moving directly toward goal
+2025-05-26 16:53:19,111 - WARNING - Episode 20: Step 15 took 5.43s (unusually long)
+2025-05-26 16:53:19,112 - INFO - Episode 20: Target reached at step 16
+2025-05-26 16:53:19,114 - INFO - Episode 20: Skipping landing process and resetting drone for next episode
+2025-05-26 16:53:19,115 - INFO - Episode 20 completed: success
+2025-05-26 16:53:19,115 - INFO -   Steps: 16, Duration: 64.63s
+2025-05-26 16:53:19,115 - INFO -   Final distance: 0.67m, Collisions: 0
+2025-05-26 16:53:19,115 - INFO -   Dynamic replanning events: 0
+2025-05-26 16:53:19,142 - INFO - Saved recovery data for episode 20
+2025-05-26 16:53:19,143 - INFO - Starting episode 21 of 50
+2025-05-26 16:53:19,143 - INFO - === Starting Episode 21 ===
+2025-05-26 16:53:19,145 - INFO - Episode 21: Taking off...
+2025-05-26 16:53:24,551 - INFO - Episode 21: Using pre-generated target 21 of 50
+2025-05-26 16:53:24,551 - INFO - Episode 21: Initial distance to target: 29.88m
+2025-05-26 16:53:24,552 - INFO - Episode 21: Initial position: [0.0, 0.0, -1.67]
+2025-05-26 16:53:24,552 - INFO - Episode 21: Target position: [25.29, 15.4, -5.65]
+2025-05-26 16:53:24,552 - INFO - Episode 21: Initial distance: 29.88m
+2025-05-26 16:53:24,557 - INFO - Episode 21: Target verified with 3 rays
+2025-05-26 16:53:46,735 - INFO - Episode 21: Target reached at step 7
+2025-05-26 16:53:46,738 - INFO - Episode 21: Skipping landing process and resetting drone for next episode
+2025-05-26 16:53:46,739 - INFO - Episode 21 completed: success
+2025-05-26 16:53:46,739 - INFO -   Steps: 7, Duration: 22.18s
+2025-05-26 16:53:46,739 - INFO -   Final distance: 1.21m, Collisions: 0
+2025-05-26 16:53:46,739 - INFO -   Dynamic replanning events: 0
+2025-05-26 16:53:46,760 - INFO - Saved recovery data for episode 21
+2025-05-26 16:53:46,761 - INFO - Starting episode 22 of 50
+2025-05-26 16:53:46,761 - INFO - === Starting Episode 22 ===
+2025-05-26 16:53:46,766 - INFO - Episode 22: Taking off...
+2025-05-26 16:53:52,172 - INFO - Episode 22: Using pre-generated target 22 of 50
+2025-05-26 16:53:52,173 - INFO - Episode 22: Initial distance to target: 79.20m
+2025-05-26 16:53:52,174 - INFO - Episode 22: Initial position: [0.0, 0.0, -1.67]
+2025-05-26 16:53:52,174 - INFO - Episode 22: Target position: [77.37, 8.22, -16.47]
+2025-05-26 16:53:52,174 - INFO - Episode 22: Initial distance: 79.20m
+2025-05-26 16:53:52,179 - INFO - Episode 22: Target verified with 3 rays
+2025-05-26 16:54:24,629 - WARNING - Episode 22: Step 9 took 5.51s (unusually long)
+2025-05-26 16:54:30,274 - WARNING - Episode 22: Step 10 took 5.64s (unusually long)
+2025-05-26 16:54:35,418 - WARNING - Episode 22: Step 11 took 5.14s (unusually long)
+2025-05-26 16:54:40,657 - WARNING - Episode 22: Step 12 took 5.24s (unusually long)
+2025-05-26 16:54:46,303 - WARNING - Episode 22: Step 13 took 5.65s (unusually long)
+2025-05-26 16:54:52,090 - WARNING - Episode 22: Step 14 took 5.79s (unusually long)
+2025-05-26 16:54:57,331 - WARNING - Episode 22: Step 15 took 5.24s (unusually long)
+2025-05-26 16:55:16,820 - WARNING - Episode 22: Step 21 took 6.01s (unusually long)
+2025-05-26 16:55:16,832 - INFO - Episode 22: Clear path to target detected - moving directly toward goal
+2025-05-26 16:55:21,916 - WARNING - Episode 22: Step 22 took 5.10s (unusually long)
+2025-05-26 16:55:21,917 - INFO - Episode 22: Target reached at step 23
+2025-05-26 16:55:21,919 - INFO - Episode 22: Skipping landing process and resetting drone for next episode
+2025-05-26 16:55:21,919 - INFO - Episode 22 completed: success
+2025-05-26 16:55:21,920 - INFO -   Steps: 23, Duration: 89.74s
+2025-05-26 16:55:21,920 - INFO -   Final distance: 0.51m, Collisions: 0
+2025-05-26 16:55:21,920 - INFO -   Dynamic replanning events: 0
+2025-05-26 16:55:21,950 - INFO - Saved recovery data for episode 22
+2025-05-26 16:55:21,950 - INFO - Starting episode 23 of 50
+2025-05-26 16:55:21,951 - INFO - === Starting Episode 23 ===
+2025-05-26 16:55:21,952 - INFO - Episode 23: Taking off...
+2025-05-26 16:55:27,358 - INFO - Episode 23: Using pre-generated target 23 of 50
+2025-05-26 16:55:27,358 - INFO - Episode 23: Initial distance to target: 46.49m
+2025-05-26 16:55:27,359 - INFO - Episode 23: Initial position: [0.0, 0.0, -1.67]
+2025-05-26 16:55:27,359 - INFO - Episode 23: Target position: [-44.22, -8.07, -13.51]
+2025-05-26 16:55:27,359 - INFO - Episode 23: Initial distance: 46.49m
+2025-05-26 16:55:27,364 - INFO - Episode 23: Target verified with 3 rays
+2025-05-26 16:55:33,407 - WARNING - Episode 23: Step 0 took 6.04s (unusually long)
+2025-05-26 16:55:45,621 - WARNING - Collision detected during movement, cancelling task immediately
+2025-05-26 16:55:45,622 - INFO - Episode 23: Obstacle detected during movement, triggering immediate replanning
+2025-05-26 16:55:45,641 - INFO - Adding newly detected obstacle at [-15.82, -12.09, -2.9] to planning data
+2025-05-26 16:55:45,641 - INFO - Episode 23: Putting drone in hover mode before dynamic replanning
+2025-05-26 16:55:46,142 - INFO - Episode 23: Triggering dynamic replanning due to detected obstacle
+2025-05-26 16:55:46,164 - INFO - Enhanced planning parameters for obstacle avoidance: safety_margin=4.00, waypoint_count=150, obstacle_priority=3.00
+2025-05-26 16:55:46,169 - INFO - Episode 23: Executing replanned path to avoid obstacle
+2025-05-26 16:55:46,191 - WARNING - Collision detected during movement, cancelling task immediately
+2025-05-26 16:55:46,396 - WARNING - Episode 23: Collision detected at step 6
+2025-05-26 16:55:46,397 - INFO - Using collision normal for recovery: [0.71, -0.71, 0.00]
+2025-05-26 16:55:55,121 - WARNING - Recovery movement timed out after 8.0 seconds
+2025-05-26 16:55:55,123 - INFO - Episode 23: Collision recovery successful, moved 4.05m to new position: [-13.31, -14.76, -5.4]
+2025-05-26 16:55:57,407 - WARNING - Collision detected during movement, cancelling task immediately
+2025-05-26 16:55:57,408 - INFO - Episode 23: Obstacle detected during movement, triggering immediate replanning
+2025-05-26 16:55:57,425 - INFO - Adding newly detected obstacle at [-15.82, -12.26, -3.05] to planning data
+2025-05-26 16:55:57,425 - INFO - Episode 23: Putting drone in hover mode before dynamic replanning
+2025-05-26 16:55:57,926 - INFO - Episode 23: Triggering dynamic replanning due to detected obstacle
+2025-05-26 16:55:57,942 - INFO - Enhanced planning parameters for obstacle avoidance: safety_margin=4.00, waypoint_count=150, obstacle_priority=3.00
+2025-05-26 16:55:57,946 - INFO - Episode 23: Executing replanned path to avoid obstacle
+2025-05-26 16:56:02,702 - WARNING - Episode 23: Step 6 took 16.31s (unusually long)
+2025-05-26 16:56:09,050 - WARNING - Episode 23: Step 7 took 6.35s (unusually long)

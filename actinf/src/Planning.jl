@@ -54,10 +54,9 @@ function PreferenceModel(;
     distance_weight = 2.0,         # Increased from 1.0 to emphasize distance more
     distance_scaling = 0.05,       # Reduced from 0.1 to make distance preference decay more gradually
     angle_weight = 0.5,           # Reduced from 0.8 to prioritize distance over angle
-    angle_sharpness = 3.0,        # Reduced from 5.0 for smoother angle preferences
-    suitability_weight = 1.0,      # Reduced from 1.5 to prioritize distance
+    angle_sharpness = 3.0,        # Reduced from 5.0 for smoother angle preferences    suitability_weight = 1.0,      # Reduced from 1.5 to prioritize distance
     suitability_threshold = 0.55,
-    max_distance = 50.0
+    max_distance = 125.0
 )
     return PreferenceModel(
         distance_weight,

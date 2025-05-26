@@ -1,30 +1,38 @@
-  Activating project at `c:\Users\Satya\Autonomous-Drone-Navigation-in-AirSim-With-Active-Inference`
+  Activating project at `c:\Users\harshil_airsim_1\Desktop\AirSim\Hierarchical-Active-Inference-for-Autonomous-Drone-Navigation-in-Microsoft-AirSim`
+┌ Error: curl_easy_setopt: 4
+└ @ Downloads.Curl C:\Users\harshil_airsim_1\.julia\juliaup\julia-1.11.5+0.x64.w64.mingw32\share\julia\stdlib\v1.11\Downloads\src\Curl\utils.jl:50
    Resolving package versions...
-  No Changes to `C:\Users\Satya\Autonomous-Drone-Navigation-in-AirSim-With-Active-Inference\Project.toml`
-  No Changes to `C:\Users\Satya\Autonomous-Drone-Navigation-in-AirSim-With-Active-Inference\Manifest.toml`
+  No Changes to `C:\Users\harshil_airsim_1\Desktop\AirSim\Hierarchical-Active-Inference-for-Autonomous-Drone-Navigation-in-Microsoft-AirSim\Project.toml`
+  No Changes to `C:\Users\harshil_airsim_1\Desktop\AirSim\Hierarchical-Active-Inference-for-Autonomous-Drone-Navigation-in-Microsoft-AirSim\Manifest.toml`
+Precompiling project...
+   1568.1 ms  ✓ actinf
+  1 dependency successfully precompiled in 4 seconds. 282 already precompiled.
    Resolving package versions...
-  No Changes to `C:\Users\Satya\Autonomous-Drone-Navigation-in-AirSim-With-Active-Inference\Project.toml`
-  No Changes to `C:\Users\Satya\Autonomous-Drone-Navigation-in-AirSim-With-Active-Inference\Manifest.toml`
+  No Changes to `C:\Users\harshil_airsim_1\Desktop\AirSim\Hierarchical-Active-Inference-for-Autonomous-Drone-Navigation-in-Microsoft-AirSim\Project.toml`
+  No Changes to `C:\Users\harshil_airsim_1\Desktop\AirSim\Hierarchical-Active-Inference-for-Autonomous-Drone-Navigation-in-Microsoft-AirSim\Manifest.toml`
    Resolving package versions...
-  No Changes to `C:\Users\Satya\Autonomous-Drone-Navigation-in-AirSim-With-Active-Inference\Project.toml`
-  No Changes to `C:\Users\Satya\Autonomous-Drone-Navigation-in-AirSim-With-Active-Inference\Manifest.toml`
+  No Changes to `C:\Users\harshil_airsim_1\Desktop\AirSim\Hierarchical-Active-Inference-for-Autonomous-Drone-Navigation-in-Microsoft-AirSim\Project.toml`
+  No Changes to `C:\Users\harshil_airsim_1\Desktop\AirSim\Hierarchical-Active-Inference-for-Autonomous-Drone-Navigation-in-Microsoft-AirSim\Manifest.toml`
    Resolving package versions...
-  No Changes to `C:\Users\Satya\Autonomous-Drone-Navigation-in-AirSim-With-Active-Inference\Project.toml`
-  No Changes to `C:\Users\Satya\Autonomous-Drone-Navigation-in-AirSim-With-Active-Inference\Manifest.toml`
+  No Changes to `C:\Users\harshil_airsim_1\Desktop\AirSim\Hierarchical-Active-Inference-for-Autonomous-Drone-Navigation-in-Microsoft-AirSim\Project.toml`
+  No Changes to `C:\Users\harshil_airsim_1\Desktop\AirSim\Hierarchical-Active-Inference-for-Autonomous-Drone-Navigation-in-Microsoft-AirSim\Manifest.toml`
 ┌ Warning: Assignment to `all_packages_loaded` in soft scope is ambiguous because a global variable by the same name exists: `all_packages_loaded` will be treated as a new local. Disambiguate by using `local all_packages_loaded` to suppress this warning or `global all_packages_loaded` to assign to the existing global variable.
-└ @ c:\Users\Satya\Autonomous-Drone-Navigation-in-AirSim-With-Active-Inference\precompile.jl:132
+└ @ c:\Users\harshil_airsim_1\Desktop\AirSim\Hierarchical-Active-Inference-for-Autonomous-Drone-Navigation-in-Microsoft-AirSim\precompile.jl:132
 ┌ Warning: Assignment to `actinf_loaded` in soft scope is ambiguous because a global variable by the same name exists: `actinf_loaded` will be treated as a new local. Disambiguate by using `local actinf_loaded` to suppress this warning or `global actinf_loaded` to assign to the existing global variable.
-└ @ c:\Users\Satya\Autonomous-Drone-Navigation-in-AirSim-With-Active-Inference\precompile.jl:161
+└ @ c:\Users\harshil_airsim_1\Desktop\AirSim\Hierarchical-Active-Inference-for-Autonomous-Drone-Navigation-in-Microsoft-AirSim\precompile.jl:161
    Resolving package versions...
-  No Changes to `C:\Users\Satya\Autonomous-Drone-Navigation-in-AirSim-With-Active-Inference\Project.toml`
-  No Changes to `C:\Users\Satya\Autonomous-Drone-Navigation-in-AirSim-With-Active-Inference\Manifest.toml`
+  No Changes to `C:\Users\harshil_airsim_1\Desktop\AirSim\Hierarchical-Active-Inference-for-Autonomous-Drone-Navigation-in-Microsoft-AirSim\Project.toml`
+  No Changes to `C:\Users\harshil_airsim_1\Desktop\AirSim\Hierarchical-Active-Inference-for-Autonomous-Drone-Navigation-in-Microsoft-AirSim\Manifest.toml`
+Precompiling actinf...
+   1350.5 ms  ✓ actinf
+  1 dependency successfully precompiled in 3 seconds. 177 already precompiled.
 
 === Starting Active Inference Precompilation ===
 ✓ Basic packages loaded
 ✓ JSON package loaded
-Current directory: c:\Users\Satya\Autonomous-Drone-Navigation-in-AirSim-With-Active-Inference
-Current project: C:\Users\Satya\.julia\environments\v1.11\Project.toml
-✓ Project activated: c:\Users\Satya\Autonomous-Drone-Navigation-in-AirSim-With-Active-Inference\Project.toml
+Current directory: c:\Users\harshil_airsim_1\Desktop\AirSim\Hierarchical-Active-Inference-for-Autonomous-Drone-Navigation-in-Microsoft-AirSim
+Current project: C:\Users\harshil_airsim_1\.julia\environments\v1.11\Project.toml
+✓ Project activated: c:\Users\harshil_airsim_1\Desktop\AirSim\Hierarchical-Active-Inference-for-Autonomous-Drone-Navigation-in-Microsoft-AirSim\Project.toml
 
 Installing required packages...
 ✓ Added JSON package
@@ -52,11 +60,5 @@ Testing actinf package loading...
 Verifying core functionality...
   StateSpace module test: ✓
   Inference module test: ✓
-  Planning module test: ✓
-
-Testing ZMQ functionality...
-  ZMQ functionality: ✓
-✓ All components successfully precompiled
-
-=== Active Inference Precompilation Completed in 39.3 seconds ===
-The system is now ready for efficient navigation
+❌ Failed to load or test actinf package: UndefVarError(:suitability_weight, actinf.Planning)
+Failed to load actinf package: UndefVarError(:suitability_weight, actinf.Planning)
