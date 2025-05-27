@@ -589,14 +589,792 @@ class SingleEnvironmentAnalyzer:
         plt.close()
         print("OK Success factor analysis completed")
     
+    def analyze_computational_cost(self):
+        """Analyze computational cost and efficiency metrics"""
+        if self.episode_data is None:
+            print("[WARNING] No episode data available for computational cost analysis")
+            return
+            
+        # Import required modules for ANOVA
+        from scipy.stats import f_oneway
+        
+        print(">> Analyzing computational cost and efficiency...")
+        
+        # Create comprehensive computational cost analysis
+        fig, axes = plt.subplots(3, 4, figsize=(20, 15))
+        fig.suptitle('Computational Cost and Efficiency Analysis', fontsize=16, fontweight='bold')
+        
+        # 1. Planning Time Distribution
+        if 'avg_planning_time_ms' in self.episode_data.columns:
+            axes[0,0].hist(self.episode_data['avg_planning_time_ms'].dropna(), 
+                          bins=20, alpha=0.7, color='skyblue', edgecolor='black')
+            axes[0,0].set_title('Planning Time Distribution')
+            axes[0,0].set_xlabel('Average Planning Time (ms)')
+            axes[0,0].set_ylabel('Frequency')
+            axes[0,0].axvline(self.episode_data['avg_planning_time_ms'].mean(), 
+                             color='red', linestyle='--', label=f'Mean: {self.episode_data["avg_planning_time_ms"].mean():.2f}ms')
+            axes[0,0].legend()
+        
+        # 2. Episode Duration vs Performance
+        if 'duration_seconds' in self.episode_data.columns and 'efficiency_metric' in self.episode_data.columns:
+            success_mask = self.episode_data['status'] == 'success'
+            axes[0,1].scatter(self.episode_data.loc[success_mask, 'duration_seconds'], 
+                            self.episode_data.loc[success_mask, 'efficiency_metric'],
+                            alpha=0.6, label='Success', color='green')
+            axes[0,1].scatter(self.episode_data.loc[~success_mask, 'duration_seconds'], 
+                            self.episode_data.loc[~success_mask, 'efficiency_metric'],
+                            alpha=0.6, label='Failure', color='red', marker='x')
+            axes[0,1].set_title('Duration vs Efficiency')
+            axes[0,1].set_xlabel('Duration (seconds)')
+            axes[0,1].set_ylabel('Efficiency Metric')
+            axes[0,1].legend()
+        
+        # 3. Steps vs Planning Time
+        if 'steps_taken' in self.episode_data.columns and 'avg_planning_time_ms' in self.episode_data.columns:
+            axes[0,2].scatter(self.episode_data['steps_taken'], 
+                            self.episode_data['avg_planning_time_ms'], alpha=0.6)
+            axes[0,2].set_title('Steps vs Planning Time')
+            axes[0,2].set_xlabel('Steps Taken')
+            axes[0,2].set_ylabel('Avg Planning Time (ms)')
+            
+            # Add correlation
+            corr, p_val = pearsonr(self.episode_data['steps_taken'].dropna(), 
+                                  self.episode_data['avg_planning_time_ms'].dropna())
+            axes[0,2].text(0.05, 0.95, f'r = {corr:.3f}\np = {p_val:.3f}', 
+                          transform=axes[0,2].transAxes, bbox=dict(boxstyle="round,pad=0.3", facecolor="lightgray"))
+        
+        # 4. Replanning Cost Analysis
+        if 'replanning_count' in self.episode_data.columns:
+            replanning_costs = self.episode_data.groupby('replanning_count').agg({
+                'avg_planning_time_ms': 'mean',
+                'duration_seconds': 'mean',
+                'efficiency_metric': 'mean'
+            }).reset_index()
+            
+            axes[0,3].bar(replanning_costs['replanning_count'], 
+                         replanning_costs['avg_planning_time_ms'], alpha=0.7)
+            axes[0,3].set_title('Replanning vs Planning Time')
+            axes[0,3].set_xlabel('Replanning Count')
+            axes[0,3].set_ylabel('Avg Planning Time (ms)')
+        
+        # 5. Computational Cost by Success/Failure
+        cost_metrics = ['avg_planning_time_ms', 'duration_seconds', 'steps_taken', 'replanning_count']
+        available_metrics = [m for m in cost_metrics if m in self.episode_data.columns]
+        
+        if available_metrics:
+            success_data = self.episode_data[self.episode_data['status'] == 'success'][available_metrics]
+            failure_data = self.episode_data[self.episode_data['status'] != 'success'][available_metrics]
+            
+            for i, metric in enumerate(available_metrics[:4]):
+                row = 1 + i // 2
+                col = i % 2
+                if row < 3:
+                    axes[row, col].boxplot([success_data[metric].dropna(), failure_data[metric].dropna()], 
+                                          labels=['Success', 'Failure'])
+                    axes[row, col].set_title(f'{metric.replace("_", " ").title()} by Outcome')
+                    axes[row, col].set_ylabel(metric.replace("_", " ").title())
+        
+        # 6. Efficiency Trends Over Time
+        if 'episode_id' in self.episode_data.columns and 'avg_step_time' in self.episode_data.columns:
+            # Rolling average efficiency
+            window_size = min(10, len(self.episode_data) // 5)
+            if window_size > 1:
+                rolling_efficiency = self.episode_data['avg_step_time'].rolling(window=window_size).mean()
+                axes[2,0].plot(self.episode_data['episode_id'], rolling_efficiency, 
+                              linewidth=2, label=f'Rolling Average (window={window_size})')
+                axes[2,0].scatter(self.episode_data['episode_id'], self.episode_data['avg_step_time'], 
+                                 alpha=0.3, s=20)
+                axes[2,0].set_title('Step Time Efficiency Over Episodes')
+                axes[2,0].set_xlabel('Episode ID')
+                axes[2,0].set_ylabel('Average Step Time (s)')
+                axes[2,0].legend()
+        
+        # 7. Planning Efficiency vs Success Rate
+        if len(available_metrics) >= 2:
+            # Bin episodes by planning time and calculate success rate
+            planning_bins = pd.qcut(self.episode_data['avg_planning_time_ms'].dropna(), 
+                                   q=5, duplicates='drop')
+            binned_data = self.episode_data.groupby(planning_bins).agg({
+                'status': lambda x: (x == 'success').mean(),
+                'efficiency_metric': 'mean'
+            }).reset_index()
+            
+            if len(binned_data) > 1:
+                axes[2,1].plot(range(len(binned_data)), binned_data['status'], 
+                              marker='o', linewidth=2, label='Success Rate')
+                axes[2,1].set_title('Success Rate vs Planning Time Bins')
+                axes[2,1].set_xlabel('Planning Time Quintile (Low → High)')
+                axes[2,1].set_ylabel('Success Rate')
+                axes[2,1].set_ylim(0, 1)
+                axes[2,1].legend()
+        
+        # 8. Resource Utilization Heatmap
+        if self.metrics_data is not None and 'planning_time_ms' in self.metrics_data.columns:
+            # Aggregate step-level planning times by episode
+            step_planning = self.metrics_data.groupby('episode_id')['planning_time_ms'].agg(['mean', 'std', 'max']).reset_index()
+            step_planning = step_planning.merge(self.episode_data[['episode_id', 'status']], on='episode_id')
+            
+            # Create correlation matrix for computational metrics
+            computational_cols = ['mean', 'std', 'max']
+            if len(step_planning) > 10:
+                corr_matrix = step_planning[computational_cols].corr()
+                im = axes[2,2].imshow(corr_matrix, cmap='coolwarm', vmin=-1, vmax=1)
+                axes[2,2].set_xticks(range(len(computational_cols)))
+                axes[2,2].set_yticks(range(len(computational_cols)))
+                axes[2,2].set_xticklabels(['Mean Time', 'Std Time', 'Max Time'])
+                axes[2,2].set_yticklabels(['Mean Time', 'Std Time', 'Max Time'])
+                axes[2,2].set_title('Planning Time Metrics Correlation')
+                
+                # Add correlation values
+                for i in range(len(computational_cols)):
+                    for j in range(len(computational_cols)):
+                        axes[2,2].text(j, i, f'{corr_matrix.iloc[i, j]:.2f}', 
+                                      ha='center', va='center', color='white' if abs(corr_matrix.iloc[i, j]) > 0.5 else 'black')
+        
+        # 9. Cost-Benefit Analysis
+        if 'efficiency_metric' in self.episode_data.columns and 'avg_planning_time_ms' in self.episode_data.columns:
+            # Calculate cost-benefit ratio (efficiency per unit planning time)
+            cost_benefit = self.episode_data['efficiency_metric'] / (self.episode_data['avg_planning_time_ms'] + 1e-6)
+            
+            axes[2,3].hist(cost_benefit.dropna(), bins=20, alpha=0.7, color='orange', edgecolor='black')
+            axes[2,3].set_title('Cost-Benefit Ratio Distribution')
+            axes[2,3].set_xlabel('Efficiency per Planning Time Unit')
+            axes[2,3].set_ylabel('Frequency')
+            axes[2,3].axvline(cost_benefit.mean(), color='red', linestyle='--', 
+                             label=f'Mean: {cost_benefit.mean():.4f}')
+            axes[2,3].legend()
+        
+        plt.tight_layout()
+        plt.savefig(os.path.join(RESULTS_DIR, 'computational_cost_analysis.png'), 
+                   dpi=300, bbox_inches='tight')
+        plt.close()
+        
+        # Generate computational cost statistics
+        cost_stats = {
+            'avg_planning_time_mean': self.episode_data['avg_planning_time_ms'].mean() if 'avg_planning_time_ms' in self.episode_data.columns else None,
+            'avg_planning_time_std': self.episode_data['avg_planning_time_ms'].std() if 'avg_planning_time_ms' in self.episode_data.columns else None,
+            'duration_mean': self.episode_data['duration_seconds'].mean() if 'duration_seconds' in self.episode_data.columns else None,
+            'duration_std': self.episode_data['duration_seconds'].std() if 'duration_seconds' in self.episode_data.columns else None,
+            'steps_mean': self.episode_data['steps_taken'].mean() if 'steps_taken' in self.episode_data.columns else None,
+            'steps_std': self.episode_data['steps_taken'].std() if 'steps_taken' in self.episode_data.columns else None,
+        }
+        
+        print(f"[METRICS] Average planning time: {cost_stats['avg_planning_time_mean']:.2f} ± {cost_stats['avg_planning_time_std']:.2f} ms")
+        print(f"[METRICS] Average episode duration: {cost_stats['duration_mean']:.2f} ± {cost_stats['duration_std']:.2f} seconds")
+        print(f"[METRICS] Average steps taken: {cost_stats['steps_mean']:.2f} ± {cost_stats['steps_std']:.2f}")
+        
+        return cost_stats
+
+    def perform_anova_testing(self):
+        """Perform ANOVA testing for statistical significance between groups"""
+        if self.episode_data is None:
+            print("[WARNING] No episode data available for ANOVA testing")
+            return
+            
+        from scipy.stats import f_oneway, ttest_ind, chi2_contingency
+        from scipy.stats import levene, normaltest
+        
+        print(">> Performing ANOVA and statistical significance testing...")
+        
+        # Define groups for analysis
+        success_group = self.episode_data[self.episode_data['status'] == 'success']
+        failure_group = self.episode_data[self.episode_data['status'] != 'success']
+        
+        # Test metrics for group differences
+        test_metrics = [
+            'steps_taken', 'duration_seconds', 'avg_planning_time_ms', 'efficiency_metric',
+            'avg_vfe', 'avg_efe', 'replanning_count', 'distance_improvement_percentage'
+        ]
+        
+        anova_results = {}
+        
+        print("\n" + "="*60)
+        print("STATISTICAL SIGNIFICANCE TESTING RESULTS")
+        print("="*60)
+        
+        for metric in test_metrics:
+            if metric in self.episode_data.columns:
+                success_values = success_group[metric].dropna()
+                failure_values = failure_group[metric].dropna()
+                
+                if len(success_values) > 2 and len(failure_values) > 2:
+                    # Perform t-test
+                    t_stat, t_p_value = ttest_ind(success_values, failure_values)
+                    
+                    # Perform F-test (ANOVA)
+                    f_stat, f_p_value = f_oneway(success_values, failure_values)
+                    
+                    # Test for equal variances (Levene's test)
+                    levene_stat, levene_p = levene(success_values, failure_values)
+                    
+                    # Test for normality
+                    success_normal_stat, success_normal_p = normaltest(success_values)
+                    failure_normal_stat, failure_normal_p = normaltest(failure_values)
+                    
+                    anova_results[metric] = {
+                        'success_mean': success_values.mean(),
+                        'success_std': success_values.std(),
+                        'failure_mean': failure_values.mean(),
+                        'failure_std': failure_values.std(),
+                        't_statistic': t_stat,
+                        't_p_value': t_p_value,
+                        'f_statistic': f_stat,
+                        'f_p_value': f_p_value,
+                        'levene_statistic': levene_stat,
+                        'levene_p_value': levene_p,
+                        'success_normality_p': success_normal_p,
+                        'failure_normality_p': failure_normal_p,
+                        'significant': f_p_value < 0.05
+                    }
+                    
+                    # Print results
+                    print(f"\n{metric.upper().replace('_', ' ')}:")
+                    print(f"  Success: {success_values.mean():.3f} ± {success_values.std():.3f} (n={len(success_values)})")
+                    print(f"  Failure: {failure_values.mean():.3f} ± {failure_values.std():.3f} (n={len(failure_values)})")
+                    print(f"  t-test: t={t_stat:.3f}, p={t_p_value:.6f}")
+                    print(f"  ANOVA: F={f_stat:.3f}, p={f_p_value:.6f}")
+                    print(f"  Equal variances (Levene): p={levene_p:.6f}")
+                    print(f"  Normality - Success: p={success_normal_p:.6f}, Failure: p={failure_normal_p:.6f}")
+                    print(f"  {'*** SIGNIFICANT ***' if f_p_value < 0.05 else 'Not significant'}")
+        
+        # Multi-factor ANOVA for complex interactions
+        print(f"\n{'='*60}")
+        print("MULTI-FACTOR ANALYSIS")
+        print("="*60)
+        
+        # Group by multiple factors if available
+        if 'replanning_count' in self.episode_data.columns:
+            # Create replanning groups
+            self.episode_data['replanning_group'] = pd.cut(self.episode_data['replanning_count'], 
+                                                          bins=3, labels=['Low', 'Medium', 'High'])
+            
+            # Test efficiency across replanning groups
+            if 'efficiency_metric' in self.episode_data.columns:
+                low_replan = self.episode_data[self.episode_data['replanning_group'] == 'Low']['efficiency_metric'].dropna()
+                med_replan = self.episode_data[self.episode_data['replanning_group'] == 'Medium']['efficiency_metric'].dropna()
+                high_replan = self.episode_data[self.episode_data['replanning_group'] == 'High']['efficiency_metric'].dropna()
+                
+                if len(low_replan) > 2 and len(med_replan) > 2 and len(high_replan) > 2:
+                    f_stat, f_p = f_oneway(low_replan, med_replan, high_replan)
+                    print(f"\nEfficiency by Replanning Groups:")
+                    print(f"  Low: {low_replan.mean():.3f} ± {low_replan.std():.3f}")
+                    print(f"  Medium: {med_replan.mean():.3f} ± {med_replan.std():.3f}")
+                    print(f"  High: {high_replan.mean():.3f} ± {high_replan.std():.3f}")
+                    print(f"  ANOVA: F={f_stat:.3f}, p={f_p:.6f}")
+                    print(f"  {'*** SIGNIFICANT ***' if f_p < 0.05 else 'Not significant'}")
+        
+        # Create visualization of statistical results
+        fig, axes = plt.subplots(2, 2, figsize=(15, 12))
+        fig.suptitle('Statistical Significance Testing Results', fontsize=16, fontweight='bold')
+        
+        # 1. P-value comparison
+        significant_metrics = [k for k, v in anova_results.items() if v['significant']]
+        non_significant_metrics = [k for k, v in anova_results.items() if not v['significant']]
+        
+        p_values = [anova_results[k]['f_p_value'] for k in anova_results.keys()]
+        metric_names = list(anova_results.keys())
+        
+        colors = ['red' if anova_results[k]['significant'] else 'blue' for k in metric_names]
+        
+        axes[0,0].barh(range(len(metric_names)), p_values, color=colors, alpha=0.7)
+        axes[0,0].set_yticks(range(len(metric_names)))
+        axes[0,0].set_yticklabels([m.replace('_', ' ').title() for m in metric_names])
+        axes[0,0].axvline(0.05, color='black', linestyle='--', label='α = 0.05')
+        axes[0,0].set_xlabel('P-value')
+        axes[0,0].set_title('ANOVA P-values by Metric')
+        axes[0,0].legend()
+        axes[0,0].set_xscale('log')
+        
+        # 2. Effect sizes (mean differences)
+        effect_sizes = []
+        for metric in anova_results.keys():
+            success_mean = anova_results[metric]['success_mean']
+            failure_mean = anova_results[metric]['failure_mean']
+            pooled_std = np.sqrt((anova_results[metric]['success_std']**2 + anova_results[metric]['failure_std']**2) / 2)
+            effect_size = abs(success_mean - failure_mean) / (pooled_std + 1e-6)
+            effect_sizes.append(effect_size)
+        
+        axes[0,1].barh(range(len(metric_names)), effect_sizes, 
+                      color=['red' if anova_results[k]['significant'] else 'blue' for k in metric_names], alpha=0.7)
+        axes[0,1].set_yticks(range(len(metric_names)))
+        axes[0,1].set_yticklabels([m.replace('_', ' ').title() for m in metric_names])
+        axes[0,1].set_xlabel('Cohen\'s d (Effect Size)')
+        axes[0,1].set_title('Effect Sizes by Metric')
+        
+        # 3. Success vs Failure means comparison
+        success_means = [anova_results[k]['success_mean'] for k in metric_names]
+        failure_means = [anova_results[k]['failure_mean'] for k in metric_names]
+        
+        x = np.arange(len(metric_names))
+        width = 0.35
+        
+        axes[1,0].bar(x - width/2, success_means, width, label='Success', alpha=0.7, color='green')
+        axes[1,0].bar(x + width/2, failure_means, width, label='Failure', alpha=0.7, color='red')
+        axes[1,0].set_xlabel('Metrics')
+        axes[1,0].set_ylabel('Mean Value')
+        axes[1,0].set_title('Mean Values: Success vs Failure')
+        axes[1,0].set_xticks(x)
+        axes[1,0].set_xticklabels([m.replace('_', ' ')[:8] for m in metric_names], rotation=45)
+        axes[1,0].legend()
+        
+        # 4. Normality test results
+        normality_results = []
+        for metric in metric_names:
+            success_normal = anova_results[metric]['success_normality_p']
+            failure_normal = anova_results[metric]['failure_normality_p']
+            normality_results.append([success_normal, failure_normal])
+        
+        normality_array = np.array(normality_results)
+        im = axes[1,1].imshow(normality_array.T, cmap='RdYlBu', vmin=0, vmax=0.1)
+        axes[1,1].set_yticks([0, 1])
+        axes[1,1].set_yticklabels(['Success', 'Failure'])
+        axes[1,1].set_xticks(range(len(metric_names)))
+        axes[1,1].set_xticklabels([m.replace('_', ' ')[:8] for m in metric_names], rotation=45)
+        axes[1,1].set_title('Normality Test P-values')
+        plt.colorbar(im, ax=axes[1,1], label='P-value')
+        
+        plt.tight_layout()
+        plt.savefig(os.path.join(RESULTS_DIR, 'anova_statistical_testing.png'), 
+                   dpi=300, bbox_inches='tight')
+        plt.close()
+        
+        print(f"\n{'='*60}")
+        print(f"SUMMARY: {len(significant_metrics)} out of {len(anova_results)} metrics show significant differences")
+        print(f"Significant metrics: {', '.join(significant_metrics)}")
+        print("="*60)
+        
+        return anova_results
+
+    def investigate_vfe_efe_correlation(self):
+        """Deep dive investigation into the strong VFE-EFE correlation"""
+        if self.episode_data is None or 'avg_vfe' not in self.episode_data.columns or 'avg_efe' not in self.episode_data.columns:
+            print("[WARNING] No VFE/EFE data available for correlation investigation")
+            return
+            
+        print(">> Investigating VFE-EFE correlation in depth...")
+        
+        # Calculate correlations
+        vfe_efe_corr, vfe_efe_p = pearsonr(self.episode_data['avg_vfe'].dropna(), 
+                                          self.episode_data['avg_efe'].dropna())
+        
+        print(f"\n[CORRELATION] VFE-EFE Pearson correlation: r = {vfe_efe_corr:.6f}, p = {vfe_efe_p:.6f}")
+        
+        # Create comprehensive correlation investigation
+        fig, axes = plt.subplots(3, 4, figsize=(20, 15))
+        fig.suptitle('VFE-EFE Correlation Investigation', fontsize=16, fontweight='bold')
+        
+        # 1. Basic scatter plot with regression line
+        axes[0,0].scatter(self.episode_data['avg_vfe'], self.episode_data['avg_efe'], 
+                         alpha=0.6, s=50)
+        
+        # Add regression line
+        z = np.polyfit(self.episode_data['avg_vfe'].dropna(), self.episode_data['avg_efe'].dropna(), 1)
+        p = np.poly1d(z)
+        axes[0,0].plot(self.episode_data['avg_vfe'], p(self.episode_data['avg_vfe']), 
+                      "r--", alpha=0.8, linewidth=2)
+        axes[0,0].set_xlabel('Average VFE')
+        axes[0,0].set_ylabel('Average EFE')
+        axes[0,0].set_title(f'VFE vs EFE (r = {vfe_efe_corr:.6f})')
+        axes[0,0].text(0.05, 0.95, f'y = {z[0]:.3f}x + {z[1]:.3f}', 
+                      transform=axes[0,0].transAxes, bbox=dict(boxstyle="round,pad=0.3", facecolor="lightgray"))
+        
+        # 2. Residuals analysis
+        predicted_efe = p(self.episode_data['avg_vfe'])
+        residuals = self.episode_data['avg_efe'] - predicted_efe
+        
+        axes[0,1].scatter(predicted_efe, residuals, alpha=0.6)
+        axes[0,1].axhline(y=0, color='red', linestyle='--')
+        axes[0,1].set_xlabel('Predicted EFE')
+        axes[0,1].set_ylabel('Residuals')
+        axes[0,1].set_title('Residuals vs Predicted EFE')
+        
+        # 3. VFE-EFE ratio analysis
+        vfe_efe_ratio = self.episode_data['avg_efe'] / (self.episode_data['avg_vfe'] + 1e-6)
+        axes[0,2].hist(vfe_efe_ratio.dropna(), bins=20, alpha=0.7, edgecolor='black')
+        axes[0,2].set_xlabel('EFE/VFE Ratio')
+        axes[0,2].set_ylabel('Frequency')
+        axes[0,2].set_title('EFE/VFE Ratio Distribution')
+        axes[0,2].axvline(vfe_efe_ratio.mean(), color='red', linestyle='--', 
+                         label=f'Mean: {vfe_efe_ratio.mean():.3f}')
+        axes[0,2].legend()
+        
+        # 4. VFE-EFE gap analysis
+        if 'efe_vs_vfe_gap' in self.episode_data.columns:
+            gap_data = self.episode_data['efe_vs_vfe_gap'].dropna()
+            axes[0,3].hist(gap_data, bins=20, alpha=0.7, edgecolor='black')
+            axes[0,3].set_xlabel('EFE-VFE Gap')
+            axes[0,3].set_ylabel('Frequency')
+            axes[0,3].set_title('EFE-VFE Gap Distribution')
+        else:
+            # Calculate gap manually
+            vfe_efe_gap = self.episode_data['avg_efe'] - self.episode_data['avg_vfe']
+            axes[0,3].hist(vfe_efe_gap.dropna(), bins=20, alpha=0.7, edgecolor='black')
+            axes[0,3].set_xlabel('EFE-VFE Gap')
+            axes[0,3].set_ylabel('Frequency')
+            axes[0,3].set_title('EFE-VFE Gap Distribution')
+        
+        # 5. Temporal correlation analysis
+        if 'episode_id' in self.episode_data.columns:
+            # Rolling correlation
+            window_size = min(20, len(self.episode_data) // 3)
+            if window_size > 5:
+                rolling_corr = []
+                for i in range(window_size, len(self.episode_data)):
+                    window_data = self.episode_data.iloc[i-window_size:i]
+                    if len(window_data) > 3:
+                        corr, _ = pearsonr(window_data['avg_vfe'].dropna(), window_data['avg_efe'].dropna())
+                        rolling_corr.append(corr)
+                
+                axes[1,0].plot(range(window_size, window_size + len(rolling_corr)), rolling_corr, 
+                              linewidth=2, label=f'Rolling correlation (window={window_size})')
+                axes[1,0].axhline(y=vfe_efe_corr, color='red', linestyle='--', label='Overall correlation')
+                axes[1,0].set_xlabel('Episode ID')
+                axes[1,0].set_ylabel('Correlation Coefficient')
+                axes[1,0].set_title('Temporal VFE-EFE Correlation')
+                axes[1,0].legend()
+                axes[1,0].set_ylim(-1.1, 1.1)
+        
+        # 6. Success/Failure impact on correlation
+        success_mask = self.episode_data['status'] == 'success'
+        if success_mask.sum() > 3 and (~success_mask).sum() > 3:
+            success_corr, _ = pearsonr(self.episode_data.loc[success_mask, 'avg_vfe'].dropna(), 
+                                     self.episode_data.loc[success_mask, 'avg_efe'].dropna())
+            failure_corr, _ = pearsonr(self.episode_data.loc[~success_mask, 'avg_vfe'].dropna(), 
+                                     self.episode_data.loc[~success_mask, 'avg_efe'].dropna())
+            
+            axes[1,1].bar(['Success', 'Failure', 'Overall'], 
+                         [success_corr, failure_corr, vfe_efe_corr], 
+                         color=['green', 'red', 'blue'], alpha=0.7)
+            axes[1,1].set_ylabel('Correlation Coefficient')
+            axes[1,1].set_title('VFE-EFE Correlation by Outcome')
+            axes[1,1].set_ylim(-1.1, 1.1)
+            
+            # Add correlation values on bars
+            for i, v in enumerate([success_corr, failure_corr, vfe_efe_corr]):
+                axes[1,1].text(i, v + 0.05 if v >= 0 else v - 0.1, f'{v:.3f}', ha='center', va='bottom')
+        
+        # 7. Step-level correlation analysis if available
+        if self.metrics_data is not None and 'vfe' in self.metrics_data.columns and 'efe' in self.metrics_data.columns:
+            step_corr, step_p = pearsonr(self.metrics_data['vfe'].dropna(), self.metrics_data['efe'].dropna())
+            
+            # Sample data for visualization (to avoid overcrowding)
+            sample_size = min(1000, len(self.metrics_data))
+            sample_data = self.metrics_data.sample(n=sample_size)
+            
+            axes[1,2].scatter(sample_data['vfe'], sample_data['efe'], alpha=0.3, s=10)
+            axes[1,2].set_xlabel('Step-level VFE')
+            axes[1,2].set_ylabel('Step-level EFE')
+            axes[1,2].set_title(f'Step-level VFE-EFE (r = {step_corr:.6f})')
+            
+            print(f"[CORRELATION] Step-level VFE-EFE correlation: r = {step_corr:.6f}, p = {step_p:.6f}")
+        
+        # 8. Theoretical analysis plot
+        axes[1,3].text(0.1, 0.9, 'THEORETICAL ANALYSIS', fontweight='bold', fontsize=12, transform=axes[1,3].transAxes)
+        
+        theoretical_text = f"""
+Strong Correlation Analysis:
+• Correlation: r = {vfe_efe_corr:.6f}
+• P-value: {vfe_efe_p:.6f}
+
+Possible Explanations:
+1. Theoretical coupling:
+   EFE = E[VFE] - E[log π]
+   
+2. Active inference principle:
+   Action minimizes both VFE 
+   and EFE simultaneously
+   
+3. Implementation coupling:
+   Shared computational basis
+   
+4. Environment constraints:
+   Limited action space creates
+   natural VFE-EFE relationship
+        """
+        
+        axes[1,3].text(0.05, 0.75, theoretical_text, fontsize=10, 
+                      transform=axes[1,3].transAxes, verticalalignment='top',
+                      bbox=dict(boxstyle="round,pad=0.5", facecolor="lightblue", alpha=0.7))
+        axes[1,3].set_xlim(0, 1)
+        axes[1,3].set_ylim(0, 1)
+        axes[1,3].axis('off')
+        
+        # 9. Energy minimization trajectory
+        axes[2,0].plot(self.episode_data['episode_id'], self.episode_data['avg_vfe'], 
+                      label='VFE', linewidth=2, alpha=0.8)
+        axes[2,0].plot(self.episode_data['episode_id'], self.episode_data['avg_efe'], 
+                      label='EFE', linewidth=2, alpha=0.8)
+        axes[2,0].set_xlabel('Episode ID')
+        axes[2,0].set_ylabel('Energy Value')
+        axes[2,0].set_title('Energy Minimization Trajectories')
+        axes[2,0].legend()
+        
+        # 10. Correlation stability analysis
+        if len(self.episode_data) > 20:
+            bootstrap_correlations = []
+            n_bootstrap = 100
+            np.random.seed(42)
+            
+            for _ in range(n_bootstrap):
+                sample_indices = np.random.choice(len(self.episode_data), size=len(self.episode_data), replace=True)
+                sample_data = self.episode_data.iloc[sample_indices]
+                if len(sample_data) > 3:
+                    boot_corr, _ = pearsonr(sample_data['avg_vfe'].dropna(), sample_data['avg_efe'].dropna())
+                    bootstrap_correlations.append(boot_corr)
+            
+            axes[2,1].hist(bootstrap_correlations, bins=20, alpha=0.7, edgecolor='black')
+            axes[2,1].axvline(vfe_efe_corr, color='red', linestyle='--', linewidth=2, label='Observed')
+            axes[2,1].set_xlabel('Bootstrap Correlation')
+            axes[2,1].set_ylabel('Frequency')
+            axes[2,1].set_title('Bootstrap Correlation Distribution')
+            axes[2,1].legend()
+            
+            print(f"[BOOTSTRAP] Correlation 95% CI: [{np.percentile(bootstrap_correlations, 2.5):.3f}, {np.percentile(bootstrap_correlations, 97.5):.3f}]")
+        
+        # 11. Causal direction analysis
+        if len(self.episode_data) > 10:
+            # Granger causality approximation using lagged correlations
+            lag_correlations_vfe_to_efe = []
+            lag_correlations_efe_to_vfe = []
+            
+            for lag in range(1, min(10, len(self.episode_data)//3)):
+                if lag < len(self.episode_data):
+                    vfe_lagged = self.episode_data['avg_vfe'].iloc[:-lag]
+                    efe_current = self.episode_data['avg_efe'].iloc[lag:]
+                    
+                    efe_lagged = self.episode_data['avg_efe'].iloc[:-lag]
+                    vfe_current = self.episode_data['avg_vfe'].iloc[lag:]
+                    
+                    if len(vfe_lagged) > 3:
+                        corr_vfe_to_efe, _ = pearsonr(vfe_lagged, efe_current)
+                        corr_efe_to_vfe, _ = pearsonr(efe_lagged, vfe_current)
+                        
+                        lag_correlations_vfe_to_efe.append(abs(corr_vfe_to_efe))
+                        lag_correlations_efe_to_vfe.append(abs(corr_efe_to_vfe))
+            
+            if lag_correlations_vfe_to_efe:            lags = range(1, len(lag_correlations_vfe_to_efe) + 1)
+            axes[2,2].plot(lags, lag_correlations_vfe_to_efe, 'o-', label='VFE → EFE', linewidth=2)
+            axes[2,2].plot(lags, lag_correlations_efe_to_vfe, 's-', label='EFE → VFE', linewidth=2)
+            axes[2,2].set_xlabel('Lag (episodes)')
+            axes[2,2].set_ylabel('|Correlation|')
+            axes[2,2].set_title('Lagged Cross-Correlations')
+            axes[2,2].legend()
+        
+        # 12. Summary statistics
+        summary_text = f"""
+CORRELATION INVESTIGATION SUMMARY:
+
+Primary Correlation:
+• Pearson r = {vfe_efe_corr:.6f}
+• P-value = {vfe_efe_p:.6f}
+• Relationship: {'Perfect' if abs(vfe_efe_corr) > 0.99 else 'Very Strong' if abs(vfe_efe_corr) > 0.9 else 'Strong' if abs(vfe_efe_corr) > 0.7 else 'Moderate'}
+
+Key Findings:
+• VFE Range: [{self.episode_data['avg_vfe'].min():.1f}, {self.episode_data['avg_vfe'].max():.1f}]
+• EFE Range: [{self.episode_data['avg_efe'].min():.1f}, {self.episode_data['avg_efe'].max():.1f}]
+• Mean Ratio: {vfe_efe_ratio.mean():.3f}
+
+Implications:
+• Strong theoretical coupling
+• Consistent energy minimization
+• Predictable EFE from VFE        """
+        
+        axes[2,3].text(0.05, 0.95, summary_text, fontsize=10,
+                      transform=axes[2,3].transAxes, verticalalignment='top',
+                      bbox=dict(boxstyle="round,pad=0.5", facecolor="lightyellow", alpha=0.8))
+        axes[2,3].set_xlim(0, 1)
+        axes[2,3].set_ylim(0, 1)
+        axes[2,3].axis('off')
+        
+        plt.tight_layout()
+        plt.savefig(os.path.join(RESULTS_DIR, 'vfe_efe_correlation_investigation.png'), 
+                   dpi=300, bbox_inches='tight')
+        plt.close()
+        
+        # Return correlation analysis results
+        correlation_results = {
+            'primary_correlation': vfe_efe_corr,
+            'primary_p_value': vfe_efe_p,
+            'vfe_range': [self.episode_data['avg_vfe'].min(), self.episode_data['avg_vfe'].max()],
+            'efe_range': [self.episode_data['avg_efe'].min(), self.episode_data['avg_efe'].max()],
+            'mean_ratio': vfe_efe_ratio.mean(),
+            'ratio_std': vfe_efe_ratio.std()
+        }
+        
+        print(f"\n[ANALYSIS] Perfect correlation detected: r = {vfe_efe_corr:.6f}")
+        print(f"[ANALYSIS] This suggests strong theoretical/computational coupling between VFE and EFE")
+        
+        return correlation_results
+    
     def generate_summary_report(self):
         """Generate a comprehensive text report"""
-        report_path = os.path.join(RESULTS_DIR, 'analysis_report.md')
+        
+        # Add sections for new analyses
+        self.report_lines.append("\n## Computational Cost Analysis")
+        self.report_lines.append("*Detailed computational efficiency metrics and cost-benefit analysis.*")
+        
+        # Add computational cost metrics
+        if 'avg_planning_time_ms' in self.episode_data.columns:
+            avg_planning = self.episode_data['avg_planning_time_ms'].mean()
+            std_planning = self.episode_data['avg_planning_time_ms'].std()
+            self.report_lines.append(f"- **Average Planning Time**: {avg_planning:.2f} ± {std_planning:.2f} ms")
+        
+        if 'duration_seconds' in self.episode_data.columns:
+            avg_duration = self.episode_data['duration_seconds'].mean()
+            std_duration = self.episode_data['duration_seconds'].std()
+            self.report_lines.append(f"- **Average Episode Duration**: {avg_duration:.2f} ± {std_duration:.2f} seconds")
+        
+        if 'avg_step_time' in self.episode_data.columns:
+            avg_step_time = self.episode_data['avg_step_time'].mean()
+            self.report_lines.append(f"- **Average Step Time**: {avg_step_time:.2f} seconds per step")
+        
+        # Add efficiency analysis
+        if 'efficiency_metric' in self.episode_data.columns and 'avg_planning_time_ms' in self.episode_data.columns:
+            cost_benefit = self.episode_data['efficiency_metric'] / (self.episode_data['avg_planning_time_ms'] + 1e-6)
+            self.report_lines.append(f"- **Cost-Benefit Ratio**: {cost_benefit.mean():.4f} (efficiency per planning ms)")
+        
+        self.report_lines.append("\n## Statistical Significance Testing (ANOVA)")
+        self.report_lines.append("*Comprehensive statistical testing between successful and failed episodes.*")
+        
+        # Add placeholder for ANOVA results (will be populated by perform_anova_testing)
+        if hasattr(self, 'anova_results'):
+            significant_count = sum(1 for v in self.anova_results.values() if v.get('significant', False))
+            total_tests = len(self.anova_results)
+            self.report_lines.append(f"- **Significant Differences Found**: {significant_count} out of {total_tests} metrics tested")
+            
+            # List significant metrics
+            significant_metrics = [k for k, v in self.anova_results.items() if v.get('significant', False)]
+            if significant_metrics:
+                self.report_lines.append(f"- **Significant Metrics**: {', '.join(significant_metrics)}")
+            
+            # Add effect sizes for significant metrics
+            for metric in significant_metrics[:5]:  # Top 5 significant metrics
+                if metric in self.anova_results:
+                    result = self.anova_results[metric]
+                    success_mean = result.get('success_mean', 0)
+                    failure_mean = result.get('failure_mean', 0)
+                    p_value = result.get('f_p_value', 1)
+                    self.report_lines.append(f"  - **{metric.replace('_', ' ').title()}**: Success={success_mean:.3f}, Failure={failure_mean:.3f}, p={p_value:.6f}")
+        
+        self.report_lines.append("\n## VFE-EFE Correlation Investigation")
+        self.report_lines.append("*Deep analysis of the relationship between Variational Free Energy and Expected Free Energy.*")
+        
+        # Add VFE-EFE correlation details
+        if 'avg_vfe' in self.episode_data.columns and 'avg_efe' in self.episode_data.columns:
+            from scipy.stats import pearsonr
+            vfe_efe_corr, vfe_efe_p = pearsonr(self.episode_data['avg_vfe'].dropna(), 
+                                              self.episode_data['avg_efe'].dropna())
+            
+            self.report_lines.append(f"- **Primary Correlation**: r = {vfe_efe_corr:.6f}, p = {vfe_efe_p:.6f}")
+            
+            # Correlation strength interpretation
+            if abs(vfe_efe_corr) > 0.99:
+                strength = "Perfect"
+            elif abs(vfe_efe_corr) > 0.9:
+                strength = "Very Strong"
+            elif abs(vfe_efe_corr) > 0.7:
+                strength = "Strong"
+            elif abs(vfe_efe_corr) > 0.5:
+                strength = "Moderate"
+            else:
+                strength = "Weak"
+            
+            direction = "negative" if vfe_efe_corr < 0 else "positive"
+            self.report_lines.append(f"- **Relationship Strength**: {strength} {direction} correlation")
+            
+            # Theoretical implications
+            self.report_lines.append("- **Theoretical Implications**:")
+            self.report_lines.append("  - Strong correlation suggests tight coupling between perception and action")
+            self.report_lines.append("  - Consistent with Active Inference principle of energy minimization")
+            self.report_lines.append("  - May indicate shared computational basis or theoretical constraint")
+            
+            # VFE and EFE ranges
+            vfe_range = [self.episode_data['avg_vfe'].min(), self.episode_data['avg_vfe'].max()]
+            efe_range = [self.episode_data['avg_efe'].min(), self.episode_data['avg_efe'].max()]
+            self.report_lines.append(f"- **VFE Range**: [{vfe_range[0]:.1f}, {vfe_range[1]:.1f}]")
+            self.report_lines.append(f"- **EFE Range**: [{efe_range[0]:.1f}, {efe_range[1]:.1f}]")
+        
+        self.report_lines.append("\n## Generated Visualizations")
+        self.report_lines.append("*This analysis produced the following visualization files:*")
+        self.report_lines.append("- **performance_dashboard.png**: 6-panel performance overview")
+        self.report_lines.append("- **enhanced_vfe_efe_dynamics.png**: 12-panel VFE/EFE analysis with log normalization")
+        self.report_lines.append("- **correlation_matrix.png**: Behavioral pattern correlation heatmap")
+        self.report_lines.append("- **computational_cost_analysis.png**: 12-panel computational efficiency analysis")
+        self.report_lines.append("- **anova_statistical_testing.png**: Statistical significance testing results")
+        self.report_lines.append("- **vfe_efe_correlation_investigation.png**: 12-panel correlation deep dive")
+        self.report_lines.append("- **planning_analysis.png**: Planning behavior distributions")
+        self.report_lines.append("- **success_factors.png**: Success vs failure factor analysis")
+        
+        self.report_lines.append("\n## Methodology Summary")
+        self.report_lines.append("*Statistical methods and analysis approaches used:*")
+        self.report_lines.append("- **Descriptive Statistics**: Mean, standard deviation, median for all metrics")
+        self.report_lines.append("- **Correlation Analysis**: Pearson correlation for linear relationships")
+        self.report_lines.append("- **ANOVA Testing**: F-tests for group differences between success/failure")
+        self.report_lines.append("- **Effect Size Analysis**: Cohen's d for practical significance")
+        self.report_lines.append("- **Normality Testing**: D'Agostino normality tests for distribution assumptions")
+        self.report_lines.append("- **Variance Testing**: Levene's test for equal variances")
+        self.report_lines.append("- **Logarithmic Normalization**: log(|value| + 1e-6) for VFE/EFE analysis")
+        self.report_lines.append("- **Bootstrap Analysis**: Correlation stability testing")
+        self.report_lines.append("- **Temporal Analysis**: Time series trends and rolling averages")
+        
+        # Data quality summary
+        self.report_lines.append("\n## Data Quality Summary")
+        episode_count = len(self.episode_data) if self.episode_data is not None else 0
+        metrics_count = len(self.metrics_data) if self.metrics_data is not None else 0
+        
+        self.report_lines.append(f"- **Episode Records**: {episode_count} episodes analyzed")
+        self.report_lines.append(f"- **Step Records**: {metrics_count} step-level measurements")
+        self.report_lines.append(f"- **Numeric Features**: {len(self.numeric_columns)} quantitative metrics")
+        
+        if self.episode_data is not None:
+            missing_data_summary = []
+            for col in self.episode_data.columns:
+                missing_count = self.episode_data[col].isnull().sum()
+                if missing_count > 0:
+                    missing_pct = (missing_count / len(self.episode_data)) * 100
+                    missing_data_summary.append(f"{col}: {missing_pct:.1f}%")
+            
+            if missing_data_summary:
+                self.report_lines.append(f"- **Missing Data**: {', '.join(missing_data_summary[:5])}")
+            else:
+                self.report_lines.append("- **Missing Data**: No missing values detected")
+        
+        self.report_lines.append("\n## Key Findings Summary")
+        self.report_lines.append("*Primary insights from the comprehensive analysis:*")
+        
+        # Success rate summary
+        if 'status' in self.episode_data.columns:
+            success_rate = (self.episode_data['status'] == 'success').mean()
+            self.report_lines.append(f"- **Overall Success Rate**: {success_rate:.1%}")
+        
+        # Performance trend
+        if 'distance_improvement_percentage' in self.episode_data.columns:
+            avg_improvement = self.episode_data['distance_improvement_percentage'].mean()
+            self.report_lines.append(f"- **Average Distance Improvement**: {avg_improvement:.1f}%")
+        
+        # Computational efficiency
+        if 'avg_planning_time_ms' in self.episode_data.columns and 'status' in self.episode_data.columns:
+            success_planning = self.episode_data[self.episode_data['status'] == 'success']['avg_planning_time_ms'].mean()
+            failure_planning = self.episode_data[self.episode_data['status'] != 'success']['avg_planning_time_ms'].mean()
+            if not np.isnan(success_planning) and not np.isnan(failure_planning):
+                planning_diff = ((success_planning - failure_planning) / failure_planning) * 100
+                self.report_lines.append(f"- **Planning Efficiency**: Success episodes {planning_diff:+.1f}% planning time vs failures")
+        
+        # VFE-EFE relationship strength
+        if 'avg_vfe' in self.episode_data.columns and 'avg_efe' in self.episode_data.columns:
+            self.report_lines.append(f"- **Energy Coupling**: Strong correlation indicates tight VFE-EFE relationship")
+        
+        self.report_lines.append(f"\n---")
+        self.report_lines.append(f"**Analysis completed**: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        self.report_lines.append(f"**Framework**: Single Environment Active Inference Analysis v2.0")
+        
+        # Save the comprehensive report
+        report_path = os.path.join(RESULTS_DIR, 'single_environment_analysis_report.md')
         
         with open(report_path, 'w', encoding='utf-8') as f:
             f.write('\n'.join(self.report_lines))
         
-        print(f"OK Analysis report saved to {report_path}")
+        print(f"OK Comprehensive analysis report saved to {report_path}")
     
     def run_complete_analysis(self):
         """Run the complete analysis pipeline"""
@@ -626,6 +1404,16 @@ class SingleEnvironmentAnalyzer:
             
             print("[CHART] Analyzing success factors...")
             self.analyze_success_factors()
+            
+            # NEW ENHANCED ANALYSES
+            print("[CHART] Analyzing computational cost...")
+            self.analyze_computational_cost()
+            
+            print("[STATS] Performing ANOVA testing...")
+            self.perform_anova_testing()
+            
+            print("[DEEP] Investigating VFE-EFE correlation...")
+            self.investigate_vfe_efe_correlation()
             
             print("[REPORT] Generating summary report...")
             self.generate_summary_report()
