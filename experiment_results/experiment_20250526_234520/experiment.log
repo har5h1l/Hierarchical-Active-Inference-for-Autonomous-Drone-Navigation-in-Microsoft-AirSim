@@ -7260,3 +7260,198 @@
 2025-05-26 22:32:12,069 - INFO - Episode 148: Initial distance: 89.00m
 2025-05-26 22:32:12,073 - INFO - Episode 148: Target verified with 3 rays
 2025-05-26 22:32:18,685 - WARNING - Episode 148: Step 0 took 6.61s (unusually long)
+2025-05-26 23:54:20,461 - INFO - Using random seed: 42
+2025-05-26 23:54:20,461 - INFO - Starting experiment with configuration:
+2025-05-26 23:54:20,461 - INFO -   num_episodes: 250
+2025-05-26 23:54:20,461 - INFO -   target_distance_range: [15.0, 100.0]
+2025-05-26 23:54:20,462 - INFO -   random_seed: 42
+2025-05-26 23:54:20,462 - INFO -   max_steps_per_episode: 250
+2025-05-26 23:54:20,462 - INFO -   output_dir: experiment_results
+2025-05-26 23:54:20,462 - INFO -   stuck_timeout: 15.0
+2025-05-26 23:54:20,462 - INFO -   stuck_check_interval: 3.0
+2025-05-26 23:54:20,463 - INFO -   episode_timeout: 250
+2025-05-26 23:54:20,463 - INFO -   precompile_julia: True
+2025-05-26 23:54:20,463 - INFO -   zmq_port: 5555
+2025-05-26 23:54:20,463 - INFO -   debug_raycasting: False
+2025-05-26 23:54:20,463 - INFO -   min_ray_checks: 3
+2025-05-26 23:54:20,464 - INFO -   max_ray_checks: 7
+2025-05-26 23:54:20,464 - INFO -   visualize_raycasts: False
+2025-05-26 23:54:20,464 - INFO -   visualization_duration: 60.0
+2025-05-26 23:54:20,470 - INFO - AirSim connection established successfully
+2025-05-26 23:54:48,988 - INFO - Loaded existing pool of 200 targets from experiment_results\experiment_20250526_234520\target_pool.json
+2025-05-26 23:54:48,989 - INFO - Starting episode 148 of 250
+2025-05-26 23:54:48,989 - INFO - === Starting Episode 148 ===
+2025-05-26 23:54:48,991 - INFO - Episode 148: Taking off...
+2025-05-26 23:54:54,399 - INFO - Episode 148: Using pre-generated target 148 of 200
+2025-05-26 23:54:54,399 - INFO - Episode 148: Initial distance to target: 89.00m
+2025-05-26 23:54:54,400 - INFO - Episode 148: Initial position: [0.0, 0.0, -1.67]
+2025-05-26 23:54:54,400 - INFO - Episode 148: Target position: [79.32, 40.16, -5.75]
+2025-05-26 23:54:54,400 - INFO - Episode 148: Initial distance: 89.00m
+2025-05-26 23:54:54,404 - INFO - Episode 148: Target verified with 3 rays
+2025-05-26 23:59:05,481 - WARNING - Episode 148: Timeout after 250 seconds
+2025-05-26 23:59:05,484 - INFO - Episode 148: Skipping landing process and resetting drone for next episode
+2025-05-26 23:59:05,485 - ERROR - Error in episode 148: unsupported operand type(s) for +: 'NoneType' and 'NoneType'
+2025-05-26 23:59:05,550 - ERROR - Traceback (most recent call last):
+  File "c:\Users\harshil_airsim_1\Desktop\AirSim\Hierarchical-Active-Inference-for-Autonomous-Drone-Navigation-in-Microsoft-AirSim\data_collection.py", line 3691, in run_experiment
+    step_metrics, episode_summary = run_episode(
+                                    ^^^^^^^^^^^^
+  File "c:\Users\harshil_airsim_1\Desktop\AirSim\Hierarchical-Active-Inference-for-Autonomous-Drone-Navigation-in-Microsoft-AirSim\data_collection.py", line 3312, in run_episode
+    "avg_efe": np.mean([m["efe"] for m in step_metrics]) if step_metrics else 0,
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\harshil_airsim_1\.julia\conda\3\x86_64\Lib\site-packages\numpy\_core\fromnumeric.py", line 3860, in mean
+    return _methods._mean(a, axis=axis, dtype=dtype,
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\harshil_airsim_1\.julia\conda\3\x86_64\Lib\site-packages\numpy\_core\_methods.py", line 135, in _mean
+    ret = umr_sum(arr, axis, dtype, out, keepdims, where=where)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: unsupported operand type(s) for +: 'NoneType' and 'NoneType'
+
+2025-05-26 23:59:05,552 - INFO - Saved recovery data for episode 147
+2025-05-26 23:59:05,553 - INFO - Starting episode 149 of 250
+2025-05-26 23:59:05,553 - INFO - === Starting Episode 149 ===
+2025-05-26 23:59:05,555 - INFO - Episode 149: Taking off...
+2025-05-26 23:59:10,964 - INFO - Episode 149: Using pre-generated target 149 of 200
+2025-05-26 23:59:10,964 - INFO - Episode 149: Initial distance to target: 88.64m
+2025-05-26 23:59:10,965 - INFO - Episode 149: Initial position: [0.0, 0.0, -1.67]
+2025-05-26 23:59:10,965 - INFO - Episode 149: Target position: [5.08, -87.97, -11.24]
+2025-05-26 23:59:10,965 - INFO - Episode 149: Initial distance: 88.64m
+2025-05-26 23:59:10,969 - INFO - Episode 149: Target verified with 3 rays
+2025-05-27 00:03:21,674 - WARNING - Episode 149: Timeout after 250 seconds
+2025-05-27 00:03:21,677 - INFO - Episode 149: Skipping landing process and resetting drone for next episode
+2025-05-27 00:03:21,677 - ERROR - Error in episode 149: unsupported operand type(s) for +: 'NoneType' and 'NoneType'
+2025-05-27 00:03:21,680 - ERROR - Traceback (most recent call last):
+  File "c:\Users\harshil_airsim_1\Desktop\AirSim\Hierarchical-Active-Inference-for-Autonomous-Drone-Navigation-in-Microsoft-AirSim\data_collection.py", line 3691, in run_experiment
+    step_metrics, episode_summary = run_episode(
+                                    ^^^^^^^^^^^^
+  File "c:\Users\harshil_airsim_1\Desktop\AirSim\Hierarchical-Active-Inference-for-Autonomous-Drone-Navigation-in-Microsoft-AirSim\data_collection.py", line 3312, in run_episode
+    "avg_efe": np.mean([m["efe"] for m in step_metrics]) if step_metrics else 0,
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\harshil_airsim_1\.julia\conda\3\x86_64\Lib\site-packages\numpy\_core\fromnumeric.py", line 3860, in mean
+    return _methods._mean(a, axis=axis, dtype=dtype,
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\harshil_airsim_1\.julia\conda\3\x86_64\Lib\site-packages\numpy\_core\_methods.py", line 135, in _mean
+    ret = umr_sum(arr, axis, dtype, out, keepdims, where=where)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: unsupported operand type(s) for +: 'NoneType' and 'NoneType'
+
+2025-05-27 00:03:21,681 - INFO - Saved recovery data for episode 148
+2025-05-27 00:03:21,682 - INFO - Starting episode 150 of 250
+2025-05-27 00:03:21,682 - INFO - === Starting Episode 150 ===
+2025-05-27 00:03:21,684 - INFO - Episode 150: Taking off...
+2025-05-27 00:03:27,091 - INFO - Episode 150: Using pre-generated target 150 of 200
+2025-05-27 00:03:27,091 - INFO - Episode 150: Initial distance to target: 47.81m
+2025-05-27 00:03:27,092 - INFO - Episode 150: Initial position: [0.0, 0.0, -1.67]
+2025-05-27 00:03:27,092 - INFO - Episode 150: Target position: [-31.18, 31.84, -18.98]
+2025-05-27 00:03:27,092 - INFO - Episode 150: Initial distance: 47.81m
+2025-05-27 00:03:27,098 - INFO - Episode 150: Target verified with 3 rays
+2025-05-27 00:03:32,931 - WARNING - Episode 150: Step 0 took 5.83s (unusually long)
+2025-05-27 00:03:52,688 - WARNING - Collision detected during movement, cancelling task immediately
+2025-05-27 00:03:52,689 - INFO - Episode 150: Obstacle detected during movement, triggering immediate replanning
+2025-05-27 00:03:52,706 - INFO - Adding newly detected obstacle at [-11.21, 24.28, -4.93] to planning data
+2025-05-27 00:03:52,706 - INFO - Episode 150: Putting drone in hover mode before dynamic replanning
+2025-05-27 00:03:53,207 - INFO - Episode 150: Triggering dynamic replanning due to detected obstacle
+2025-05-27 00:03:53,225 - INFO - Enhanced planning parameters for obstacle avoidance: safety_margin=4.00, waypoint_count=150, obstacle_priority=3.00
+2025-05-27 00:03:53,229 - INFO - Episode 150: Executing replanned path to avoid obstacle
+2025-05-27 00:03:53,251 - WARNING - Collision detected during movement, cancelling task immediately
+2025-05-27 00:03:54,072 - WARNING - Collision detected during movement, cancelling task immediately
+2025-05-27 00:03:54,073 - INFO - Episode 150: Obstacle detected during movement, triggering immediate replanning
+2025-05-27 00:03:54,089 - INFO - Adding newly detected obstacle at [-11.89, 24.28, -5.45] to planning data
+2025-05-27 00:03:54,089 - INFO - Episode 150: Putting drone in hover mode before dynamic replanning
+2025-05-27 00:03:54,591 - INFO - Episode 150: Triggering dynamic replanning due to detected obstacle
+2025-05-27 00:03:54,609 - INFO - Enhanced planning parameters for obstacle avoidance: safety_margin=4.00, waypoint_count=150, obstacle_priority=3.00
+2025-05-27 00:03:54,614 - INFO - Episode 150: Executing replanned path to avoid obstacle
+2025-05-27 00:03:54,637 - WARNING - Collision detected during movement, cancelling task immediately
+2025-05-27 00:03:55,128 - WARNING - Collision detected during movement, cancelling task immediately
+2025-05-27 00:03:55,129 - INFO - Episode 150: Obstacle detected during movement, triggering immediate replanning
+2025-05-27 00:03:55,146 - INFO - Adding newly detected obstacle at [-12.06, 24.28, -5.6] to planning data
+2025-05-27 00:03:55,146 - INFO - Episode 150: Putting drone in hover mode before dynamic replanning
+2025-05-27 00:03:55,647 - INFO - Episode 150: Triggering dynamic replanning due to detected obstacle
+2025-05-27 00:03:55,667 - INFO - Enhanced planning parameters for obstacle avoidance: safety_margin=4.00, waypoint_count=150, obstacle_priority=3.00
+2025-05-27 00:03:55,674 - INFO - Episode 150: Executing replanned path to avoid obstacle
+2025-05-27 00:03:55,695 - WARNING - Collision detected during movement, cancelling task immediately
+2025-05-27 00:03:56,171 - WARNING - Collision detected during movement, cancelling task immediately
+2025-05-27 00:03:56,172 - INFO - Episode 150: Obstacle detected during movement, triggering immediate replanning
+2025-05-27 00:03:56,189 - INFO - Adding newly detected obstacle at [-12.3, 24.28, -5.79] to planning data
+2025-05-27 00:03:56,189 - INFO - Episode 150: Putting drone in hover mode before dynamic replanning
+2025-05-27 00:03:56,691 - INFO - Episode 150: Triggering dynamic replanning due to detected obstacle
+2025-05-27 00:03:56,708 - INFO - Enhanced planning parameters for obstacle avoidance: safety_margin=4.00, waypoint_count=150, obstacle_priority=3.00
+2025-05-27 00:03:56,715 - INFO - Episode 150: Executing replanned path to avoid obstacle
+2025-05-27 00:03:56,733 - WARNING - Collision detected during movement, cancelling task immediately
+2025-05-27 00:03:57,359 - WARNING - Collision detected during movement, cancelling task immediately
+2025-05-27 00:03:57,361 - INFO - Episode 150: Obstacle detected during movement, triggering immediate replanning
+2025-05-27 00:03:57,379 - INFO - Adding newly detected obstacle at [-12.69, 24.39, -6.1] to planning data
+2025-05-27 00:03:57,379 - INFO - Episode 150: Putting drone in hover mode before dynamic replanning
+2025-05-27 00:03:57,880 - INFO - Episode 150: Triggering dynamic replanning due to detected obstacle
+2025-05-27 00:03:57,901 - INFO - Enhanced planning parameters for obstacle avoidance: safety_margin=4.00, waypoint_count=150, obstacle_priority=3.00
+2025-05-27 00:03:57,905 - INFO - Episode 150: Executing replanned path to avoid obstacle
+2025-05-27 00:03:57,926 - WARNING - Collision detected during movement, cancelling task immediately
+2025-05-27 00:03:58,128 - WARNING - Episode 150: Collision detected at step 12
+2025-05-27 00:03:58,129 - INFO - Using collision normal for recovery: [-0.00, -1.00, 0.00]
+2025-05-27 00:04:06,852 - WARNING - Recovery movement timed out after 8.0 seconds
+2025-05-27 00:04:06,853 - INFO - Episode 150: Collision recovery successful, moved 0.53m to new position: [-13.6, 23.98, -6.37]
+2025-05-27 00:04:10,440 - WARNING - Collision detected during movement, cancelling task immediately
+2025-05-27 00:04:10,441 - INFO - Episode 150: Obstacle detected during movement, triggering immediate replanning
+2025-05-27 00:04:10,459 - INFO - Adding newly detected obstacle at [-14.03, 24.38, -6.5] to planning data
+2025-05-27 00:04:10,459 - INFO - Episode 150: Putting drone in hover mode before dynamic replanning
+2025-05-27 00:04:10,961 - INFO - Episode 150: Triggering dynamic replanning due to detected obstacle
+2025-05-27 00:04:10,977 - INFO - Enhanced planning parameters for obstacle avoidance: safety_margin=4.00, waypoint_count=150, obstacle_priority=3.00
+2025-05-27 00:04:10,983 - INFO - Episode 150: Executing replanned path to avoid obstacle
+2025-05-27 00:04:11,269 - WARNING - Collision detected during movement, cancelling task immediately
+2025-05-27 00:04:11,470 - WARNING - Episode 150: Step 12 took 13.34s (unusually long)
+2025-05-27 00:04:11,472 - WARNING - Episode 150: Collision detected at step 13
+2025-05-27 00:04:11,473 - INFO - Using collision normal for recovery: [-0.37, -0.93, 0.00]
+2025-05-27 00:04:20,199 - WARNING - Recovery movement timed out after 8.0 seconds
+2025-05-27 00:04:20,201 - INFO - Episode 150: Collision recovery successful, moved 4.07m to new position: [-14.77, 20.92, -9.03]
+2025-05-27 00:04:22,436 - WARNING - Collision detected during movement, cancelling task immediately
+2025-05-27 00:04:22,438 - INFO - Episode 150: Obstacle detected during movement, triggering immediate replanning
+2025-05-27 00:04:22,451 - INFO - Adding newly detected obstacle at [-13.78, 24.28, -6.7] to planning data
+2025-05-27 00:04:22,452 - INFO - Episode 150: Putting drone in hover mode before dynamic replanning
+2025-05-27 00:04:22,953 - INFO - Episode 150: Triggering dynamic replanning due to detected obstacle
+2025-05-27 00:04:22,968 - INFO - Enhanced planning parameters for obstacle avoidance: safety_margin=4.00, waypoint_count=150, obstacle_priority=3.00
+2025-05-27 00:04:22,973 - INFO - Episode 150: Executing replanned path to avoid obstacle
+2025-05-27 00:04:27,936 - WARNING - Episode 150: Step 13 took 16.47s (unusually long)
+2025-05-27 00:04:34,133 - WARNING - Episode 150: Step 14 took 6.20s (unusually long)
+2025-05-27 00:04:46,222 - INFO - Episode 150: Target reached at step 19
+2025-05-27 00:04:46,224 - INFO - Episode 150: Skipping landing process and resetting drone for next episode
+2025-05-27 00:04:46,225 - INFO - Episode 150 completed: success
+2025-05-27 00:04:46,225 - INFO -   Steps: 19, Duration: 34.05s
+2025-05-27 00:04:46,225 - INFO -   Final distance: 1.15m, Collisions: 2
+2025-05-27 00:04:46,225 - INFO -   Dynamic replanning events: 7
+2025-05-27 00:04:46,389 - INFO - Saved recovery data for episode 150
+2025-05-27 00:04:46,390 - INFO - Starting episode 151 of 250
+2025-05-27 00:04:46,391 - INFO - === Starting Episode 151 ===
+2025-05-27 00:04:46,392 - INFO - Episode 151: Taking off...
+2025-05-27 00:04:51,799 - INFO - Episode 151: Using pre-generated target 151 of 200
+2025-05-27 00:04:51,799 - INFO - Episode 151: Initial distance to target: 83.60m
+2025-05-27 00:04:51,800 - INFO - Episode 151: Initial position: [0.0, 0.0, -1.67]
+2025-05-27 00:04:51,800 - INFO - Episode 151: Target position: [-75.6, -30.92, -19.49]
+2025-05-27 00:04:51,800 - INFO - Episode 151: Initial distance: 83.60m
+2025-05-27 00:04:51,803 - INFO - Episode 151: Target verified with 3 rays
+2025-05-27 00:15:21,357 - INFO - Using random seed: 42
+2025-05-27 00:15:21,358 - INFO - Starting experiment with configuration:
+2025-05-27 00:15:21,358 - INFO -   num_episodes: 250
+2025-05-27 00:15:21,358 - INFO -   target_distance_range: [15.0, 100.0]
+2025-05-27 00:15:21,358 - INFO -   random_seed: 42
+2025-05-27 00:15:21,358 - INFO -   max_steps_per_episode: 250
+2025-05-27 00:15:21,358 - INFO -   output_dir: experiment_results
+2025-05-27 00:15:21,359 - INFO -   stuck_timeout: 15.0
+2025-05-27 00:15:21,359 - INFO -   stuck_check_interval: 3.0
+2025-05-27 00:15:21,359 - INFO -   episode_timeout: 250
+2025-05-27 00:15:21,359 - INFO -   precompile_julia: True
+2025-05-27 00:15:21,359 - INFO -   zmq_port: 5555
+2025-05-27 00:15:21,359 - INFO -   debug_raycasting: False
+2025-05-27 00:15:21,360 - INFO -   min_ray_checks: 3
+2025-05-27 00:15:21,360 - INFO -   max_ray_checks: 7
+2025-05-27 00:15:21,360 - INFO -   visualize_raycasts: False
+2025-05-27 00:15:21,360 - INFO -   visualization_duration: 60.0
+2025-05-27 00:15:21,365 - INFO - AirSim connection established successfully
+2025-05-27 00:15:55,099 - INFO - Loaded existing pool of 200 targets from experiment_results\experiment_20250526_234520\target_pool.json
+2025-05-27 00:15:55,099 - INFO - Starting episode 151 of 250
+2025-05-27 00:15:55,100 - INFO - === Starting Episode 151 ===
+2025-05-27 00:15:55,102 - INFO - Episode 151: Taking off...
+2025-05-27 00:16:00,506 - INFO - Episode 151: Using pre-generated target 151 of 200
+2025-05-27 00:16:00,506 - INFO - Episode 151: Initial distance to target: 83.60m
+2025-05-27 00:16:00,507 - INFO - Episode 151: Initial position: [0.0, 0.0, -1.67]
+2025-05-27 00:16:00,507 - INFO - Episode 151: Target position: [-75.6, -30.92, -19.49]
+2025-05-27 00:16:00,507 - INFO - Episode 151: Initial distance: 83.60m
+2025-05-27 00:16:00,511 - INFO - Episode 151: Target verified with 3 rays
