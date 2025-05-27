@@ -590,7 +590,7 @@ class SingleEnvironmentAnalyzer:
             ax6.grid(True, alpha=0.3)
             ax6.legend()
         
-        # 7. VFE/EFE minimization trends over episodes (third row left)
+        # 7. VFE/EFE minimization trends over episodes (third row left) - with normalization
         ax7 = fig.add_subplot(gs[2, 0])
         if 'vfe' in self.metrics_data.columns:
             # Calculate average VFE per episode
@@ -598,16 +598,20 @@ class SingleEnvironmentAnalyzer:
             episode_ids_sorted = sorted(episode_vfe_means.index)
             vfe_means_sorted = [episode_vfe_means[ep_id] for ep_id in episode_ids_sorted]
             
-            ax7.plot(episode_ids_sorted, vfe_means_sorted, 'b-', alpha=0.7, linewidth=2, label='Episode Mean VFE')
+            # Normalize VFE values for trend visualization
+            vfe_min, vfe_max = min(vfe_means_sorted), max(vfe_means_sorted)
+            vfe_normalized = [(val - vfe_min) / (vfe_max - vfe_min + 1e-6) for val in vfe_means_sorted]
+            
+            ax7.plot(episode_ids_sorted, vfe_normalized, 'b-', alpha=0.7, linewidth=2, label='Normalized VFE')
             # Add rolling average to show trend
-            if len(vfe_means_sorted) > 5:
-                window = min(10, len(vfe_means_sorted)//3)
-                rolling_mean = pd.Series(vfe_means_sorted).rolling(window=window, min_periods=1).mean()
+            if len(vfe_normalized) > 5:
+                window = min(10, len(vfe_normalized)//3)
+                rolling_mean = pd.Series(vfe_normalized).rolling(window=window, min_periods=1).mean()
                 ax7.plot(episode_ids_sorted, rolling_mean, 'r-', linewidth=3, 
                         label=f'Rolling Mean (window={window})')
             ax7.set_xlabel('Episode ID')
-            ax7.set_ylabel('Average VFE')
-            ax7.set_title('VFE Minimization Trend Across Episodes', fontweight='bold')
+            ax7.set_ylabel('Normalized VFE (0-1 scale)')
+            ax7.set_title('Normalized VFE Minimization Trend Across Episodes', fontweight='bold')
             ax7.grid(True, alpha=0.3)
             ax7.legend()
         
@@ -618,38 +622,49 @@ class SingleEnvironmentAnalyzer:
             episode_ids_sorted = sorted(episode_efe_means.index)
             efe_means_sorted = [episode_efe_means[ep_id] for ep_id in episode_ids_sorted]
             
-            ax8.plot(episode_ids_sorted, efe_means_sorted, 'purple', alpha=0.7, linewidth=2, label='Episode Mean EFE')
-            if len(efe_means_sorted) > 5:
-                window = min(10, len(efe_means_sorted)//3)
-                rolling_mean = pd.Series(efe_means_sorted).rolling(window=window, min_periods=1).mean()
+            # Normalize EFE values for better trend visualization
+            efe_min = min(efe_means_sorted)
+            efe_max = max(efe_means_sorted)
+            efe_normalized = [(val - efe_min) / (efe_max - efe_min + 1e-6) for val in efe_means_sorted]
+            
+            ax8.plot(episode_ids_sorted, efe_normalized, 'purple', alpha=0.7, linewidth=2, label='Episode Mean EFE (Normalized)')
+            if len(efe_normalized) > 5:
+                window = min(10, len(efe_normalized)//3)
+                rolling_mean = pd.Series(efe_normalized).rolling(window=window, min_periods=1).mean()
                 ax8.plot(episode_ids_sorted, rolling_mean, 'orange', linewidth=3, 
                         label=f'Rolling Mean (window={window})')
             ax8.set_xlabel('Episode ID')
-            ax8.set_ylabel('Average EFE')
-            ax8.set_title('EFE Minimization Trend Across Episodes', fontweight='bold')
+            ax8.set_ylabel('Normalized EFE (0-1 scale)')
+            ax8.set_title('Normalized EFE Minimization Trend Across Episodes', fontweight='bold')
             ax8.grid(True, alpha=0.3)
             ax8.legend()
         
         # 9. Combined VFE + EFE minimization (third row right)
         ax9 = fig.add_subplot(gs[2, 2])
         if 'vfe' in self.metrics_data.columns and 'efe' in self.metrics_data.columns:
-            # Calculate combined energy (sum of absolute values)
-            combined_energy = self.metrics_data.groupby('episode_id').apply(
-                lambda x: (np.abs(x['vfe']) + np.abs(x['efe'])).mean()
-            )
+            # Calculate combined energy using normalized values
+            episode_vfe_means = self.metrics_data.groupby('episode_id')['vfe'].mean()
+            episode_efe_means = self.metrics_data.groupby('episode_id')['efe'].mean()
+            
+            # Normalize both VFE and EFE values (0-1 scale)
+            vfe_normalized = (episode_vfe_means.values - episode_vfe_means.min()) / (episode_vfe_means.max() - episode_vfe_means.min() + 1e-6)
+            efe_normalized = (episode_efe_means.values - episode_efe_means.min()) / (episode_efe_means.max() - episode_efe_means.min() + 1e-6)
+            
+            # Combined normalized energy (sum of normalized values)
+            combined_energy = pd.Series(vfe_normalized + efe_normalized, index=episode_vfe_means.index)
             episode_ids_sorted = sorted(combined_energy.index)
             combined_sorted = [combined_energy[ep_id] for ep_id in episode_ids_sorted]
             
             ax9.plot(episode_ids_sorted, combined_sorted, 'darkgreen', alpha=0.7, linewidth=2, 
-                    label='Combined |VFE| + |EFE|')
+                    label='Combined Normalized VFE + EFE')
             if len(combined_sorted) > 5:
                 window = min(10, len(combined_sorted)//3)
                 rolling_mean = pd.Series(combined_sorted).rolling(window=window, min_periods=1).mean()
                 ax9.plot(episode_ids_sorted, rolling_mean, 'red', linewidth=3, 
                         label=f'Rolling Mean (window={window})')
             ax9.set_xlabel('Episode ID')
-            ax9.set_ylabel('Combined Energy')
-            ax9.set_title('Total Energy Minimization Trend', fontweight='bold')
+            ax9.set_ylabel('Combined Normalized Energy (0-2 scale)')
+            ax9.set_title('Normalized Total Energy Minimization Trend', fontweight='bold')
             ax9.grid(True, alpha=0.3)
             ax9.legend()
         
@@ -722,16 +737,20 @@ class SingleEnvironmentAnalyzer:
             self.report_lines.append(f"- **Raw EFE**: Mean={efe_stats['mean']:.2f}, Std={efe_stats['std']:.2f}, Min={efe_stats['min']:.2f}, Max={efe_stats['max']:.2f}")
             self.report_lines.append(f"- **Log-Normalized EFE**: Mean={log_efe_stats['mean']:.2f}, Std={log_efe_stats['std']:.2f}")
         
-        # Energy minimization trends
+        # Energy minimization trends - using normalized values
         if 'vfe' in self.metrics_data.columns:
             episode_vfe_means = self.metrics_data.groupby('episode_id')['vfe'].mean()
-            vfe_trend = np.polyfit(range(len(episode_vfe_means)), episode_vfe_means.values, 1)[0]
-            self.report_lines.append(f"\n### Energy Minimization Trends:")
+            # Normalize VFE values (0-1 scale) for trend analysis
+            vfe_normalized = (episode_vfe_means.values - episode_vfe_means.min()) / (episode_vfe_means.max() - episode_vfe_means.min() + 1e-6)
+            vfe_trend = np.polyfit(range(len(vfe_normalized)), vfe_normalized, 1)[0]
+            self.report_lines.append(f"\n### Energy Minimization Trends (Normalized):")
             self.report_lines.append(f"- **VFE Trend**: {vfe_trend:.4f} per episode ({'Improving' if vfe_trend < 0 else 'Worsening'})")
         
         if 'efe' in self.metrics_data.columns:
             episode_efe_means = self.metrics_data.groupby('episode_id')['efe'].mean()
-            efe_trend = np.polyfit(range(len(episode_efe_means)), episode_efe_means.values, 1)[0]
+            # Normalize EFE values (0-1 scale) for trend analysis
+            efe_normalized = (episode_efe_means.values - episode_efe_means.min()) / (episode_efe_means.max() - episode_efe_means.min() + 1e-6)
+            efe_trend = np.polyfit(range(len(efe_normalized)), efe_normalized, 1)[0]
             self.report_lines.append(f"- **EFE Trend**: {efe_trend:.4f} per episode ({'Improving' if efe_trend > 0 else 'Worsening'})")
         
         print("OK Enhanced VFE/EFE dynamics analysis completed")

@@ -1,6 +1,6 @@
 # Active Inference Experiment Analysis Report
 
-**Generated on:** 2025-05-26 21:41:24
+**Generated on:** 2025-05-26 21:45:47
 **Total Episodes:** 149
 
 ## Episode Outcomes
@@ -40,9 +40,9 @@
 - **Raw EFE**: Mean=-190.89, Std=116.38, Min=-782.12, Max=-7.25
 - **Log-Normalized EFE**: Mean=5.03, Std=0.81
 
-### Energy Minimization Trends:
-- **VFE Trend**: -0.2416 per episode (Improving)
-- **EFE Trend**: 0.2439 per episode (Improving)
+### Energy Minimization Trends (Normalized):
+- **VFE Trend**: -0.0008 per episode (Improving)
+- **EFE Trend**: 0.0008 per episode (Improving)
 
 ## Planning Behavior Statistics
 - **Replanning Count:** Mean=2.17, Median=1.00, Max=56.00
@@ -115,5 +115,5 @@
 - **Energy Coupling**: Strong correlation indicates tight VFE-EFE relationship
 
 ---
-**Analysis completed**: 2025-05-26 21:41:37
+**Analysis completed**: 2025-05-26 21:45:58
 **Framework**: Single Environment Active Inference Analysis v2.0
