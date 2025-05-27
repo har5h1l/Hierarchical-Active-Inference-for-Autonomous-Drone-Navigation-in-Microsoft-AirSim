@@ -96,15 +96,15 @@ def generate_html_dashboard(results_dir):
 </head>
 <body>
     <div class="header">
-        <h1>🧠 Active Inference Experiment Analysis Dashboard</h1>
+        <h1>[BRAIN] Active Inference Experiment Analysis Dashboard</h1>
         <p>Comprehensive analysis of drone navigation experiments</p>
         <p><strong>Generated:</strong> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
     </div>
     
     <div class="summary">
-        <h3>📊 Analysis Summary</h3>
+        <h3>[CHART] Analysis Summary</h3>
         <p>This dashboard presents the results of analyzing {len(plot_dirs)} environment(s) from your active inference drone navigation experiments.</p>
-        <a href="experiment_analysis_report.md" class="report-link">📄 View Detailed Report</a>
+        <a href="experiment_analysis_report.md" class="report-link">[FILE] View Detailed Report</a>
     </div>
 """
     
@@ -160,7 +160,7 @@ def generate_html_dashboard(results_dir):
             <li><strong>Behavioral Clusters:</strong> Different navigation strategies identified</li>
         </ul>
         
-        <h3>📁 Files Generated</h3>
+        <h3>[FOLDER] Files Generated</h3>
         <ul>
             <li><code>experiment_analysis_report.md</code> - Comprehensive statistical report</li>
             <li><code>plots_[environment]/</code> - Environment-specific visualizations</li>
@@ -185,5 +185,5 @@ def generate_html_dashboard(results_dir):
 if __name__ == "__main__":
     results_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "results")
     dashboard_path = generate_html_dashboard(results_dir)
-    print(f"📊 Dashboard generated: {dashboard_path}")
-    print("💡 Open this file in your browser to view the analysis results!")
+    print(f"[CHART] Dashboard generated: {dashboard_path}")
+    print("[TIP] Open this file in your browser to view the analysis results!")

@@ -23,7 +23,7 @@ class ExperimentProcessor:
     
     def process_all_experiments(self):
         """Process all experiments and create environment-specific datasets"""
-        print("🔄 Processing experiment data...")
+        print("[PROCESSING] Processing experiment data...")
         
         # Discover experiments
         experiment_folders = glob.glob(os.path.join(self.experiment_dir, "experiment_*"))
@@ -56,10 +56,10 @@ class ExperimentProcessor:
                     env_data[environment] = []
                 env_data[environment].append(metrics_df)
                 
-                print(f"  ✅ Processed {exp_name} ({environment})")
+                print(f"  OK Processed {exp_name} ({environment})")
                 
             except Exception as e:
-                print(f"  ⚠️  Error processing {folder}: {e}")
+                print(f"  [WARNING]  Error processing {folder}: {e}")
         
         # Combine and save by environment
         for env, data_list in env_data.items():
@@ -87,9 +87,9 @@ class ExperimentProcessor:
                 env_path = os.path.join(self.data_dir, env_filename)
                 combined_df.to_csv(env_path, index=False)
                 
-                print(f"📊 Saved {len(combined_df)} rows for environment '{env}' to {env_filename}")
+                print(f"[CHART] Saved {len(combined_df)} rows for environment '{env}' to {env_filename}")
         
-        print(f"✅ Processing complete! Data saved to {self.data_dir}")
+        print(f"OK Processing complete! Data saved to {self.data_dir}")
         return list(env_data.keys())
 
 if __name__ == "__main__":
@@ -97,5 +97,5 @@ if __name__ == "__main__":
     processor = ExperimentProcessor(base_dir)
     environments = processor.process_all_experiments()
     
-    print(f"\n🎯 Found environments: {environments}")
-    print(f"💡 You can now run the main analysis with: python analyze_envs.py")
+    print(f"\n[TARGET] Found environments: {environments}")
+    print(f"[TIP] You can now run the main analysis with: python analyze_envs.py")
