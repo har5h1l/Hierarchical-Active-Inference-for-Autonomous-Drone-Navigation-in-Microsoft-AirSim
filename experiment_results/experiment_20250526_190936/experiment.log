@@ -1,0 +1,695 @@
+2025-05-26 19:09:36,878 - INFO - Using random seed: 42
+2025-05-26 19:09:36,878 - INFO - Starting experiment with configuration:
+2025-05-26 19:09:36,879 - INFO -   num_episodes: 15
+2025-05-26 19:09:36,879 - INFO -   target_distance_range: (20.0, 100.0)
+2025-05-26 19:09:36,880 - INFO -   random_seed: 42
+2025-05-26 19:09:36,880 - INFO -   max_steps_per_episode: 200
+2025-05-26 19:09:36,881 - INFO -   output_dir: experiment_results
+2025-05-26 19:09:36,881 - INFO -   stuck_timeout: 15.0
+2025-05-26 19:09:36,881 - INFO -   stuck_check_interval: 3.0
+2025-05-26 19:09:36,881 - INFO -   episode_timeout: 240
+2025-05-26 19:09:36,882 - INFO -   precompile_julia: True
+2025-05-26 19:09:36,882 - INFO -   zmq_port: 5555
+2025-05-26 19:09:36,882 - INFO -   debug_raycasting: False
+2025-05-26 19:09:36,882 - INFO -   min_ray_checks: 3
+2025-05-26 19:09:36,883 - INFO -   max_ray_checks: 7
+2025-05-26 19:09:36,883 - INFO -   visualize_raycasts: False
+2025-05-26 19:09:36,884 - INFO -   visualization_duration: 60.0
+2025-05-26 19:09:39,444 - INFO - System information collected and saved
+2025-05-26 19:09:39,451 - INFO - AirSim connection established successfully
+2025-05-26 19:10:18,354 - INFO - Generating pool of 15 valid target locations...
+2025-05-26 19:10:18,466 - INFO - Found valid target at [47.44, 7.98, -11.81], altitude: 11.81m (attempt 4)
+2025-05-26 19:10:18,578 - INFO - Found valid target at [26.81, 3.24, -17.34], altitude: 17.34m (attempt 3)
+2025-05-26 19:10:18,667 - INFO - Found valid target at [2.05, 13.04, -2.16], altitude: 2.16m (attempt 2)
+2025-05-26 19:10:18,759 - INFO - Found valid target at [14.73, 7.2, -4.12], altitude: 4.12m (attempt 2)
+2025-05-26 19:10:18,872 - INFO - Found valid target at [19.13, 3.92, -16.85], altitude: 16.85m (attempt 3)
+2025-05-26 19:10:18,961 - INFO - Found valid target at [-19.44, -1.52, -9.53], altitude: 9.53m (attempt 2)
+2025-05-26 19:10:19,072 - INFO - Found valid target at [26.97, -5.84, -13.69], altitude: 13.69m (attempt 3)
+2025-05-26 19:10:19,164 - INFO - Found valid target at [-13.92, -0.99, -15.25], altitude: 15.25m (attempt 2)
+2025-05-26 19:10:19,254 - INFO - Found valid target at [-27.85, 4.74, -7.71], altitude: 7.71m (attempt 2)
+2025-05-26 19:10:19,365 - INFO - Found valid target at [50.14, -10.26, -13.32], altitude: 13.32m (attempt 3)
+2025-05-26 19:10:19,387 - INFO - Generated 10/15 targets in 1.0s (9 attempts)
+2025-05-26 19:10:19,453 - INFO - Found valid target at [57.37, -22.0, -4.86], altitude: 4.86m (attempt 2)
+2025-05-26 19:10:19,523 - INFO - Found valid target at [-38.1, -34.51, -14.81], altitude: 14.81m (attempt 1)
+2025-05-26 19:10:19,634 - INFO - Found valid target at [-57.84, 52.9, -15.03], altitude: 15.03m (attempt 3)
+2025-05-26 19:10:19,725 - INFO - Found valid target at [23.75, -36.79, -8.33], altitude: 8.33m (attempt 2)
+2025-05-26 19:10:19,816 - INFO - Found valid target at [6.02, -54.0, -6.16], altitude: 6.16m (attempt 2)
+2025-05-26 19:10:19,838 - INFO - Generated 15/15 targets in 1.5s (14 attempts)
+2025-05-26 19:10:19,838 - INFO - Successfully generated pool of 15 targets in 1.5s
+2025-05-26 19:10:19,841 - INFO - Saved pool of 15 targets to experiment_results\experiment_20250526_190936\target_pool.json
+2025-05-26 19:10:19,842 - INFO - Starting episode 0 of 15
+2025-05-26 19:10:19,842 - INFO - === Starting Episode 0 ===
+2025-05-26 19:10:19,846 - INFO - Episode 0: Taking off...
+2025-05-26 19:10:25,281 - INFO - Episode 0: Using pre-generated target 0 of 15
+2025-05-26 19:10:25,282 - INFO - Episode 0: Initial distance to target: 49.16m
+2025-05-26 19:10:25,284 - INFO - Episode 0: Initial position: [0.0, 0.0, -1.67]
+2025-05-26 19:10:25,284 - INFO - Episode 0: Target position: [47.44, 7.98, -11.81]
+2025-05-26 19:10:25,284 - INFO - Episode 0: Initial distance: 49.16m
+2025-05-26 19:10:25,288 - INFO - Episode 0: Target verified with 3 rays
+2025-05-26 19:10:33,873 - WARNING - Obstacle detected at 3.62m during movement execution
+2025-05-26 19:10:33,873 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:10:33,879 - WARNING - Obstacle detected at 3.62m during movement execution
+2025-05-26 19:10:33,880 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:10:33,886 - WARNING - Obstacle detected at 3.62m during movement execution
+2025-05-26 19:10:33,887 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:10:33,891 - WARNING - Obstacle detected at 3.62m during movement execution
+2025-05-26 19:10:33,892 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:10:33,897 - WARNING - Obstacle detected at 3.62m during movement execution
+2025-05-26 19:10:33,898 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:10:33,903 - WARNING - Obstacle detected at 3.62m during movement execution
+2025-05-26 19:10:33,904 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:10:33,909 - WARNING - Obstacle detected at 3.62m during movement execution
+2025-05-26 19:10:33,910 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:10:33,915 - WARNING - Obstacle detected at 3.62m during movement execution
+2025-05-26 19:10:33,916 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:10:33,920 - WARNING - Obstacle detected at 3.62m during movement execution
+2025-05-26 19:10:33,920 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:10:33,927 - WARNING - Obstacle detected at 3.62m during movement execution
+2025-05-26 19:10:33,928 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:10:33,934 - WARNING - Obstacle detected at 3.62m during movement execution
+2025-05-26 19:10:33,934 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:10:33,937 - WARNING - Obstacle detected at 3.62m during movement execution
+2025-05-26 19:10:33,937 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:10:33,943 - WARNING - Obstacle detected at 3.62m during movement execution
+2025-05-26 19:10:33,943 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:10:33,948 - WARNING - Obstacle detected at 3.62m during movement execution
+2025-05-26 19:10:33,948 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:10:33,956 - WARNING - Obstacle detected at 3.62m during movement execution
+2025-05-26 19:10:33,957 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:10:33,962 - WARNING - Obstacle detected at 3.62m during movement execution
+2025-05-26 19:10:33,962 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:10:34,286 - WARNING - Obstacle detected at 3.87m during movement execution
+2025-05-26 19:10:34,286 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:10:34,291 - WARNING - Obstacle detected at 3.87m during movement execution
+2025-05-26 19:10:34,293 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:10:34,301 - WARNING - Obstacle detected at 3.87m during movement execution
+2025-05-26 19:10:34,301 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:10:34,304 - WARNING - Obstacle detected at 3.87m during movement execution
+2025-05-26 19:10:34,305 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:10:34,310 - WARNING - Obstacle detected at 3.87m during movement execution
+2025-05-26 19:10:34,312 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:10:34,318 - WARNING - Obstacle detected at 3.87m during movement execution
+2025-05-26 19:10:34,319 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:10:34,325 - WARNING - Obstacle detected at 3.87m during movement execution
+2025-05-26 19:10:34,326 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:10:34,333 - WARNING - Obstacle detected at 3.87m during movement execution
+2025-05-26 19:10:34,333 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:10:34,338 - WARNING - Obstacle detected at 3.87m during movement execution
+2025-05-26 19:10:34,339 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:10:34,345 - WARNING - Obstacle detected at 3.87m during movement execution
+2025-05-26 19:10:34,347 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:10:34,351 - WARNING - Obstacle detected at 3.87m during movement execution
+2025-05-26 19:10:34,353 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:10:34,357 - WARNING - Obstacle detected at 3.87m during movement execution
+2025-05-26 19:10:34,358 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:10:34,361 - WARNING - Obstacle detected at 3.87m during movement execution
+2025-05-26 19:10:34,361 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:10:34,366 - WARNING - Obstacle detected at 3.87m during movement execution
+2025-05-26 19:10:34,367 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:10:34,372 - WARNING - Obstacle detected at 3.87m during movement execution
+2025-05-26 19:10:34,372 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:10:39,729 - WARNING - Episode 0: Step 0 took 14.44s (unusually long)
+2025-05-26 19:10:40,283 - WARNING - Obstacle detected at 4.05m during movement execution
+2025-05-26 19:10:40,284 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:10:40,290 - WARNING - Obstacle detected at 4.05m during movement execution
+2025-05-26 19:10:40,290 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:10:40,294 - WARNING - Obstacle detected at 4.05m during movement execution
+2025-05-26 19:10:40,295 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:10:40,300 - WARNING - Obstacle detected at 4.05m during movement execution
+2025-05-26 19:10:40,301 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:10:40,307 - WARNING - Obstacle detected at 4.05m during movement execution
+2025-05-26 19:10:40,307 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:10:40,312 - WARNING - Obstacle detected at 4.05m during movement execution
+2025-05-26 19:10:40,312 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:10:40,318 - WARNING - Obstacle detected at 4.05m during movement execution
+2025-05-26 19:10:40,318 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:10:40,324 - WARNING - Obstacle detected at 4.05m during movement execution
+2025-05-26 19:10:40,325 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:10:40,330 - WARNING - Obstacle detected at 4.05m during movement execution
+2025-05-26 19:10:40,331 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:10:40,335 - WARNING - Obstacle detected at 4.05m during movement execution
+2025-05-26 19:10:40,335 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:10:40,340 - WARNING - Obstacle detected at 4.05m during movement execution
+2025-05-26 19:10:40,341 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:10:40,348 - WARNING - Obstacle detected at 4.05m during movement execution
+2025-05-26 19:10:40,348 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:10:40,354 - WARNING - Obstacle detected at 4.05m during movement execution
+2025-05-26 19:10:40,354 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:10:40,362 - WARNING - Obstacle detected at 4.05m during movement execution
+2025-05-26 19:10:40,363 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:10:40,368 - WARNING - Obstacle detected at 4.05m during movement execution
+2025-05-26 19:10:40,369 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:10:40,487 - WARNING - Obstacle detected at 4.25m during movement execution
+2025-05-26 19:10:40,488 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:10:40,492 - WARNING - Obstacle detected at 4.25m during movement execution
+2025-05-26 19:10:40,492 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:10:40,495 - WARNING - Obstacle detected at 4.25m during movement execution
+2025-05-26 19:10:40,496 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:10:40,502 - WARNING - Obstacle detected at 4.25m during movement execution
+2025-05-26 19:10:40,503 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:10:40,507 - WARNING - Obstacle detected at 4.25m during movement execution
+2025-05-26 19:10:40,507 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:10:40,513 - WARNING - Obstacle detected at 4.25m during movement execution
+2025-05-26 19:10:40,513 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:10:40,520 - WARNING - Obstacle detected at 4.25m during movement execution
+2025-05-26 19:10:40,521 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:10:40,526 - WARNING - Obstacle detected at 4.25m during movement execution
+2025-05-26 19:10:40,527 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:10:40,534 - WARNING - Obstacle detected at 4.25m during movement execution
+2025-05-26 19:10:40,534 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:10:40,540 - WARNING - Obstacle detected at 4.25m during movement execution
+2025-05-26 19:10:40,542 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:10:40,547 - WARNING - Obstacle detected at 4.25m during movement execution
+2025-05-26 19:10:40,548 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:10:40,553 - WARNING - Obstacle detected at 4.25m during movement execution
+2025-05-26 19:10:40,553 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:10:40,559 - WARNING - Obstacle detected at 4.25m during movement execution
+2025-05-26 19:10:40,559 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:10:40,562 - WARNING - Obstacle detected at 4.25m during movement execution
+2025-05-26 19:10:40,562 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:10:40,569 - WARNING - Obstacle detected at 4.25m during movement execution
+2025-05-26 19:10:40,570 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:10:41,634 - WARNING - Collision detected during movement, cancelling task immediately
+2025-05-26 19:10:41,636 - INFO - Episode 0: Obstacle detected during movement, triggering immediate replanning
+2025-05-26 19:10:41,647 - INFO - Adding newly detected obstacle at [5.16, -0.2, -2.08] to planning data
+2025-05-26 19:10:41,647 - INFO - Episode 0: Putting drone in hover mode before dynamic replanning
+2025-05-26 19:10:42,148 - INFO - Episode 0: Triggering dynamic replanning due to detected obstacle
+2025-05-26 19:10:42,169 - INFO - Enhanced planning parameters for obstacle avoidance: safety_margin=5.00, waypoint_count=150, obstacle_priority=5.00
+2025-05-26 19:10:42,190 - INFO - Episode 0: Executing replanned path to avoid obstacle
+2025-05-26 19:10:42,213 - WARNING - Collision detected during movement, cancelling task immediately
+2025-05-26 19:10:43,847 - WARNING - Collision detected during movement, cancelling task immediately
+2025-05-26 19:10:43,848 - INFO - Episode 0: Obstacle detected during movement, triggering immediate replanning
+2025-05-26 19:10:43,859 - INFO - Adding newly detected obstacle at [6.64, -2.11, -1.89] to planning data
+2025-05-26 19:10:43,860 - INFO - Episode 0: Putting drone in hover mode before dynamic replanning
+2025-05-26 19:10:44,361 - INFO - Episode 0: Triggering dynamic replanning due to detected obstacle
+2025-05-26 19:10:44,376 - INFO - Enhanced planning parameters for obstacle avoidance: safety_margin=5.00, waypoint_count=150, obstacle_priority=5.00
+2025-05-26 19:10:44,394 - INFO - Episode 0: Executing replanned path to avoid obstacle
+2025-05-26 19:10:44,411 - WARNING - Collision detected during movement, cancelling task immediately
+2025-05-26 19:10:45,436 - WARNING - Collision detected during movement, cancelling task immediately
+2025-05-26 19:10:45,437 - INFO - Episode 0: Obstacle detected during movement, triggering immediate replanning
+2025-05-26 19:10:45,447 - INFO - Adding newly detected obstacle at [7.86, -2.73, -2.01] to planning data
+2025-05-26 19:10:45,448 - INFO - Episode 0: Putting drone in hover mode before dynamic replanning
+2025-05-26 19:10:45,949 - INFO - Episode 0: Triggering dynamic replanning due to detected obstacle
+2025-05-26 19:10:45,977 - INFO - Enhanced planning parameters for obstacle avoidance: safety_margin=5.00, waypoint_count=150, obstacle_priority=5.00
+2025-05-26 19:10:45,994 - INFO - Episode 0: Executing replanned path to avoid obstacle
+2025-05-26 19:10:46,020 - WARNING - Collision detected during movement, cancelling task immediately
+2025-05-26 19:10:46,226 - WARNING - Episode 0: Collision detected at step 4
+2025-05-26 19:10:46,230 - INFO - Using collision normal for recovery: [-0.40, 0.92, 0.00]
+2025-05-26 19:10:54,958 - WARNING - Recovery movement timed out after 8.0 seconds
+2025-05-26 19:10:54,963 - INFO - Episode 0: Collision recovery successful, moved 4.05m to new position: [6.29, 0.55, -4.7]
+2025-05-26 19:10:57,599 - WARNING - Collision detected during movement, cancelling task immediately
+2025-05-26 19:10:57,601 - INFO - Episode 0: Obstacle detected during movement, triggering immediate replanning
+2025-05-26 19:10:57,614 - INFO - Adding newly detected obstacle at [7.92, -2.73, -2.02] to planning data
+2025-05-26 19:10:57,615 - INFO - Episode 0: Putting drone in hover mode before dynamic replanning
+2025-05-26 19:10:58,117 - INFO - Episode 0: Triggering dynamic replanning due to detected obstacle
+2025-05-26 19:10:58,151 - INFO - Enhanced planning parameters for obstacle avoidance: safety_margin=4.00, waypoint_count=150, obstacle_priority=3.00
+2025-05-26 19:10:58,166 - INFO - Episode 0: Executing replanned path to avoid obstacle
+2025-05-26 19:10:59,764 - WARNING - Episode 0: Step 4 took 13.54s (unusually long)
+2025-05-26 19:11:10,401 - WARNING - Episode 0: Step 6 took 5.75s (unusually long)
+2025-05-26 19:11:38,467 - INFO - Episode 0: Target reached at step 16
+2025-05-26 19:11:38,471 - INFO - Episode 0: Skipping landing process and resetting drone for next episode
+2025-05-26 19:11:38,471 - INFO - Episode 0 completed: success
+2025-05-26 19:11:38,473 - INFO -   Steps: 16, Duration: 51.53s
+2025-05-26 19:11:38,473 - INFO -   Final distance: 1.31m, Collisions: 1
+2025-05-26 19:11:38,474 - INFO -   Dynamic replanning events: 4
+2025-05-26 19:11:38,503 - INFO - Saved recovery data for episode 0
+2025-05-26 19:11:38,504 - INFO - Starting episode 1 of 15
+2025-05-26 19:11:38,504 - INFO - === Starting Episode 1 ===
+2025-05-26 19:11:38,507 - INFO - Episode 1: Taking off...
+2025-05-26 19:11:43,933 - INFO - Episode 1: Using pre-generated target 1 of 15
+2025-05-26 19:11:43,933 - INFO - Episode 1: Initial distance to target: 31.23m
+2025-05-26 19:11:43,935 - INFO - Episode 1: Initial position: [0.0, 0.0, -1.67]
+2025-05-26 19:11:43,936 - INFO - Episode 1: Target position: [26.81, 3.24, -17.34]
+2025-05-26 19:11:43,936 - INFO - Episode 1: Initial distance: 31.23m
+2025-05-26 19:11:43,942 - INFO - Episode 1: Target verified with 3 rays
+2025-05-26 19:11:43,989 - WARNING - Pre-movement check: Obstacle detected on planned path at 3.73m distance
+2025-05-26 19:11:43,989 - INFO - Proceeding with movement and will replan if obstacle persists during execution
+2025-05-26 19:11:43,996 - WARNING - Obstacle detected at 3.73m during movement execution
+2025-05-26 19:11:43,997 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,005 - WARNING - Obstacle detected at 3.73m during movement execution
+2025-05-26 19:11:44,005 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,013 - WARNING - Obstacle detected at 3.73m during movement execution
+2025-05-26 19:11:44,014 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,023 - WARNING - Obstacle detected at 3.73m during movement execution
+2025-05-26 19:11:44,023 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,032 - WARNING - Obstacle detected at 3.73m during movement execution
+2025-05-26 19:11:44,033 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,040 - WARNING - Obstacle detected at 3.73m during movement execution
+2025-05-26 19:11:44,041 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,048 - WARNING - Obstacle detected at 3.73m during movement execution
+2025-05-26 19:11:44,049 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,055 - WARNING - Obstacle detected at 3.73m during movement execution
+2025-05-26 19:11:44,055 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,062 - WARNING - Obstacle detected at 3.73m during movement execution
+2025-05-26 19:11:44,063 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,070 - WARNING - Obstacle detected at 3.73m during movement execution
+2025-05-26 19:11:44,072 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,079 - WARNING - Obstacle detected at 3.73m during movement execution
+2025-05-26 19:11:44,079 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,099 - WARNING - Obstacle detected at 3.61m during movement execution
+2025-05-26 19:11:44,099 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,107 - WARNING - Obstacle detected at 3.61m during movement execution
+2025-05-26 19:11:44,108 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,116 - WARNING - Obstacle detected at 3.61m during movement execution
+2025-05-26 19:11:44,116 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,124 - WARNING - Obstacle detected at 3.61m during movement execution
+2025-05-26 19:11:44,124 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,133 - WARNING - Obstacle detected at 3.61m during movement execution
+2025-05-26 19:11:44,134 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,142 - WARNING - Obstacle detected at 3.61m during movement execution
+2025-05-26 19:11:44,142 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,150 - WARNING - Obstacle detected at 3.61m during movement execution
+2025-05-26 19:11:44,151 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,159 - WARNING - Obstacle detected at 3.61m during movement execution
+2025-05-26 19:11:44,159 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,166 - WARNING - Obstacle detected at 3.61m during movement execution
+2025-05-26 19:11:44,167 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,174 - WARNING - Obstacle detected at 3.61m during movement execution
+2025-05-26 19:11:44,175 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,182 - WARNING - Obstacle detected at 3.61m during movement execution
+2025-05-26 19:11:44,183 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,199 - WARNING - Obstacle detected at 3.69m during movement execution
+2025-05-26 19:11:44,200 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,204 - WARNING - Obstacle detected at 3.69m during movement execution
+2025-05-26 19:11:44,204 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,210 - WARNING - Obstacle detected at 3.69m during movement execution
+2025-05-26 19:11:44,212 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,219 - WARNING - Obstacle detected at 3.69m during movement execution
+2025-05-26 19:11:44,220 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,226 - WARNING - Obstacle detected at 3.69m during movement execution
+2025-05-26 19:11:44,227 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,233 - WARNING - Obstacle detected at 3.69m during movement execution
+2025-05-26 19:11:44,234 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,240 - WARNING - Obstacle detected at 3.69m during movement execution
+2025-05-26 19:11:44,241 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,248 - WARNING - Obstacle detected at 3.69m during movement execution
+2025-05-26 19:11:44,249 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,257 - WARNING - Obstacle detected at 3.69m during movement execution
+2025-05-26 19:11:44,258 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,263 - WARNING - Obstacle detected at 3.69m during movement execution
+2025-05-26 19:11:44,264 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,270 - WARNING - Obstacle detected at 3.69m during movement execution
+2025-05-26 19:11:44,271 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,280 - WARNING - Obstacle detected at 3.69m during movement execution
+2025-05-26 19:11:44,281 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,299 - WARNING - Obstacle detected at 3.78m during movement execution
+2025-05-26 19:11:44,300 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,306 - WARNING - Obstacle detected at 3.78m during movement execution
+2025-05-26 19:11:44,306 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,315 - WARNING - Obstacle detected at 3.78m during movement execution
+2025-05-26 19:11:44,315 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,323 - WARNING - Obstacle detected at 3.78m during movement execution
+2025-05-26 19:11:44,324 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,329 - WARNING - Obstacle detected at 3.78m during movement execution
+2025-05-26 19:11:44,329 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,335 - WARNING - Obstacle detected at 3.78m during movement execution
+2025-05-26 19:11:44,335 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,343 - WARNING - Obstacle detected at 3.78m during movement execution
+2025-05-26 19:11:44,344 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,350 - WARNING - Obstacle detected at 3.78m during movement execution
+2025-05-26 19:11:44,350 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,358 - WARNING - Obstacle detected at 3.78m during movement execution
+2025-05-26 19:11:44,359 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,364 - WARNING - Obstacle detected at 3.78m during movement execution
+2025-05-26 19:11:44,364 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,372 - WARNING - Obstacle detected at 3.78m during movement execution
+2025-05-26 19:11:44,373 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,380 - WARNING - Obstacle detected at 3.78m during movement execution
+2025-05-26 19:11:44,382 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,399 - WARNING - Obstacle detected at 3.67m during movement execution
+2025-05-26 19:11:44,400 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,405 - WARNING - Obstacle detected at 3.67m during movement execution
+2025-05-26 19:11:44,405 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,411 - WARNING - Obstacle detected at 3.67m during movement execution
+2025-05-26 19:11:44,412 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,418 - WARNING - Obstacle detected at 3.67m during movement execution
+2025-05-26 19:11:44,419 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,425 - WARNING - Obstacle detected at 3.67m during movement execution
+2025-05-26 19:11:44,426 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,436 - WARNING - Obstacle detected at 3.67m during movement execution
+2025-05-26 19:11:44,437 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,443 - WARNING - Obstacle detected at 3.67m during movement execution
+2025-05-26 19:11:44,444 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,451 - WARNING - Obstacle detected at 3.67m during movement execution
+2025-05-26 19:11:44,452 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,460 - WARNING - Obstacle detected at 3.67m during movement execution
+2025-05-26 19:11:44,460 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,466 - WARNING - Obstacle detected at 3.67m during movement execution
+2025-05-26 19:11:44,466 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,474 - WARNING - Obstacle detected at 3.67m during movement execution
+2025-05-26 19:11:44,474 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,483 - WARNING - Obstacle detected at 3.67m during movement execution
+2025-05-26 19:11:44,483 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,499 - WARNING - Obstacle detected at 3.80m during movement execution
+2025-05-26 19:11:44,499 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,506 - WARNING - Obstacle detected at 3.80m during movement execution
+2025-05-26 19:11:44,507 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,514 - WARNING - Obstacle detected at 3.80m during movement execution
+2025-05-26 19:11:44,515 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,522 - WARNING - Obstacle detected at 3.80m during movement execution
+2025-05-26 19:11:44,523 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,532 - WARNING - Obstacle detected at 3.80m during movement execution
+2025-05-26 19:11:44,533 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,543 - WARNING - Obstacle detected at 3.80m during movement execution
+2025-05-26 19:11:44,543 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,549 - WARNING - Obstacle detected at 3.80m during movement execution
+2025-05-26 19:11:44,550 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,556 - WARNING - Obstacle detected at 3.80m during movement execution
+2025-05-26 19:11:44,556 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,563 - WARNING - Obstacle detected at 3.80m during movement execution
+2025-05-26 19:11:44,564 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,571 - WARNING - Obstacle detected at 3.80m during movement execution
+2025-05-26 19:11:44,571 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,579 - WARNING - Obstacle detected at 3.80m during movement execution
+2025-05-26 19:11:44,580 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,587 - WARNING - Obstacle detected at 3.80m during movement execution
+2025-05-26 19:11:44,588 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,603 - WARNING - Obstacle detected at 3.72m during movement execution
+2025-05-26 19:11:44,604 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,611 - WARNING - Obstacle detected at 3.72m during movement execution
+2025-05-26 19:11:44,611 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,618 - WARNING - Obstacle detected at 3.72m during movement execution
+2025-05-26 19:11:44,619 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,624 - WARNING - Obstacle detected at 3.72m during movement execution
+2025-05-26 19:11:44,624 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,632 - WARNING - Obstacle detected at 3.72m during movement execution
+2025-05-26 19:11:44,633 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,641 - WARNING - Obstacle detected at 3.72m during movement execution
+2025-05-26 19:11:44,642 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,648 - WARNING - Obstacle detected at 3.72m during movement execution
+2025-05-26 19:11:44,649 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,657 - WARNING - Obstacle detected at 3.72m during movement execution
+2025-05-26 19:11:44,657 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,665 - WARNING - Obstacle detected at 3.72m during movement execution
+2025-05-26 19:11:44,665 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,671 - WARNING - Obstacle detected at 3.72m during movement execution
+2025-05-26 19:11:44,672 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,678 - WARNING - Obstacle detected at 3.72m during movement execution
+2025-05-26 19:11:44,679 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,686 - WARNING - Obstacle detected at 3.72m during movement execution
+2025-05-26 19:11:44,686 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,692 - WARNING - Obstacle detected at 3.72m during movement execution
+2025-05-26 19:11:44,693 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,711 - WARNING - Obstacle detected at 3.80m during movement execution
+2025-05-26 19:11:44,712 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,719 - WARNING - Obstacle detected at 3.80m during movement execution
+2025-05-26 19:11:44,720 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,728 - WARNING - Obstacle detected at 3.80m during movement execution
+2025-05-26 19:11:44,728 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,736 - WARNING - Obstacle detected at 3.80m during movement execution
+2025-05-26 19:11:44,737 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,744 - WARNING - Obstacle detected at 3.80m during movement execution
+2025-05-26 19:11:44,745 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,752 - WARNING - Obstacle detected at 3.80m during movement execution
+2025-05-26 19:11:44,752 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,758 - WARNING - Obstacle detected at 3.80m during movement execution
+2025-05-26 19:11:44,759 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,764 - WARNING - Obstacle detected at 3.80m during movement execution
+2025-05-26 19:11:44,765 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,774 - WARNING - Obstacle detected at 3.80m during movement execution
+2025-05-26 19:11:44,775 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,786 - WARNING - Obstacle detected at 3.80m during movement execution
+2025-05-26 19:11:44,787 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,796 - WARNING - Obstacle detected at 3.80m during movement execution
+2025-05-26 19:11:44,797 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,813 - WARNING - Obstacle detected at 3.41m during movement execution
+2025-05-26 19:11:44,814 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,819 - WARNING - Obstacle detected at 3.41m during movement execution
+2025-05-26 19:11:44,820 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,824 - WARNING - Obstacle detected at 3.41m during movement execution
+2025-05-26 19:11:44,825 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,828 - WARNING - Obstacle detected at 3.41m during movement execution
+2025-05-26 19:11:44,829 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,834 - WARNING - Obstacle detected at 3.41m during movement execution
+2025-05-26 19:11:44,835 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,840 - WARNING - Obstacle detected at 3.41m during movement execution
+2025-05-26 19:11:44,840 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,846 - WARNING - Obstacle detected at 3.41m during movement execution
+2025-05-26 19:11:44,846 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,850 - WARNING - Obstacle detected at 3.41m during movement execution
+2025-05-26 19:11:44,852 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,856 - WARNING - Obstacle detected at 3.41m during movement execution
+2025-05-26 19:11:44,857 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,861 - WARNING - Obstacle detected at 3.41m during movement execution
+2025-05-26 19:11:44,862 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,865 - WARNING - Obstacle detected at 3.41m during movement execution
+2025-05-26 19:11:44,865 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,869 - WARNING - Obstacle detected at 3.41m during movement execution
+2025-05-26 19:11:44,870 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,874 - WARNING - Obstacle detected at 3.41m during movement execution
+2025-05-26 19:11:44,875 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,878 - WARNING - Obstacle detected at 3.41m during movement execution
+2025-05-26 19:11:44,879 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,882 - WARNING - Obstacle detected at 3.41m during movement execution
+2025-05-26 19:11:44,882 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,887 - WARNING - Obstacle detected at 3.41m during movement execution
+2025-05-26 19:11:44,887 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,890 - WARNING - Obstacle detected at 3.41m during movement execution
+2025-05-26 19:11:44,890 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,893 - WARNING - Obstacle detected at 3.41m during movement execution
+2025-05-26 19:11:44,894 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,899 - WARNING - Obstacle detected at 3.41m during movement execution
+2025-05-26 19:11:44,899 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,918 - WARNING - Obstacle detected at 3.74m during movement execution
+2025-05-26 19:11:44,918 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,924 - WARNING - Obstacle detected at 3.74m during movement execution
+2025-05-26 19:11:44,924 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,930 - WARNING - Obstacle detected at 3.74m during movement execution
+2025-05-26 19:11:44,931 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,940 - WARNING - Obstacle detected at 3.74m during movement execution
+2025-05-26 19:11:44,941 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,948 - WARNING - Obstacle detected at 3.74m during movement execution
+2025-05-26 19:11:44,949 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,955 - WARNING - Obstacle detected at 3.74m during movement execution
+2025-05-26 19:11:44,956 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,964 - WARNING - Obstacle detected at 3.74m during movement execution
+2025-05-26 19:11:44,965 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,971 - WARNING - Obstacle detected at 3.74m during movement execution
+2025-05-26 19:11:44,971 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,980 - WARNING - Obstacle detected at 3.74m during movement execution
+2025-05-26 19:11:44,981 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,987 - WARNING - Obstacle detected at 3.74m during movement execution
+2025-05-26 19:11:44,987 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:44,994 - WARNING - Obstacle detected at 3.74m during movement execution
+2025-05-26 19:11:44,995 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:45,000 - WARNING - Obstacle detected at 3.74m during movement execution
+2025-05-26 19:11:45,000 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:45,017 - WARNING - Obstacle detected at 3.60m during movement execution
+2025-05-26 19:11:45,018 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:45,024 - WARNING - Obstacle detected at 3.60m during movement execution
+2025-05-26 19:11:45,024 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:45,030 - WARNING - Obstacle detected at 3.60m during movement execution
+2025-05-26 19:11:45,030 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:45,037 - WARNING - Obstacle detected at 3.60m during movement execution
+2025-05-26 19:11:45,037 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:45,044 - WARNING - Obstacle detected at 3.60m during movement execution
+2025-05-26 19:11:45,045 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:45,052 - WARNING - Obstacle detected at 3.60m during movement execution
+2025-05-26 19:11:45,052 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:45,059 - WARNING - Obstacle detected at 3.60m during movement execution
+2025-05-26 19:11:45,059 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:45,066 - WARNING - Obstacle detected at 3.60m during movement execution
+2025-05-26 19:11:45,067 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:45,073 - WARNING - Obstacle detected at 3.60m during movement execution
+2025-05-26 19:11:45,074 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:45,081 - WARNING - Obstacle detected at 3.60m during movement execution
+2025-05-26 19:11:45,081 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:45,089 - WARNING - Obstacle detected at 3.60m during movement execution
+2025-05-26 19:11:45,090 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:45,097 - WARNING - Obstacle detected at 3.60m during movement execution
+2025-05-26 19:11:45,098 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:45,317 - WARNING - Obstacle detected at 3.76m during movement execution
+2025-05-26 19:11:45,318 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:45,322 - WARNING - Obstacle detected at 3.76m during movement execution
+2025-05-26 19:11:45,331 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:45,336 - WARNING - Obstacle detected at 3.76m during movement execution
+2025-05-26 19:11:45,336 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:45,340 - WARNING - Obstacle detected at 3.76m during movement execution
+2025-05-26 19:11:45,340 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:45,344 - WARNING - Obstacle detected at 3.76m during movement execution
+2025-05-26 19:11:45,345 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:45,348 - WARNING - Obstacle detected at 3.76m during movement execution
+2025-05-26 19:11:45,349 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:45,353 - WARNING - Obstacle detected at 3.76m during movement execution
+2025-05-26 19:11:45,354 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:45,357 - WARNING - Obstacle detected at 3.76m during movement execution
+2025-05-26 19:11:45,357 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:45,361 - WARNING - Obstacle detected at 3.76m during movement execution
+2025-05-26 19:11:45,361 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:45,367 - WARNING - Obstacle detected at 3.76m during movement execution
+2025-05-26 19:11:45,368 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:45,371 - WARNING - Obstacle detected at 3.76m during movement execution
+2025-05-26 19:11:45,371 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:45,374 - WARNING - Obstacle detected at 3.76m during movement execution
+2025-05-26 19:11:45,374 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:45,379 - WARNING - Obstacle detected at 3.76m during movement execution
+2025-05-26 19:11:45,379 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:45,384 - WARNING - Obstacle detected at 3.76m during movement execution
+2025-05-26 19:11:45,385 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:45,390 - WARNING - Obstacle detected at 3.76m during movement execution
+2025-05-26 19:11:45,391 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:45,395 - WARNING - Obstacle detected at 3.76m during movement execution
+2025-05-26 19:11:45,395 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:45,399 - WARNING - Obstacle detected at 3.76m during movement execution
+2025-05-26 19:11:45,400 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:45,406 - WARNING - Obstacle detected at 3.76m during movement execution
+2025-05-26 19:11:45,407 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:49,787 - WARNING - Episode 1: Step 0 took 5.85s (unusually long)
+2025-05-26 19:11:49,971 - WARNING - Obstacle detected at 3.96m during movement execution
+2025-05-26 19:11:49,972 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:49,984 - WARNING - Obstacle detected at 3.96m during movement execution
+2025-05-26 19:11:49,985 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:49,995 - WARNING - Obstacle detected at 3.96m during movement execution
+2025-05-26 19:11:49,995 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:50,006 - WARNING - Obstacle detected at 3.96m during movement execution
+2025-05-26 19:11:50,006 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:50,018 - WARNING - Obstacle detected at 3.96m during movement execution
+2025-05-26 19:11:50,018 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:50,028 - WARNING - Obstacle detected at 3.96m during movement execution
+2025-05-26 19:11:50,028 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:50,039 - WARNING - Obstacle detected at 3.96m during movement execution
+2025-05-26 19:11:50,039 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:50,151 - WARNING - Obstacle detected at 3.81m during movement execution
+2025-05-26 19:11:50,151 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:50,155 - WARNING - Obstacle detected at 3.81m during movement execution
+2025-05-26 19:11:50,156 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:50,158 - WARNING - Obstacle detected at 3.81m during movement execution
+2025-05-26 19:11:50,158 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:50,161 - WARNING - Obstacle detected at 3.81m during movement execution
+2025-05-26 19:11:50,161 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:50,164 - WARNING - Obstacle detected at 3.81m during movement execution
+2025-05-26 19:11:50,164 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:50,168 - WARNING - Obstacle detected at 3.81m during movement execution
+2025-05-26 19:11:50,168 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:50,171 - WARNING - Obstacle detected at 3.81m during movement execution
+2025-05-26 19:11:50,172 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:50,175 - WARNING - Obstacle detected at 3.81m during movement execution
+2025-05-26 19:11:50,175 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:50,179 - WARNING - Obstacle detected at 3.81m during movement execution
+2025-05-26 19:11:50,180 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:50,183 - WARNING - Obstacle detected at 3.81m during movement execution
+2025-05-26 19:11:50,183 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:50,188 - WARNING - Obstacle detected at 3.81m during movement execution
+2025-05-26 19:11:50,189 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:50,192 - WARNING - Obstacle detected at 3.81m during movement execution
+2025-05-26 19:11:50,193 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:50,196 - WARNING - Obstacle detected at 3.81m during movement execution
+2025-05-26 19:11:50,196 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:50,199 - WARNING - Obstacle detected at 3.81m during movement execution
+2025-05-26 19:11:50,199 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:50,202 - WARNING - Obstacle detected at 3.81m during movement execution
+2025-05-26 19:11:50,202 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:50,207 - WARNING - Obstacle detected at 3.81m during movement execution
+2025-05-26 19:11:50,207 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:50,211 - WARNING - Obstacle detected at 3.81m during movement execution
+2025-05-26 19:11:50,211 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:50,215 - WARNING - Obstacle detected at 3.81m during movement execution
+2025-05-26 19:11:50,215 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:50,218 - WARNING - Obstacle detected at 3.81m during movement execution
+2025-05-26 19:11:50,218 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:50,221 - WARNING - Obstacle detected at 3.81m during movement execution
+2025-05-26 19:11:50,221 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:50,226 - WARNING - Obstacle detected at 3.81m during movement execution
+2025-05-26 19:11:50,227 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:50,230 - WARNING - Obstacle detected at 3.81m during movement execution
+2025-05-26 19:11:50,230 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:50,234 - WARNING - Obstacle detected at 3.81m during movement execution
+2025-05-26 19:11:50,234 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:50,239 - WARNING - Obstacle detected at 3.81m during movement execution
+2025-05-26 19:11:50,239 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:50,358 - WARNING - Obstacle detected at 4.87m during movement execution
+2025-05-26 19:11:50,359 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:50,362 - WARNING - Obstacle detected at 4.87m during movement execution
+2025-05-26 19:11:50,363 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:50,367 - WARNING - Obstacle detected at 4.87m during movement execution
+2025-05-26 19:11:50,368 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:50,372 - WARNING - Obstacle detected at 4.87m during movement execution
+2025-05-26 19:11:50,372 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:50,375 - WARNING - Obstacle detected at 4.87m during movement execution
+2025-05-26 19:11:50,375 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:50,378 - WARNING - Obstacle detected at 4.87m during movement execution
+2025-05-26 19:11:50,378 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:50,382 - WARNING - Obstacle detected at 4.87m during movement execution
+2025-05-26 19:11:50,383 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:50,387 - WARNING - Obstacle detected at 4.87m during movement execution
+2025-05-26 19:11:50,387 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:50,391 - WARNING - Obstacle detected at 4.87m during movement execution
+2025-05-26 19:11:50,391 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:50,394 - WARNING - Obstacle detected at 4.87m during movement execution
+2025-05-26 19:11:50,394 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:50,399 - WARNING - Obstacle detected at 4.87m during movement execution
+2025-05-26 19:11:50,400 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:50,405 - WARNING - Obstacle detected at 4.87m during movement execution
+2025-05-26 19:11:50,405 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:50,409 - WARNING - Obstacle detected at 4.87m during movement execution
+2025-05-26 19:11:50,410 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:50,413 - WARNING - Obstacle detected at 4.87m during movement execution
+2025-05-26 19:11:50,413 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:50,418 - WARNING - Obstacle detected at 4.87m during movement execution
+2025-05-26 19:11:50,418 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:50,423 - WARNING - Obstacle detected at 4.87m during movement execution
+2025-05-26 19:11:50,423 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:50,427 - WARNING - Obstacle detected at 4.87m during movement execution
+2025-05-26 19:11:50,427 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:50,430 - WARNING - Obstacle detected at 4.87m during movement execution
+2025-05-26 19:11:50,430 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:50,433 - WARNING - Obstacle detected at 4.87m during movement execution
+2025-05-26 19:11:50,434 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:50,437 - WARNING - Obstacle detected at 4.87m during movement execution
+2025-05-26 19:11:50,438 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:50,441 - WARNING - Obstacle detected at 4.87m during movement execution
+2025-05-26 19:11:50,442 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:50,452 - WARNING - Obstacle detected at 4.92m during movement execution
+2025-05-26 19:11:50,452 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:50,456 - WARNING - Obstacle detected at 4.92m during movement execution
+2025-05-26 19:11:50,457 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:50,462 - WARNING - Obstacle detected at 4.92m during movement execution
+2025-05-26 19:11:50,462 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:50,466 - WARNING - Obstacle detected at 4.92m during movement execution
+2025-05-26 19:11:50,466 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:50,470 - WARNING - Obstacle detected at 4.92m during movement execution
+2025-05-26 19:11:50,470 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:50,474 - WARNING - Obstacle detected at 4.92m during movement execution
+2025-05-26 19:11:50,475 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:50,480 - WARNING - Obstacle detected at 4.92m during movement execution
+2025-05-26 19:11:50,481 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:50,487 - WARNING - Obstacle detected at 4.92m during movement execution
+2025-05-26 19:11:50,488 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:50,492 - WARNING - Obstacle detected at 4.92m during movement execution
+2025-05-26 19:11:50,492 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:50,496 - WARNING - Obstacle detected at 4.92m during movement execution
+2025-05-26 19:11:50,497 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:50,500 - WARNING - Obstacle detected at 4.92m during movement execution
+2025-05-26 19:11:50,500 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:50,503 - WARNING - Obstacle detected at 4.92m during movement execution
+2025-05-26 19:11:50,503 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:50,507 - WARNING - Obstacle detected at 4.92m during movement execution
+2025-05-26 19:11:50,507 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:50,511 - WARNING - Obstacle detected at 4.92m during movement execution
+2025-05-26 19:11:50,511 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:50,515 - WARNING - Obstacle detected at 4.92m during movement execution
+2025-05-26 19:11:50,515 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:50,519 - WARNING - Obstacle detected at 4.92m during movement execution
+2025-05-26 19:11:50,519 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:50,523 - WARNING - Obstacle detected at 4.92m during movement execution
+2025-05-26 19:11:50,523 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:50,528 - WARNING - Obstacle detected at 4.92m during movement execution
+2025-05-26 19:11:50,528 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:50,533 - WARNING - Obstacle detected at 4.92m during movement execution
+2025-05-26 19:11:50,533 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:50,537 - WARNING - Obstacle detected at 4.92m during movement execution
+2025-05-26 19:11:50,537 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:50,542 - WARNING - Obstacle detected at 4.92m during movement execution
+2025-05-26 19:11:50,543 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:50,546 - WARNING - Obstacle detected at 4.92m during movement execution
+2025-05-26 19:11:50,546 - INFO - Obstacle not imminent, continuing with caution
+2025-05-26 19:11:51,056 - WARNING - Collision detected during movement, cancelling task immediately
+2025-05-26 19:11:51,058 - INFO - Episode 1: Obstacle detected during movement, triggering immediate replanning
+2025-05-26 19:11:51,066 - INFO - Adding newly detected obstacle at [3.74, 1.86, -2.78] to planning data
+2025-05-26 19:11:51,067 - INFO - Episode 1: Putting drone in hover mode before dynamic replanning
+2025-05-26 19:11:51,568 - INFO - Episode 1: Triggering dynamic replanning due to detected obstacle
+2025-05-26 19:11:51,584 - INFO - Enhanced planning parameters for obstacle avoidance: safety_margin=4.00, waypoint_count=150, obstacle_priority=3.00
+2025-05-26 19:11:51,598 - INFO - Episode 1: Executing replanned path to avoid obstacle
+2025-05-26 19:11:51,617 - WARNING - Collision detected during movement, cancelling task immediately
+2025-05-26 19:11:51,819 - WARNING - Episode 1: Collision detected at step 2
+2025-05-26 19:11:51,822 - INFO - Using collision normal for recovery: [-1.00, 0.03, 0.00]

@@ -1,0 +1,89 @@
+2025-05-26 19:05:26,579 - INFO - Using random seed: 42
+2025-05-26 19:05:26,579 - INFO - Starting experiment with configuration:
+2025-05-26 19:05:26,579 - INFO -   num_episodes: 15
+2025-05-26 19:05:26,579 - INFO -   target_distance_range: (20.0, 100.0)
+2025-05-26 19:05:26,579 - INFO -   random_seed: 42
+2025-05-26 19:05:26,579 - INFO -   max_steps_per_episode: 200
+2025-05-26 19:05:26,579 - INFO -   output_dir: experiment_results
+2025-05-26 19:05:26,579 - INFO -   stuck_timeout: 15.0
+2025-05-26 19:05:26,579 - INFO -   stuck_check_interval: 3.0
+2025-05-26 19:05:26,579 - INFO -   episode_timeout: 240
+2025-05-26 19:05:26,582 - INFO -   precompile_julia: True
+2025-05-26 19:05:26,582 - INFO -   zmq_port: 5555
+2025-05-26 19:05:26,582 - INFO -   debug_raycasting: False
+2025-05-26 19:05:26,582 - INFO -   min_ray_checks: 3
+2025-05-26 19:05:26,582 - INFO -   max_ray_checks: 7
+2025-05-26 19:05:26,582 - INFO -   visualize_raycasts: False
+2025-05-26 19:05:26,583 - INFO -   visualization_duration: 60.0
+2025-05-26 19:05:29,412 - INFO - System information collected and saved
+2025-05-26 19:05:29,418 - INFO - AirSim connection established successfully
+2025-05-26 19:06:13,719 - INFO - Generating pool of 15 valid target locations...
+2025-05-26 19:06:13,787 - INFO - Found valid target at [-7.32, -85.88, -3.56], altitude: 3.56m (attempt 2)
+2025-05-26 19:06:13,854 - INFO - Found valid target at [23.22, 5.74, -10.33], altitude: 10.33m (attempt 1)
+2025-05-26 19:06:13,944 - INFO - Found valid target at [2.05, 13.04, -2.16], altitude: 2.16m (attempt 2)
+2025-05-26 19:06:14,014 - INFO - Found valid target at [-2.89, 20.92, -8.1], altitude: 8.10m (attempt 1)
+2025-05-26 19:06:14,129 - INFO - Found valid target at [19.13, 3.92, -16.85], altitude: 16.85m (attempt 3)
+2025-05-26 19:06:14,206 - INFO - Found valid target at [-20.64, 27.72, -8.18], altitude: 8.18m (attempt 1)
+2025-05-26 19:06:14,303 - INFO - Found valid target at [35.19, -14.36, -4.98], altitude: 4.98m (attempt 2)
+2025-05-26 19:06:14,374 - INFO - Found valid target at [21.45, 9.58, -15.54], altitude: 15.54m (attempt 1)
+2025-05-26 19:06:14,470 - INFO - Found valid target at [-40.17, 0.62, -6.36], altitude: 6.36m (attempt 1)
+2025-05-26 19:06:14,540 - INFO - Found valid target at [1.17, 28.59, -16.78], altitude: 16.78m (attempt 1)
+2025-05-26 19:06:14,563 - INFO - Generated 10/15 targets in 0.8s (9 attempts)
+2025-05-26 19:06:14,607 - INFO - Found valid target at [35.28, -4.83, -10.71], altitude: 10.71m (attempt 1)
+2025-05-26 19:06:14,680 - INFO - Found valid target at [-38.1, -34.51, -14.81], altitude: 14.81m (attempt 1)
+2025-05-26 19:06:14,751 - INFO - Found valid target at [31.47, -18.98, -10.69], altitude: 10.69m (attempt 1)
+2025-05-26 19:06:14,823 - INFO - Found valid target at [30.21, 19.26, -15.31], altitude: 15.31m (attempt 1)
+2025-05-26 19:06:14,924 - INFO - Found valid target at [6.02, -54.0, -6.16], altitude: 6.16m (attempt 2)
+2025-05-26 19:06:14,947 - INFO - Generated 15/15 targets in 1.2s (14 attempts)
+2025-05-26 19:06:14,948 - INFO - Successfully generated pool of 15 targets in 1.2s
+2025-05-26 19:06:14,949 - INFO - Saved pool of 15 targets to experiment_results\experiment_20250526_190526\target_pool.json
+2025-05-26 19:06:14,949 - INFO - Starting episode 0 of 15
+2025-05-26 19:06:14,951 - INFO - === Starting Episode 0 ===
+2025-05-26 19:06:14,955 - INFO - Episode 0: Taking off...
+2025-05-26 19:06:20,515 - INFO - Episode 0: Using pre-generated target 0 of 15
+2025-05-26 19:06:20,517 - INFO - Episode 0: Initial distance to target: 86.21m
+2025-05-26 19:06:20,518 - INFO - Episode 0: Initial position: [-0.0, 0.0, -1.67]
+2025-05-26 19:06:20,519 - INFO - Episode 0: Target position: [-7.32, -85.88, -3.56]
+2025-05-26 19:06:20,519 - INFO - Episode 0: Initial distance: 86.21m
+2025-05-26 19:06:20,524 - INFO - Episode 0: Target verified with 3 rays
+2025-05-26 19:06:36,033 - WARNING - Episode 0: Step 0 took 15.51s (unusually long)
+2025-05-26 19:06:53,050 - WARNING - Collision detected during movement, cancelling task immediately
+2025-05-26 19:06:53,052 - INFO - Episode 0: Obstacle detected during movement, triggering immediate replanning
+2025-05-26 19:06:53,070 - INFO - Adding newly detected obstacle at [-2.9, -28.71, -1.96] to planning data
+2025-05-26 19:06:53,074 - INFO - Episode 0: Putting drone in hover mode before dynamic replanning
+2025-05-26 19:06:53,575 - INFO - Episode 0: Triggering dynamic replanning due to detected obstacle
+2025-05-26 19:06:53,593 - INFO - Enhanced planning parameters for obstacle avoidance: safety_margin=4.00, waypoint_count=150, obstacle_priority=3.00
+2025-05-26 19:06:53,752 - INFO - Episode 0: Executing replanned path to avoid obstacle
+2025-05-26 19:06:53,778 - WARNING - Collision detected during movement, cancelling task immediately
+2025-05-26 19:06:53,982 - WARNING - Episode 0: Collision detected at step 8
+2025-05-26 19:06:53,983 - INFO - Using collision normal for recovery: [0.91, 0.42, 0.00]
+2025-05-26 19:07:02,715 - WARNING - Recovery movement timed out after 8.0 seconds
+2025-05-26 19:07:02,716 - INFO - Episode 0: Collision recovery successful, moved 4.06m to new position: [0.44, -27.07, -4.63]
+2025-05-26 19:07:05,576 - WARNING - Collision detected during movement, cancelling task immediately
+2025-05-26 19:07:05,579 - INFO - Episode 0: Obstacle detected during movement, triggering immediate replanning
+2025-05-26 19:07:05,596 - INFO - Adding newly detected obstacle at [-2.92, -28.76, -2.01] to planning data
+2025-05-26 19:07:05,597 - INFO - Episode 0: Putting drone in hover mode before dynamic replanning
+2025-05-26 19:07:06,100 - INFO - Episode 0: Triggering dynamic replanning due to detected obstacle
+2025-05-26 19:07:06,112 - INFO - Enhanced planning parameters for obstacle avoidance: safety_margin=4.00, waypoint_count=150, obstacle_priority=3.00
+2025-05-26 19:07:06,121 - INFO - Episode 0: Executing replanned path to avoid obstacle
+2025-05-26 19:07:10,673 - WARNING - Episode 0: Step 8 took 16.69s (unusually long)
+2025-05-26 19:07:16,719 - WARNING - Episode 0: Step 9 took 6.05s (unusually long)
+2025-05-26 19:07:18,957 - WARNING - Collision detected during movement, cancelling task immediately
+2025-05-26 19:07:18,958 - INFO - Episode 0: Obstacle detected during movement, triggering immediate replanning
+2025-05-26 19:07:18,964 - INFO - Adding newly detected obstacle at [-1.85, -33.91, -6.73] to planning data
+2025-05-26 19:07:18,964 - INFO - Episode 0: Putting drone in hover mode before dynamic replanning
+2025-05-26 19:07:19,466 - INFO - Episode 0: Triggering dynamic replanning due to detected obstacle
+2025-05-26 19:07:19,490 - INFO - Enhanced planning parameters for obstacle avoidance: safety_margin=4.00, waypoint_count=150, obstacle_priority=3.00
+2025-05-26 19:07:19,498 - INFO - Episode 0: Executing replanned path to avoid obstacle
+2025-05-26 19:07:19,518 - WARNING - Collision detected during movement, cancelling task immediately
+2025-05-26 19:07:19,721 - WARNING - Episode 0: Collision detected at step 11
+2025-05-26 19:07:19,723 - INFO - Using collision normal for recovery: [0.58, 0.81, 0.00]
+2025-05-26 19:07:28,455 - WARNING - Recovery movement timed out after 8.0 seconds
+2025-05-26 19:07:28,458 - INFO - Episode 0: Collision recovery successful, moved 4.09m to new position: [0.49, -30.95, -9.38]
+2025-05-26 19:07:31,814 - WARNING - Collision detected during movement, cancelling task immediately
+2025-05-26 19:07:31,815 - INFO - Episode 0: Obstacle detected during movement, triggering immediate replanning
+2025-05-26 19:07:31,823 - INFO - Adding newly detected obstacle at [-1.88, -33.91, -6.76] to planning data
+2025-05-26 19:07:31,824 - INFO - Episode 0: Putting drone in hover mode before dynamic replanning
+2025-05-26 19:07:32,325 - INFO - Episode 0: Triggering dynamic replanning due to detected obstacle
+2025-05-26 19:07:32,335 - INFO - Enhanced planning parameters for obstacle avoidance: safety_margin=4.00, waypoint_count=150, obstacle_priority=3.00
+2025-05-26 19:07:32,346 - INFO - Episode 0: Executing replanned path to avoid obstacle
