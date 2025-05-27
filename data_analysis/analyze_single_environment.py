@@ -240,63 +240,247 @@ class SingleEnvironmentAnalyzer:
         fig.suptitle('Enhanced VFE/EFE Dynamics Analysis (Lower Values = Better Performance)', 
                      fontsize=18, fontweight='bold')
         
-        # Get more episodes for trajectory analysis (up to 15 episodes)
-        all_episodes = self.metrics_data['episode_id'].unique()
-        num_episodes = min(15, len(all_episodes))
-        sample_episodes = all_episodes[:num_episodes]
+        # Get more episodes for trajectory analysis (up to 30 episodes, grouped by outcome)
+        all_episodes = sorted(self.metrics_data['episode_id'].unique())
         
-        # Colors for different trajectories
-        colors = plt.cm.tab20(np.linspace(0, 1, num_episodes))
+        # Merge with episode status for grouping
+        episode_status = self.episode_data.set_index('episode_id')['status'].to_dict()
+        success_episodes = [ep for ep in all_episodes if episode_status.get(ep) == 'success']
+        failure_episodes = [ep for ep in all_episodes if episode_status.get(ep) != 'success']
         
-        # 1. Raw VFE trajectories (top left)
+        # Select more episodes: up to 20 successful and 15 failed episodes
+        num_success = min(20, len(success_episodes))
+        num_failure = min(15, len(failure_episodes))
+        sample_success = success_episodes[:num_success]
+        sample_failure = failure_episodes[:num_failure]
+        
+        # Create sophisticated color schemes
+        success_colors = plt.cm.Greens(np.linspace(0.3, 0.9, num_success))
+        failure_colors = plt.cm.Reds(np.linspace(0.3, 0.9, num_failure))
+        
+        # 1. Raw VFE trajectories with grouped styling (top left)
         ax1 = fig.add_subplot(gs[0, 0])
-        for i, ep_id in enumerate(sample_episodes):
+        
+        # Plot successful episodes with green tones
+        for i, ep_id in enumerate(sample_success):
             ep_data = self.metrics_data[self.metrics_data['episode_id'] == ep_id]
             if 'vfe' in ep_data.columns and len(ep_data) > 0:
-                ax1.plot(ep_data['step'], ep_data['vfe'], alpha=0.7, 
-                        color=colors[i], label=f'Ep {ep_id}', linewidth=1.5)
-        ax1.set_title('Raw VFE Trajectories', fontweight='bold')
+                ax1.plot(ep_data['step'], ep_data['vfe'], alpha=0.6, 
+                        color=success_colors[i], linewidth=1.2)
+        
+        # Plot failed episodes with red tones
+        for i, ep_id in enumerate(sample_failure):
+            ep_data = self.metrics_data[self.metrics_data['episode_id'] == ep_id]
+            if 'vfe' in ep_data.columns and len(ep_data) > 0:
+                ax1.plot(ep_data['step'], ep_data['vfe'], alpha=0.6, 
+                        color=failure_colors[i], linewidth=1.2, linestyle='--')
+        
+        # Add representative average trajectories
+        if sample_success:
+            success_avg = []
+            max_steps = max([len(self.metrics_data[self.metrics_data['episode_id'] == ep]) 
+                           for ep in sample_success])
+            for step in range(max_steps):
+                step_values = []
+                for ep_id in sample_success:
+                    ep_data = self.metrics_data[self.metrics_data['episode_id'] == ep_id]
+                    if len(ep_data) > step and 'vfe' in ep_data.columns:
+                        step_values.append(ep_data.iloc[step]['vfe'])
+                if step_values:
+                    success_avg.append(np.mean(step_values))
+            if success_avg:
+                ax1.plot(range(len(success_avg)), success_avg, color='darkgreen', 
+                        linewidth=3, label=f'Success Avg (n={num_success})', alpha=0.9)
+        
+        if sample_failure:
+            failure_avg = []
+            max_steps = max([len(self.metrics_data[self.metrics_data['episode_id'] == ep]) 
+                           for ep in sample_failure])
+            for step in range(max_steps):
+                step_values = []
+                for ep_id in sample_failure:
+                    ep_data = self.metrics_data[self.metrics_data['episode_id'] == ep_id]
+                    if len(ep_data) > step and 'vfe' in ep_data.columns:
+                        step_values.append(ep_data.iloc[step]['vfe'])
+                if step_values:
+                    failure_avg.append(np.mean(step_values))
+            if failure_avg:
+                ax1.plot(range(len(failure_avg)), failure_avg, color='darkred', 
+                        linewidth=3, label=f'Failure Avg (n={num_failure})', alpha=0.9, linestyle='-.')
+        
+        ax1.set_title(f'Raw VFE Trajectories (n={num_success + num_failure} episodes)', fontweight='bold')
         ax1.set_xlabel('Step')
         ax1.set_ylabel('VFE (Raw)')
         ax1.grid(True, alpha=0.3)
-        ax1.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=8)
+        ax1.legend(fontsize=10)
         
-        # 2. Log-normalized VFE trajectories (top middle)
+        # 2. Log-normalized VFE trajectories with grouped styling (top middle)
         ax2 = fig.add_subplot(gs[0, 1])
-        for i, ep_id in enumerate(sample_episodes):
+        
+        # Plot successful episodes
+        for i, ep_id in enumerate(sample_success):
             ep_data = self.metrics_data[self.metrics_data['episode_id'] == ep_id]
             if 'vfe' in ep_data.columns and len(ep_data) > 0:
-                # Apply log normalization (add small constant to avoid log(0))
                 log_vfe = np.log(np.abs(ep_data['vfe']) + 1e-6)
-                ax2.plot(ep_data['step'], log_vfe, alpha=0.7, 
-                        color=colors[i], label=f'Ep {ep_id}', linewidth=1.5)
-        ax2.set_title('Log-Normalized VFE Trajectories', fontweight='bold')
+                ax2.plot(ep_data['step'], log_vfe, alpha=0.6, 
+                        color=success_colors[i], linewidth=1.2)
+        
+        # Plot failed episodes
+        for i, ep_id in enumerate(sample_failure):
+            ep_data = self.metrics_data[self.metrics_data['episode_id'] == ep_id]
+            if 'vfe' in ep_data.columns and len(ep_data) > 0:
+                log_vfe = np.log(np.abs(ep_data['vfe']) + 1e-6)
+                ax2.plot(ep_data['step'], log_vfe, alpha=0.6, 
+                        color=failure_colors[i], linewidth=1.2, linestyle='--')
+        
+        # Add average trajectories for log-normalized VFE
+        if sample_success:
+            success_log_avg = []
+            max_steps = max([len(self.metrics_data[self.metrics_data['episode_id'] == ep]) 
+                           for ep in sample_success])
+            for step in range(max_steps):
+                step_values = []
+                for ep_id in sample_success:
+                    ep_data = self.metrics_data[self.metrics_data['episode_id'] == ep_id]
+                    if len(ep_data) > step and 'vfe' in ep_data.columns:
+                        step_values.append(np.log(np.abs(ep_data.iloc[step]['vfe']) + 1e-6))
+                if step_values:
+                    success_log_avg.append(np.mean(step_values))
+            if success_log_avg:
+                ax2.plot(range(len(success_log_avg)), success_log_avg, color='darkgreen', 
+                        linewidth=3, label=f'Success Avg (n={num_success})', alpha=0.9)
+        
+        if sample_failure:
+            failure_log_avg = []
+            max_steps = max([len(self.metrics_data[self.metrics_data['episode_id'] == ep]) 
+                           for ep in sample_failure])
+            for step in range(max_steps):
+                step_values = []
+                for ep_id in sample_failure:
+                    ep_data = self.metrics_data[self.metrics_data['episode_id'] == ep_id]
+                    if len(ep_data) > step and 'vfe' in ep_data.columns:
+                        step_values.append(np.log(np.abs(ep_data.iloc[step]['vfe']) + 1e-6))
+                if step_values:
+                    failure_log_avg.append(np.mean(step_values))
+            if failure_log_avg:
+                ax2.plot(range(len(failure_log_avg)), failure_log_avg, color='darkred', 
+                        linewidth=3, label=f'Failure Avg (n={num_failure})', alpha=0.9, linestyle='-.')
+        
+        ax2.set_title(f'Log-Normalized VFE Trajectories (n={num_success + num_failure} episodes)', fontweight='bold')
         ax2.set_xlabel('Step')
         ax2.set_ylabel('Log(|VFE|)')
         ax2.grid(True, alpha=0.3)
+        ax2.legend(fontsize=10)
         
-        # 3. Raw EFE trajectories (top right)
+        # 3. Raw EFE trajectories with grouped styling (top right)
         ax3 = fig.add_subplot(gs[0, 2])
-        for i, ep_id in enumerate(sample_episodes):
+        
+        # Plot successful episodes
+        for i, ep_id in enumerate(sample_success):
             ep_data = self.metrics_data[self.metrics_data['episode_id'] == ep_id]
             if 'efe' in ep_data.columns and len(ep_data) > 0:
-                ax3.plot(ep_data['step'], ep_data['efe'], alpha=0.7, 
-                        color=colors[i], label=f'Ep {ep_id}', linewidth=1.5)
-        ax3.set_title('Raw EFE Trajectories', fontweight='bold')
+                ax3.plot(ep_data['step'], ep_data['efe'], alpha=0.6, 
+                        color=success_colors[i], linewidth=1.2)
+        
+        # Plot failed episodes
+        for i, ep_id in enumerate(sample_failure):
+            ep_data = self.metrics_data[self.metrics_data['episode_id'] == ep_id]
+            if 'efe' in ep_data.columns and len(ep_data) > 0:
+                ax3.plot(ep_data['step'], ep_data['efe'], alpha=0.6, 
+                        color=failure_colors[i], linewidth=1.2, linestyle='--')
+        
+        # Add average trajectories for EFE
+        if sample_success:
+            success_efe_avg = []
+            max_steps = max([len(self.metrics_data[self.metrics_data['episode_id'] == ep]) 
+                           for ep in sample_success])
+            for step in range(max_steps):
+                step_values = []
+                for ep_id in sample_success:
+                    ep_data = self.metrics_data[self.metrics_data['episode_id'] == ep_id]
+                    if len(ep_data) > step and 'efe' in ep_data.columns:
+                        step_values.append(ep_data.iloc[step]['efe'])
+                if step_values:
+                    success_efe_avg.append(np.mean(step_values))
+            if success_efe_avg:
+                ax3.plot(range(len(success_efe_avg)), success_efe_avg, color='darkgreen', 
+                        linewidth=3, label=f'Success Avg (n={num_success})', alpha=0.9)
+        
+        if sample_failure:
+            failure_efe_avg = []
+            max_steps = max([len(self.metrics_data[self.metrics_data['episode_id'] == ep]) 
+                           for ep in sample_failure])
+            for step in range(max_steps):
+                step_values = []
+                for ep_id in sample_failure:
+                    ep_data = self.metrics_data[self.metrics_data['episode_id'] == ep_id]
+                    if len(ep_data) > step and 'efe' in ep_data.columns:
+                        step_values.append(ep_data.iloc[step]['efe'])
+                if step_values:
+                    failure_efe_avg.append(np.mean(step_values))
+            if failure_efe_avg:
+                ax3.plot(range(len(failure_efe_avg)), failure_efe_avg, color='darkred', 
+                        linewidth=3, label=f'Failure Avg (n={num_failure})', alpha=0.9, linestyle='-.')
+        
+        ax3.set_title(f'Raw EFE Trajectories (n={num_success + num_failure} episodes)', fontweight='bold')
         ax3.set_xlabel('Step')
         ax3.set_ylabel('EFE (Raw)')
         ax3.grid(True, alpha=0.3)
+        ax3.legend(fontsize=10)
         
-        # 4. Log-normalized EFE trajectories (second row left)
+        # 4. Log-normalized EFE trajectories with grouped styling (second row left)
         ax4 = fig.add_subplot(gs[1, 0])
-        for i, ep_id in enumerate(sample_episodes):
+        
+        # Plot successful episodes
+        for i, ep_id in enumerate(sample_success):
             ep_data = self.metrics_data[self.metrics_data['episode_id'] == ep_id]
             if 'efe' in ep_data.columns and len(ep_data) > 0:
-                # Apply log normalization for EFE (handle negative values)
                 log_efe = np.log(np.abs(ep_data['efe']) + 1e-6)
-                ax4.plot(ep_data['step'], log_efe, alpha=0.7, 
-                        color=colors[i], label=f'Ep {ep_id}', linewidth=1.5)
-        ax4.set_title('Log-Normalized EFE Trajectories', fontweight='bold')
+                ax4.plot(ep_data['step'], log_efe, alpha=0.6, 
+                        color=success_colors[i], linewidth=1.2)
+        
+        # Plot failed episodes
+        for i, ep_id in enumerate(sample_failure):
+            ep_data = self.metrics_data[self.metrics_data['episode_id'] == ep_id]
+            if 'efe' in ep_data.columns and len(ep_data) > 0:
+                log_efe = np.log(np.abs(ep_data['efe']) + 1e-6)
+                ax4.plot(ep_data['step'], log_efe, alpha=0.6, 
+                        color=failure_colors[i], linewidth=1.2, linestyle='--')
+        
+        # Add average trajectories for log-normalized EFE
+        if sample_success:
+            success_log_efe_avg = []
+            max_steps = max([len(self.metrics_data[self.metrics_data['episode_id'] == ep]) 
+                           for ep in sample_success])
+            for step in range(max_steps):
+                step_values = []
+                for ep_id in sample_success:
+                    ep_data = self.metrics_data[self.metrics_data['episode_id'] == ep_id]
+                    if len(ep_data) > step and 'efe' in ep_data.columns:
+                        step_values.append(np.log(np.abs(ep_data.iloc[step]['efe']) + 1e-6))
+                if step_values:
+                    success_log_efe_avg.append(np.mean(step_values))
+            if success_log_efe_avg:
+                ax4.plot(range(len(success_log_efe_avg)), success_log_efe_avg, color='darkgreen', 
+                        linewidth=3, label=f'Success Avg (n={num_success})', alpha=0.9)
+        
+        if sample_failure:
+            failure_log_efe_avg = []
+            max_steps = max([len(self.metrics_data[self.metrics_data['episode_id'] == ep]) 
+                           for ep in sample_failure])
+            for step in range(max_steps):
+                step_values = []
+                for ep_id in sample_failure:
+                    ep_data = self.metrics_data[self.metrics_data['episode_id'] == ep_id]
+                    if len(ep_data) > step and 'efe' in ep_data.columns:
+                        step_values.append(np.log(np.abs(ep_data.iloc[step]['efe']) + 1e-6))
+                if step_values:
+                    failure_log_efe_avg.append(np.mean(step_values))
+            if failure_log_efe_avg:
+                ax4.plot(range(len(failure_log_efe_avg)), failure_log_efe_avg, color='darkred', 
+                        linewidth=3, label=f'Failure Avg (n={num_failure})', alpha=0.9, linestyle='-.')
+        
+        ax4.set_title(f'Log-Normalized EFE Trajectories (n={num_success + num_failure} episodes)', fontweight='bold')
         ax4.set_xlabel('Step')
         ax4.set_ylabel('Log(|EFE|)')
         ax4.grid(True, alpha=0.3)
