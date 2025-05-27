@@ -1,54 +1,52 @@
-# 🧠 Active Inference Experiment Analysis Pipeline
+# 🧠 Active Inference Single Environment Analysis Pipeline
 
-A comprehensive, modular analysis suite for analyzing experimental metrics from active inference-based drone navigation systems in Microsoft AirSim.
+A comprehensive analysis suite for analyzing experimental metrics from active inference-based drone navigation in a single Microsoft AirSim environment.
 
 ## 📊 Overview
 
-This pipeline processes experimental data from your drone navigation experiments and generates:
-- **Statistical Analysis**: Correlation analysis, hypothesis testing, behavioral clustering
-- **Visualizations**: Time series plots, performance analysis, uncertainty patterns
-- **Interactive Dashboard**: HTML-based viewer for all results
-- **Detailed Reports**: Markdown reports with key findings and statistics
+This pipeline processes experimental data from your single environment drone navigation experiments and generates:
+- **Performance Analysis**: Success rates, episode outcomes, comprehensive metrics  
+- **VFE/EFE Dynamics**: Complete trajectory analysis showing ALL episodes over steps
+- **Statistical Analysis**: Correlation analysis, hypothesis testing, behavioral patterns
+- **Visualizations**: Performance dashboards, behavioral analysis, temporal dynamics
+- **Detailed Reports**: Markdown reports with statistical findings and key insights
 
 ## 🚀 Quick Start
 
-### Option 1: Complete Analysis (Recommended)
+### Complete Analysis (Recommended)
 ```bash
 python run_analysis.py
 ```
-This runs the entire pipeline and opens an interactive dashboard in your browser.
+This runs the entire single environment analysis pipeline and generates all visualizations and reports.
 
-### Option 2: Step-by-Step Analysis
+### Manual Analysis
 ```bash
-# 1. Process raw experiment data
-python process_data.py
-
-# 2. Run statistical analysis and generate plots
-python analyze_envs.py
-
-# 3. Generate interactive dashboard
-python generate_dashboard.py
+python analyze_single_environment.py
 ```
+Run just the main analysis script directly.
 
 ## 📁 File Structure
 
 ```
 data_analysis/
-├── analyze_envs.py           # Main analysis script
-├── process_data.py           # Data preprocessing
-├── generate_dashboard.py     # HTML dashboard generator
-├── run_analysis.py          # Complete pipeline runner
-├── requirements.txt         # Python dependencies
-├── README.md               # This file
-├── data/                   # Processed experiment data
-└── results/                # Analysis outputs
-    ├── experiment_analysis_report.md  # Detailed report
-    ├── dashboard.html                 # Interactive dashboard
-    └── plots_[environment]/           # Environment-specific plots
-        ├── timeseries_analysis.png
-        ├── planning_behavior.png
-        ├── correlation_matrix.png
-        ├── lagged_correlations.png
+├── analyze_single_environment.py  # Main single environment analysis script
+├── run_analysis.py               # Complete pipeline runner  
+├── fix_unicode.py               # Windows compatibility utility
+├── test_all_episodes.py         # Test script for validation
+├── requirements.txt             # Python dependencies
+├── README.md                   # This file (main documentation)
+├── README_single_env.md        # Single environment specific docs
+├── data/                       # Experiment data files
+│   ├── episode_summaries.csv   # Episode outcomes and metrics
+│   └── metrics.csv             # Step-by-step detailed metrics
+└── results/                    # Analysis outputs
+    ├── single_environment_analysis_report.md  # Detailed report
+    ├── performance_dashboard.png              # Performance summary
+    ├── enhanced_vfe_efe_dynamics.png          # VFE/EFE trajectory analysis
+    ├── correlation_matrix.png                 # Behavioral correlations
+    ├── planning_analysis.png                  # Planning behavior analysis
+    ├── success_factors.png                    # Success vs failure analysis
+    └── computational_cost_analysis.png        # Performance metrics
         ├── performance_analysis.png
         ├── uncertainty_analysis.png
         └── behavioral_clustering.png
@@ -72,43 +70,38 @@ Required packages:
 ## 🔬 Analysis Features
 
 ### 📈 Time Series Analysis
-- Evolution of VFE (Variational Free Energy) and EFE (Expected Free Energy)
-- Entropy patterns over time
-- Planning frequency dynamics
-- Distance to target progression
+- Evolution of VFE (Variational Free Energy) and EFE (Expected Free Energy) across all episodes
+- Entropy patterns and uncertainty dynamics over time
+- Planning frequency analysis throughout episodes
+- Distance to target progression tracking
 
 ### 🎯 Planning Behavior Analysis
-- Planning frequency distributions
-- Planning time analysis
-- Relationship between planning and performance
-- VFE patterns during planning vs. non-planning states
+- Planning frequency distributions across episodes
+- Planning duration and timing analysis
+- Relationship between planning frequency and episode success
+- VFE/EFE patterns during planning vs. non-planning states
 
 ### 🔗 Correlation Analysis
-- Correlation matrices between key variables
-- Lagged correlation analysis for temporal relationships
-- Statistical significance testing
+- Comprehensive correlation matrices between all key variables
+- Statistical significance testing for correlations
+- Behavioral pattern identification through correlation analysis
 
 ### 📊 Performance Analysis
-- Success rates by environment and experiment
-- Path efficiency metrics
-- Planning count vs. success analysis
-- Average VFE comparison between successful and failed episodes
+- Episode success rates and outcome analysis
+- Path efficiency and navigation performance metrics
+- Planning count vs. success relationship analysis
+- Comparative analysis between successful and failed episodes
 
 ### 🌊 Uncertainty & Volatility Analysis
-- Entropy vs. VFE relationships
-- Volatility pattern analysis
-- EFE behavior during planning
-- Uncertainty evolution within episodes
-
-### 🎲 Behavioral Clustering
-- PCA-based dimensionality reduction
-- K-means clustering of behavioral patterns
-- Cluster characteristic analysis
+- Entropy vs. VFE relationship analysis
+- Uncertainty evolution patterns within episodes
+- EFE behavior during different navigation phases
+- Computational cost analysis for planning operations
 
 ### 📊 Statistical Testing
-- Mann-Whitney U tests for group comparisons
-- Pearson correlation analysis
-- Success rate statistical analysis
+- Mann-Whitney U tests for success vs. failure comparisons
+- Pearson correlation analysis for behavioral relationships
+- Comprehensive statistical validation of findings
 
 ## 📊 Key Metrics Analyzed
 
@@ -123,44 +116,44 @@ Required packages:
 
 ## 🎯 Usage Examples
 
-### Analyzing Specific Environments
-The pipeline automatically detects different environments from your experiment data and generates separate analyses for each.
+### Single Environment Analysis
+The pipeline analyzes experimental data from your single environment setup and generates comprehensive visualizations and statistical reports.
 
 ### Custom Analysis
-You can modify `analyze_envs.py` to add custom metrics or visualizations specific to your research needs.
+You can modify `analyze_single_environment.py` to add custom metrics or visualizations specific to your research needs.
 
-### Batch Processing
-The pipeline can process multiple experiments simultaneously and compare results across different configurations.
+### Batch Episode Processing
+The pipeline processes all episodes from your experiment simultaneously and provides statistical analysis across the complete dataset.
 
 ## 📄 Output Interpretation
 
-### Dashboard
-- **Interactive HTML interface** with all plots organized by environment
-- **Easy navigation** between different analysis types
-- **Embedded plots** that scale with your browser window
+### Performance Dashboard
+- **Comprehensive PNG visualizations** showing all key metrics in a single view
+- **Clear, publication-ready formatting** with professional styling
+- **Statistical summaries** integrated with visual representations
 
 ### Statistical Report
-- **Comprehensive markdown report** with statistical test results
-- **Environment-specific findings** and comparisons
-- **Key correlations** and their significance levels
+- **Detailed markdown report** with comprehensive statistical test results
+- **Episode-level analysis** with behavioral insights
+- **Key correlations** and their significance levels with interpretation
 
-### Individual Plots
-- **High-resolution PNG images** suitable for publications
+### Individual Visualizations
+- **High-resolution PNG images** suitable for publications and presentations
 - **Publication-ready formatting** with clear labels and legends
-- **Consistent color schemes** across all visualizations
+- **Consistent color schemes** across all analysis plots
 
 ## 🔧 Customization
 
 ### Adding New Metrics
-1. Modify the feature engineering section in `analyze_envs.py`
-2. Add new correlation pairs to the analysis
-3. Include new metrics in the statistical testing
-
-### Environment-Specific Analysis
-The pipeline automatically handles multiple environments. Configure environment names in your experiment config files.
+1. Modify the feature engineering section in `analyze_single_environment.py`
+2. Add new correlation pairs to the analysis functions
+3. Include new metrics in the statistical testing framework
 
 ### Custom Visualizations
-Add new plotting functions to the `ExperimentAnalyzer` class and call them in the `analyze_by_environment` method.
+Add new plotting functions to the analysis script and integrate them into the main analysis pipeline.
+
+### Data Processing Customization
+Modify data loading and preprocessing steps in the main analysis script to accommodate different data formats or additional metrics.
 
 ## 🛠️ Troubleshooting
 
@@ -173,9 +166,9 @@ Add new plotting functions to the `ExperimentAnalyzer` class and call them in th
 **Missing Dependencies**: Install all required packages using `pip install -r requirements.txt`.
 
 ### Data Format Requirements
-- Experiments should be in folders named `experiment_YYYYMMDD_HHMMSS/`
-- Each experiment should contain `metrics.csv` and `config.json`
-- Optional: `episode_summaries.csv` for episode-level analysis
+- Experiment data should be in the `data/` folder
+- Required files: `metrics.csv` (step-by-step data) and `episode_summaries.csv` (episode outcomes)
+- CSV files should contain the standard Active Inference experiment metrics
 
 ## 📚 Research Applications
 
@@ -196,6 +189,6 @@ This analysis pipeline is part of the Hierarchical Active Inference project for 
 
 ---
 
-**Generated**: Data Analysis Pipeline for Active Inference Experiments  
-**Version**: 1.0  
-**Date**: May 2025
+**Generated**: Single Environment Data Analysis Pipeline for Active Inference Experiments  
+**Version**: 2.0  
+**Date**: December 2024

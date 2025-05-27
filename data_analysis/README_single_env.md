@@ -166,7 +166,7 @@ This pipeline supports research into:
 - **Unicode Errors**: Run `python fix_unicode.py` to fix Windows compatibility
 - **Missing Data**: Ensure `episode_summaries.csv` and `metrics.csv` are in `data/` folder
 - **Empty Results**: Check that your CSV files have the expected column names
-- **Memory Issues**: Large datasets are automatically sampled for visualization
+- **Memory Issues**: Analysis now displays ALL trajectory data; consider system resources for very large datasets
 
 ### Data Format Requirements
 - CSV files should have headers matching expected column names

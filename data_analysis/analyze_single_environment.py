@@ -3,6 +3,7 @@ SINGLE ENVIRONMENT ANALYSIS FOR ACTIVE INFERENCE EXPERIMENTS
 
 [BRAIN] Purpose:
 Analyze episode data from a single environment experiment with comprehensive metrics analysis.
+Displays ALL trajectory data over steps for complete test analysis (no sampling).
 
 [FOLDER] Expected Input:
 - episode_summaries.csv: Main episode data with performance metrics
@@ -10,11 +11,11 @@ Analyze episode data from a single environment experiment with comprehensive met
 
 [TOOLS] Key Features:
 - Performance analysis and success rate calculations
-- VFE/EFE analysis and behavioral patterns
+- VFE/EFE analysis showing ALL trajectories over steps
 - Planning and replanning analysis
 - Collision and obstacle avoidance metrics
 - Temporal dynamics and learning curves
-- Step-by-step behavioral analysis
+- Complete step-by-step behavioral analysis for all episodes
 - Comprehensive visualizations and reporting
 """
 
@@ -111,9 +112,10 @@ class SingleEnvironmentAnalyzer:
                     self.report_lines.append(f"- **{metric.replace('_', ' ').title()}:** Mean={mean_val:.2f}, Std={std_val:.2f}, Median={median_val:.2f}")
     
     def plot_performance_dashboard(self):
-        """Create comprehensive performance dashboard"""
-        fig, axes = plt.subplots(2, 3, figsize=(20, 12))
-        fig.suptitle('Active Inference Experiment - Performance Dashboard', fontsize=16, fontweight='bold')
+        """Create comprehensive performance dashboard with both raw and log-normalized VFE vs EFE analysis"""
+        # Expand to 3x3 grid to accommodate log-normalized VFE vs EFE
+        fig, axes = plt.subplots(3, 3, figsize=(24, 18))
+        fig.suptitle('Single Environment Performance Dashboard (Enhanced VFE/EFE Analysis)', fontsize=16, fontweight='bold')
         
         # Success rate pie chart
         if 'status' in self.episode_data.columns:
@@ -144,7 +146,7 @@ class SingleEnvironmentAnalyzer:
                              color='red', linestyle='--', label='Mean')
             axes[0,2].legend()
         
-        # VFE vs EFE scatter
+        # Raw VFE vs EFE scatter
         if 'avg_vfe' in self.episode_data.columns and 'avg_efe' in self.episode_data.columns:
             success_mask = self.episode_data['status'] == 'success'
             axes[1,0].scatter(self.episode_data.loc[success_mask, 'avg_vfe'], 
@@ -153,9 +155,9 @@ class SingleEnvironmentAnalyzer:
             axes[1,0].scatter(self.episode_data.loc[~success_mask, 'avg_vfe'], 
                             self.episode_data.loc[~success_mask, 'avg_efe'], 
                             alpha=0.6, label='Failure', color='red', s=50)
-            axes[1,0].set_xlabel('Average VFE')
-            axes[1,0].set_ylabel('Average EFE')
-            axes[1,0].set_title('VFE vs EFE Relationship', fontweight='bold')
+            axes[1,0].set_xlabel('Average VFE (Raw)')
+            axes[1,0].set_ylabel('Average EFE (Raw)')
+            axes[1,0].set_title('Raw VFE vs EFE Relationship', fontweight='bold')
             axes[1,0].legend()
             axes[1,0].grid(True, alpha=0.3)
         
@@ -186,10 +188,56 @@ class SingleEnvironmentAnalyzer:
             axes[1,2].set_ylabel('Distance Improvement %')
             axes[1,2].grid(True, alpha=0.3)
         
+        # NEW: Log-normalized VFE vs EFE scatter (row 3, col 1)
+        if 'avg_vfe' in self.episode_data.columns and 'avg_efe' in self.episode_data.columns:
+            success_mask = self.episode_data['status'] == 'success'
+            
+            # Apply log normalization
+            log_vfe = np.log(np.abs(self.episode_data['avg_vfe']) + 1e-6)
+            log_efe = np.log(np.abs(self.episode_data['avg_efe']) + 1e-6)
+            
+            axes[2,0].scatter(log_vfe[success_mask], log_efe[success_mask], 
+                            alpha=0.6, label='Success', color='green', s=50)
+            axes[2,0].scatter(log_vfe[~success_mask], log_efe[~success_mask], 
+                            alpha=0.6, label='Failure', color='red', s=50)
+            axes[2,0].set_xlabel('Log(|Average VFE|)')
+            axes[2,0].set_ylabel('Log(|Average EFE|)')
+            axes[2,0].set_title('Log-Normalized VFE vs EFE Relationship', fontweight='bold')
+            axes[2,0].legend()
+            axes[2,0].grid(True, alpha=0.3)
+        
+        # NEW: VFE/EFE Energy Distribution Comparison (row 3, col 2)
+        if 'avg_vfe' in self.episode_data.columns and 'avg_efe' in self.episode_data.columns:
+            axes[2,1].hist(self.episode_data['avg_vfe'], bins=20, alpha=0.6, 
+                          label='VFE', color='blue', density=True)
+            axes[2,1].hist(np.abs(self.episode_data['avg_efe']), bins=20, alpha=0.6, 
+                          label='|EFE|', color='red', density=True)
+            axes[2,1].set_xlabel('Energy Value')
+            axes[2,1].set_ylabel('Density')
+            axes[2,1].set_title('VFE vs |EFE| Distribution Comparison', fontweight='bold')
+            axes[2,1].legend()
+            axes[2,1].grid(True, alpha=0.3)
+        
+        # NEW: Combined Energy Analysis (row 3, col 3)
+        if 'avg_vfe' in self.episode_data.columns and 'avg_efe' in self.episode_data.columns:
+            # Calculate combined energy
+            combined_energy = np.abs(self.episode_data['avg_vfe']) + np.abs(self.episode_data['avg_efe'])
+            success_mask = self.episode_data['status'] == 'success'
+            
+            axes[2,2].hist(combined_energy[success_mask], bins=15, alpha=0.6, 
+                          label='Success', color='green', density=True)
+            axes[2,2].hist(combined_energy[~success_mask], bins=15, alpha=0.6, 
+                          label='Failure', color='red', density=True)
+            axes[2,2].set_xlabel('Combined Energy (|VFE| + |EFE|)')
+            axes[2,2].set_ylabel('Density')
+            axes[2,2].set_title('Combined Energy by Episode Outcome', fontweight='bold')
+            axes[2,2].legend()
+            axes[2,2].grid(True, alpha=0.3)
+        
         plt.tight_layout()
         plt.savefig(os.path.join(RESULTS_DIR, 'performance_dashboard.png'), dpi=300, bbox_inches='tight')
         plt.close()
-        print("OK Performance dashboard saved")
+        print("OK Enhanced performance dashboard with VFE/EFE analysis saved")
     
     def analyze_behavioral_patterns(self):
         """Analyze behavioral patterns and correlations"""
@@ -237,10 +285,10 @@ class SingleEnvironmentAnalyzer:
         # Create comprehensive dynamics analysis with multiple visualizations
         fig = plt.figure(figsize=(20, 16))
         gs = fig.add_gridspec(4, 3, hspace=0.3, wspace=0.3)
-        fig.suptitle('Enhanced VFE/EFE Dynamics Analysis (Lower Values = Better Performance)', 
+        fig.suptitle('Single Environment VFE/EFE Dynamics - ALL Trajectories Over Steps (Test Analysis)', 
                      fontsize=18, fontweight='bold')
         
-        # Get more episodes for trajectory analysis (up to 30 episodes, grouped by outcome)
+        # Get ALL episodes for trajectory analysis (show complete dataset)
         all_episodes = sorted(self.metrics_data['episode_id'].unique())
         
         # Merge with episode status for grouping
@@ -248,15 +296,22 @@ class SingleEnvironmentAnalyzer:
         success_episodes = [ep for ep in all_episodes if episode_status.get(ep) == 'success']
         failure_episodes = [ep for ep in all_episodes if episode_status.get(ep) != 'success']
         
-        # Select more episodes: up to 20 successful and 15 failed episodes
-        num_success = min(20, len(success_episodes))
-        num_failure = min(15, len(failure_episodes))
-        sample_success = success_episodes[:num_success]
-        sample_failure = failure_episodes[:num_failure]
+        # Use ALL episodes (no sampling - show complete dataset)
+        num_success = len(success_episodes)
+        num_failure = len(failure_episodes)
+        sample_success = success_episodes  # All successful episodes
+        sample_failure = failure_episodes  # All failed episodes
         
-        # Create sophisticated color schemes
-        success_colors = plt.cm.Greens(np.linspace(0.3, 0.9, num_success))
-        failure_colors = plt.cm.Reds(np.linspace(0.3, 0.9, num_failure))
+        # Create sophisticated color schemes for ALL episodes
+        if num_success > 0:
+            success_colors = plt.cm.Greens(np.linspace(0.3, 0.9, num_success))
+        else:
+            success_colors = []
+        
+        if num_failure > 0:
+            failure_colors = plt.cm.Reds(np.linspace(0.3, 0.9, num_failure))
+        else:
+            failure_colors = []
         
         # 1. Raw VFE trajectories with grouped styling (top left)
         ax1 = fig.add_subplot(gs[0, 0])
@@ -308,7 +363,7 @@ class SingleEnvironmentAnalyzer:
                 ax1.plot(range(len(failure_avg)), failure_avg, color='darkred', 
                         linewidth=3, label=f'Failure Avg (n={num_failure})', alpha=0.9, linestyle='-.')
         
-        ax1.set_title(f'Raw VFE Trajectories (n={num_success + num_failure} episodes)', fontweight='bold')
+        ax1.set_title(f'Raw VFE Trajectories - ALL Episodes (Success: {num_success}, Failure: {num_failure})', fontweight='bold')
         ax1.set_xlabel('Step')
         ax1.set_ylabel('VFE (Raw)')
         ax1.grid(True, alpha=0.3)
@@ -366,7 +421,7 @@ class SingleEnvironmentAnalyzer:
                 ax2.plot(range(len(failure_log_avg)), failure_log_avg, color='darkred', 
                         linewidth=3, label=f'Failure Avg (n={num_failure})', alpha=0.9, linestyle='-.')
         
-        ax2.set_title(f'Log-Normalized VFE Trajectories (n={num_success + num_failure} episodes)', fontweight='bold')
+        ax2.set_title(f'Log-Normalized VFE Trajectories - ALL Episodes (Success: {num_success}, Failure: {num_failure})', fontweight='bold')
         ax2.set_xlabel('Step')
         ax2.set_ylabel('Log(|VFE|)')
         ax2.grid(True, alpha=0.3)
@@ -422,7 +477,7 @@ class SingleEnvironmentAnalyzer:
                 ax3.plot(range(len(failure_efe_avg)), failure_efe_avg, color='darkred', 
                         linewidth=3, label=f'Failure Avg (n={num_failure})', alpha=0.9, linestyle='-.')
         
-        ax3.set_title(f'Raw EFE Trajectories (n={num_success + num_failure} episodes)', fontweight='bold')
+        ax3.set_title(f'Raw EFE Trajectories - ALL Episodes (Success: {num_success}, Failure: {num_failure})', fontweight='bold')
         ax3.set_xlabel('Step')
         ax3.set_ylabel('EFE (Raw)')
         ax3.grid(True, alpha=0.3)
@@ -480,7 +535,7 @@ class SingleEnvironmentAnalyzer:
                 ax4.plot(range(len(failure_log_efe_avg)), failure_log_efe_avg, color='darkred', 
                         linewidth=3, label=f'Failure Avg (n={num_failure})', alpha=0.9, linestyle='-.')
         
-        ax4.set_title(f'Log-Normalized EFE Trajectories (n={num_success + num_failure} episodes)', fontweight='bold')
+        ax4.set_title(f'Log-Normalized EFE Trajectories - ALL Episodes (Success: {num_success}, Failure: {num_failure})', fontweight='bold')
         ax4.set_xlabel('Step')
         ax4.set_ylabel('Log(|EFE|)')
         ax4.grid(True, alpha=0.3)
@@ -494,9 +549,8 @@ class SingleEnvironmentAnalyzer:
                 on='episode_id', how='left'
             )
             
-            # Sample for performance but maintain balance
-            sample_size = min(1500, len(merged_data))
-            sample_data = merged_data.sample(sample_size)
+            # Use ALL data points (no sampling for complete analysis)
+            sample_data = merged_data
             
             # Plot success vs failure
             success_mask = sample_data['status'] == 'success'
@@ -508,7 +562,7 @@ class SingleEnvironmentAnalyzer:
                        alpha=0.6, c='red', s=15, label='Failure')
             ax5.set_xlabel('VFE')
             ax5.set_ylabel('EFE')
-            ax5.set_title('VFE vs EFE by Episode Outcome', fontweight='bold')
+            ax5.set_title('VFE vs EFE - ALL Data Points by Outcome', fontweight='bold')
             ax5.grid(True, alpha=0.3)
             ax5.legend()
         
@@ -519,7 +573,7 @@ class SingleEnvironmentAnalyzer:
                 self.episode_data[['episode_id', 'status']], 
                 on='episode_id', how='left'
             )
-            sample_data = merged_data.sample(min(1500, len(merged_data)))
+            sample_data = merged_data  # Use ALL data points
             
             # Log normalize
             log_vfe = np.log(np.abs(sample_data['vfe']) + 1e-6)
@@ -532,7 +586,7 @@ class SingleEnvironmentAnalyzer:
                        alpha=0.6, c='red', s=15, label='Failure')
             ax6.set_xlabel('Log(|VFE|)')
             ax6.set_ylabel('Log(|EFE|)')
-            ax6.set_title('Log-Normalized VFE vs EFE', fontweight='bold')
+            ax6.set_title('Log-Normalized VFE vs EFE - ALL Data Points', fontweight='bold')
             ax6.grid(True, alpha=0.3)
             ax6.legend()
         
