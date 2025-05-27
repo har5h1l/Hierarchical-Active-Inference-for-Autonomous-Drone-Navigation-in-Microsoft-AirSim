@@ -58,7 +58,7 @@ data_analysis/
     ├── analysis_report.md         # Comprehensive analysis report
     ├── performance_dashboard.png   # 6-panel performance dashboard
     ├── correlation_matrix.png     # Behavioral correlation heatmap
-    ├── vfe_efe_dynamics.png      # VFE/EFE temporal analysis
+    ├── enhanced_vfe_efe_dynamics.png  # 12-panel VFE/EFE comprehensive analysis
     ├── planning_analysis.png      # Planning behavior distributions
     ├── success_factors.png        # Success vs failure comparison
     └── dashboard.html             # Interactive dashboard (if generated)

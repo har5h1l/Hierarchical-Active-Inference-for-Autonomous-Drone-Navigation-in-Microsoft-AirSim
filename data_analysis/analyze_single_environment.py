@@ -219,8 +219,7 @@ class SingleEnvironmentAnalyzer:
                         correlation_matrix.columns[j],
                         corr_val
                     ))
-        
-        # Sort by absolute correlation value
+          # Sort by absolute correlation value
         correlation_pairs.sort(key=lambda x: abs(x[2]), reverse=True)
         
         self.report_lines.append("\n## Key Behavioral Correlations")
@@ -231,63 +230,273 @@ class SingleEnvironmentAnalyzer:
         print("OK Behavioral pattern analysis completed")
     
     def analyze_vfe_efe_dynamics(self):
-        """Detailed analysis of VFE and EFE dynamics"""
+        """Enhanced analysis of VFE and EFE dynamics with logarithmic normalization"""
         if self.metrics_data is None:
             return
-            
-        # VFE/EFE over time analysis
-        fig, axes = plt.subplots(2, 2, figsize=(16, 12))
-        fig.suptitle('VFE/EFE Dynamics Analysis', fontsize=16, fontweight='bold')
         
-        # Sample a few episodes for detailed trajectory analysis
-        sample_episodes = self.metrics_data['episode_id'].unique()[:5]
+        # Create comprehensive dynamics analysis with multiple visualizations
+        fig = plt.figure(figsize=(20, 16))
+        gs = fig.add_gridspec(4, 3, hspace=0.3, wspace=0.3)
+        fig.suptitle('Enhanced VFE/EFE Dynamics Analysis (Lower Values = Better Performance)', 
+                     fontsize=18, fontweight='bold')
         
-        # VFE trajectories
-        for ep_id in sample_episodes:
+        # Get more episodes for trajectory analysis (up to 15 episodes)
+        all_episodes = self.metrics_data['episode_id'].unique()
+        num_episodes = min(15, len(all_episodes))
+        sample_episodes = all_episodes[:num_episodes]
+        
+        # Colors for different trajectories
+        colors = plt.cm.tab20(np.linspace(0, 1, num_episodes))
+        
+        # 1. Raw VFE trajectories (top left)
+        ax1 = fig.add_subplot(gs[0, 0])
+        for i, ep_id in enumerate(sample_episodes):
             ep_data = self.metrics_data[self.metrics_data['episode_id'] == ep_id]
-            if 'vfe' in ep_data.columns:
-                axes[0,0].plot(ep_data['step'], ep_data['vfe'], alpha=0.7, label=f'Episode {ep_id}')
-        axes[0,0].set_title('VFE Trajectories (Sample Episodes)')
-        axes[0,0].set_xlabel('Step')
-        axes[0,0].set_ylabel('VFE')
-        axes[0,0].legend()
-        axes[0,0].grid(True, alpha=0.3)
+            if 'vfe' in ep_data.columns and len(ep_data) > 0:
+                ax1.plot(ep_data['step'], ep_data['vfe'], alpha=0.7, 
+                        color=colors[i], label=f'Ep {ep_id}', linewidth=1.5)
+        ax1.set_title('Raw VFE Trajectories', fontweight='bold')
+        ax1.set_xlabel('Step')
+        ax1.set_ylabel('VFE (Raw)')
+        ax1.grid(True, alpha=0.3)
+        ax1.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=8)
         
-        # EFE trajectories
-        for ep_id in sample_episodes:
+        # 2. Log-normalized VFE trajectories (top middle)
+        ax2 = fig.add_subplot(gs[0, 1])
+        for i, ep_id in enumerate(sample_episodes):
             ep_data = self.metrics_data[self.metrics_data['episode_id'] == ep_id]
-            if 'efe' in ep_data.columns:
-                axes[0,1].plot(ep_data['step'], ep_data['efe'], alpha=0.7, label=f'Episode {ep_id}')
-        axes[0,1].set_title('EFE Trajectories (Sample Episodes)')
-        axes[0,1].set_xlabel('Step')
-        axes[0,1].set_ylabel('EFE')
-        axes[0,1].legend()
-        axes[0,1].grid(True, alpha=0.3)
+            if 'vfe' in ep_data.columns and len(ep_data) > 0:
+                # Apply log normalization (add small constant to avoid log(0))
+                log_vfe = np.log(np.abs(ep_data['vfe']) + 1e-6)
+                ax2.plot(ep_data['step'], log_vfe, alpha=0.7, 
+                        color=colors[i], label=f'Ep {ep_id}', linewidth=1.5)
+        ax2.set_title('Log-Normalized VFE Trajectories', fontweight='bold')
+        ax2.set_xlabel('Step')
+        ax2.set_ylabel('Log(|VFE|)')
+        ax2.grid(True, alpha=0.3)
         
-        # VFE vs EFE scatter (all steps)
+        # 3. Raw EFE trajectories (top right)
+        ax3 = fig.add_subplot(gs[0, 2])
+        for i, ep_id in enumerate(sample_episodes):
+            ep_data = self.metrics_data[self.metrics_data['episode_id'] == ep_id]
+            if 'efe' in ep_data.columns and len(ep_data) > 0:
+                ax3.plot(ep_data['step'], ep_data['efe'], alpha=0.7, 
+                        color=colors[i], label=f'Ep {ep_id}', linewidth=1.5)
+        ax3.set_title('Raw EFE Trajectories', fontweight='bold')
+        ax3.set_xlabel('Step')
+        ax3.set_ylabel('EFE (Raw)')
+        ax3.grid(True, alpha=0.3)
+        
+        # 4. Log-normalized EFE trajectories (second row left)
+        ax4 = fig.add_subplot(gs[1, 0])
+        for i, ep_id in enumerate(sample_episodes):
+            ep_data = self.metrics_data[self.metrics_data['episode_id'] == ep_id]
+            if 'efe' in ep_data.columns and len(ep_data) > 0:
+                # Apply log normalization for EFE (handle negative values)
+                log_efe = np.log(np.abs(ep_data['efe']) + 1e-6)
+                ax4.plot(ep_data['step'], log_efe, alpha=0.7, 
+                        color=colors[i], label=f'Ep {ep_id}', linewidth=1.5)
+        ax4.set_title('Log-Normalized EFE Trajectories', fontweight='bold')
+        ax4.set_xlabel('Step')
+        ax4.set_ylabel('Log(|EFE|)')
+        ax4.grid(True, alpha=0.3)
+        
+        # 5. VFE vs EFE scatter with success/failure coloring (second row middle)
+        ax5 = fig.add_subplot(gs[1, 1])
         if 'vfe' in self.metrics_data.columns and 'efe' in self.metrics_data.columns:
-            sample_data = self.metrics_data.sample(min(1000, len(self.metrics_data)))  # Sample for performance
-            axes[1,0].scatter(sample_data['vfe'], sample_data['efe'], alpha=0.5, s=20)
-            axes[1,0].set_xlabel('VFE')
-            axes[1,0].set_ylabel('EFE')
-            axes[1,0].set_title('VFE vs EFE (All Steps)')
-            axes[1,0].grid(True, alpha=0.3)
+            # Merge with episode data to get success status
+            merged_data = self.metrics_data.merge(
+                self.episode_data[['episode_id', 'status']], 
+                on='episode_id', how='left'
+            )
+            
+            # Sample for performance but maintain balance
+            sample_size = min(1500, len(merged_data))
+            sample_data = merged_data.sample(sample_size)
+            
+            # Plot success vs failure
+            success_mask = sample_data['status'] == 'success'
+            ax5.scatter(sample_data.loc[success_mask, 'vfe'], 
+                       sample_data.loc[success_mask, 'efe'], 
+                       alpha=0.6, c='green', s=15, label='Success')
+            ax5.scatter(sample_data.loc[~success_mask, 'vfe'], 
+                       sample_data.loc[~success_mask, 'efe'], 
+                       alpha=0.6, c='red', s=15, label='Failure')
+            ax5.set_xlabel('VFE')
+            ax5.set_ylabel('EFE')
+            ax5.set_title('VFE vs EFE by Episode Outcome', fontweight='bold')
+            ax5.grid(True, alpha=0.3)
+            ax5.legend()
         
-        # Distance to target over time
-        if 'distance_to_target' in self.metrics_data.columns:
-            for ep_id in sample_episodes:
-                ep_data = self.metrics_data[self.metrics_data['episode_id'] == ep_id]
-                axes[1,1].plot(ep_data['step'], ep_data['distance_to_target'], alpha=0.7, label=f'Episode {ep_id}')
-            axes[1,1].set_title('Distance to Target Over Time')
-            axes[1,1].set_xlabel('Step')
-            axes[1,1].set_ylabel('Distance to Target')
-            axes[1,1].legend()
-            axes[1,1].grid(True, alpha=0.3)
+        # 6. Log-normalized VFE vs EFE scatter (second row right)
+        ax6 = fig.add_subplot(gs[1, 2])
+        if 'vfe' in self.metrics_data.columns and 'efe' in self.metrics_data.columns:
+            merged_data = self.metrics_data.merge(
+                self.episode_data[['episode_id', 'status']], 
+                on='episode_id', how='left'
+            )
+            sample_data = merged_data.sample(min(1500, len(merged_data)))
+            
+            # Log normalize
+            log_vfe = np.log(np.abs(sample_data['vfe']) + 1e-6)
+            log_efe = np.log(np.abs(sample_data['efe']) + 1e-6)
+            
+            success_mask = sample_data['status'] == 'success'
+            ax6.scatter(log_vfe[success_mask], log_efe[success_mask], 
+                       alpha=0.6, c='green', s=15, label='Success')
+            ax6.scatter(log_vfe[~success_mask], log_efe[~success_mask], 
+                       alpha=0.6, c='red', s=15, label='Failure')
+            ax6.set_xlabel('Log(|VFE|)')
+            ax6.set_ylabel('Log(|EFE|)')
+            ax6.set_title('Log-Normalized VFE vs EFE', fontweight='bold')
+            ax6.grid(True, alpha=0.3)
+            ax6.legend()
+        
+        # 7. VFE/EFE minimization trends over episodes (third row left)
+        ax7 = fig.add_subplot(gs[2, 0])
+        if 'vfe' in self.metrics_data.columns:
+            # Calculate average VFE per episode
+            episode_vfe_means = self.metrics_data.groupby('episode_id')['vfe'].mean()
+            episode_ids_sorted = sorted(episode_vfe_means.index)
+            vfe_means_sorted = [episode_vfe_means[ep_id] for ep_id in episode_ids_sorted]
+            
+            ax7.plot(episode_ids_sorted, vfe_means_sorted, 'b-', alpha=0.7, linewidth=2, label='Episode Mean VFE')
+            # Add rolling average to show trend
+            if len(vfe_means_sorted) > 5:
+                window = min(10, len(vfe_means_sorted)//3)
+                rolling_mean = pd.Series(vfe_means_sorted).rolling(window=window, min_periods=1).mean()
+                ax7.plot(episode_ids_sorted, rolling_mean, 'r-', linewidth=3, 
+                        label=f'Rolling Mean (window={window})')
+            ax7.set_xlabel('Episode ID')
+            ax7.set_ylabel('Average VFE')
+            ax7.set_title('VFE Minimization Trend Across Episodes', fontweight='bold')
+            ax7.grid(True, alpha=0.3)
+            ax7.legend()
+        
+        # 8. EFE minimization trends over episodes (third row middle)
+        ax8 = fig.add_subplot(gs[2, 1])
+        if 'efe' in self.metrics_data.columns:
+            episode_efe_means = self.metrics_data.groupby('episode_id')['efe'].mean()
+            episode_ids_sorted = sorted(episode_efe_means.index)
+            efe_means_sorted = [episode_efe_means[ep_id] for ep_id in episode_ids_sorted]
+            
+            ax8.plot(episode_ids_sorted, efe_means_sorted, 'purple', alpha=0.7, linewidth=2, label='Episode Mean EFE')
+            if len(efe_means_sorted) > 5:
+                window = min(10, len(efe_means_sorted)//3)
+                rolling_mean = pd.Series(efe_means_sorted).rolling(window=window, min_periods=1).mean()
+                ax8.plot(episode_ids_sorted, rolling_mean, 'orange', linewidth=3, 
+                        label=f'Rolling Mean (window={window})')
+            ax8.set_xlabel('Episode ID')
+            ax8.set_ylabel('Average EFE')
+            ax8.set_title('EFE Minimization Trend Across Episodes', fontweight='bold')
+            ax8.grid(True, alpha=0.3)
+            ax8.legend()
+        
+        # 9. Combined VFE + EFE minimization (third row right)
+        ax9 = fig.add_subplot(gs[2, 2])
+        if 'vfe' in self.metrics_data.columns and 'efe' in self.metrics_data.columns:
+            # Calculate combined energy (sum of absolute values)
+            combined_energy = self.metrics_data.groupby('episode_id').apply(
+                lambda x: (np.abs(x['vfe']) + np.abs(x['efe'])).mean()
+            )
+            episode_ids_sorted = sorted(combined_energy.index)
+            combined_sorted = [combined_energy[ep_id] for ep_id in episode_ids_sorted]
+            
+            ax9.plot(episode_ids_sorted, combined_sorted, 'darkgreen', alpha=0.7, linewidth=2, 
+                    label='Combined |VFE| + |EFE|')
+            if len(combined_sorted) > 5:
+                window = min(10, len(combined_sorted)//3)
+                rolling_mean = pd.Series(combined_sorted).rolling(window=window, min_periods=1).mean()
+                ax9.plot(episode_ids_sorted, rolling_mean, 'red', linewidth=3, 
+                        label=f'Rolling Mean (window={window})')
+            ax9.set_xlabel('Episode ID')
+            ax9.set_ylabel('Combined Energy')
+            ax9.set_title('Total Energy Minimization Trend', fontweight='bold')
+            ax9.grid(True, alpha=0.3)
+            ax9.legend()
+        
+        # 10. VFE/EFE distribution comparison (fourth row left)
+        ax10 = fig.add_subplot(gs[3, 0])
+        if 'vfe' in self.metrics_data.columns and 'efe' in self.metrics_data.columns:
+            ax10.hist(self.metrics_data['vfe'], bins=50, alpha=0.5, label='VFE', color='blue', density=True)
+            ax10.hist(np.abs(self.metrics_data['efe']), bins=50, alpha=0.5, label='|EFE|', color='red', density=True)
+            ax10.set_xlabel('Energy Value')
+            ax10.set_ylabel('Density')
+            ax10.set_title('VFE vs |EFE| Distribution', fontweight='bold')
+            ax10.grid(True, alpha=0.3)
+            ax10.legend()
+            ax10.set_yscale('log')  # Log scale for better visualization
+        
+        # 11. Distance vs Energy relationship (fourth row middle)
+        ax11 = fig.add_subplot(gs[3, 1])
+        if 'distance_to_target' in self.metrics_data.columns and 'vfe' in self.metrics_data.columns:
+            sample_data = self.metrics_data.sample(min(1000, len(self.metrics_data)))
+            ax11.scatter(sample_data['distance_to_target'], sample_data['vfe'], 
+                        alpha=0.5, s=10, color='blue', label='VFE vs Distance')
+            ax11.set_xlabel('Distance to Target')
+            ax11.set_ylabel('VFE')
+            ax11.set_title('Distance vs VFE Relationship', fontweight='bold')
+            ax11.grid(True, alpha=0.3)
+            
+            # Add trend line
+            z = np.polyfit(sample_data['distance_to_target'], sample_data['vfe'], 1)
+            p = np.poly1d(z)
+            ax11.plot(sample_data['distance_to_target'], p(sample_data['distance_to_target']), 
+                     "r--", alpha=0.8, linewidth=2, label='Trend Line')
+            ax11.legend()
+        
+        # 12. Energy variance analysis (fourth row right)
+        ax12 = fig.add_subplot(gs[3, 2])
+        if 'vfe' in self.metrics_data.columns and 'efe' in self.metrics_data.columns:
+            episode_vfe_var = self.metrics_data.groupby('episode_id')['vfe'].var()
+            episode_efe_var = self.metrics_data.groupby('episode_id')['efe'].var()
+            
+            episode_ids = sorted(episode_vfe_var.index)
+            vfe_vars = [episode_vfe_var[ep_id] for ep_id in episode_ids]
+            efe_vars = [episode_efe_var[ep_id] for ep_id in episode_ids]
+            
+            ax12.plot(episode_ids, vfe_vars, 'b-', alpha=0.7, linewidth=2, label='VFE Variance')
+            ax12.plot(episode_ids, efe_vars, 'r-', alpha=0.7, linewidth=2, label='EFE Variance')
+            ax12.set_xlabel('Episode ID')
+            ax12.set_ylabel('Energy Variance')
+            ax12.set_title('Energy Stability Across Episodes', fontweight='bold')
+            ax12.grid(True, alpha=0.3)
+            ax12.legend()
         
         plt.tight_layout()
-        plt.savefig(os.path.join(RESULTS_DIR, 'vfe_efe_dynamics.png'), dpi=300, bbox_inches='tight')
+        plt.savefig(os.path.join(RESULTS_DIR, 'enhanced_vfe_efe_dynamics.png'), dpi=300, bbox_inches='tight')
         plt.close()
-        print("OK VFE/EFE dynamics analysis completed")
+        
+        # Generate detailed VFE/EFE statistics for the report
+        self.report_lines.append("\n## Enhanced VFE/EFE Dynamics Analysis")
+        
+        if 'vfe' in self.metrics_data.columns:
+            vfe_stats = self.metrics_data['vfe'].describe()
+            log_vfe_stats = np.log(np.abs(self.metrics_data['vfe']) + 1e-6).describe()
+            self.report_lines.append(f"\n### VFE Statistics:")
+            self.report_lines.append(f"- **Raw VFE**: Mean={vfe_stats['mean']:.2f}, Std={vfe_stats['std']:.2f}, Min={vfe_stats['min']:.2f}, Max={vfe_stats['max']:.2f}")
+            self.report_lines.append(f"- **Log-Normalized VFE**: Mean={log_vfe_stats['mean']:.2f}, Std={log_vfe_stats['std']:.2f}")
+        
+        if 'efe' in self.metrics_data.columns:
+            efe_stats = self.metrics_data['efe'].describe()
+            log_efe_stats = np.log(np.abs(self.metrics_data['efe']) + 1e-6).describe()
+            self.report_lines.append(f"\n### EFE Statistics:")
+            self.report_lines.append(f"- **Raw EFE**: Mean={efe_stats['mean']:.2f}, Std={efe_stats['std']:.2f}, Min={efe_stats['min']:.2f}, Max={efe_stats['max']:.2f}")
+            self.report_lines.append(f"- **Log-Normalized EFE**: Mean={log_efe_stats['mean']:.2f}, Std={log_efe_stats['std']:.2f}")
+        
+        # Energy minimization trends
+        if 'vfe' in self.metrics_data.columns:
+            episode_vfe_means = self.metrics_data.groupby('episode_id')['vfe'].mean()
+            vfe_trend = np.polyfit(range(len(episode_vfe_means)), episode_vfe_means.values, 1)[0]
+            self.report_lines.append(f"\n### Energy Minimization Trends:")
+            self.report_lines.append(f"- **VFE Trend**: {vfe_trend:.4f} per episode ({'Improving' if vfe_trend < 0 else 'Worsening'})")
+        
+        if 'efe' in self.metrics_data.columns:
+            episode_efe_means = self.metrics_data.groupby('episode_id')['efe'].mean()
+            efe_trend = np.polyfit(range(len(episode_efe_means)), episode_efe_means.values, 1)[0]
+            self.report_lines.append(f"- **EFE Trend**: {efe_trend:.4f} per episode ({'Improving' if efe_trend > 0 else 'Worsening'})")
+        
+        print("OK Enhanced VFE/EFE dynamics analysis completed")
     
     def analyze_planning_behavior(self):
         """Analyze planning and replanning patterns"""

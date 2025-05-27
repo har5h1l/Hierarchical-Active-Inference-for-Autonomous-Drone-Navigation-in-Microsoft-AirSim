@@ -1,6 +1,6 @@
 # Active Inference Experiment Analysis Report
 
-**Generated on:** 2025-05-27 02:29:05
+**Generated on:** 2025-05-27 02:49:52
 **Total Episodes:** 149
 
 ## Episode Outcomes
@@ -29,6 +29,20 @@
 - **steps_taken** vs **path_length**: 0.971 (positive)
 - **collisions** vs **replanning_count**: 0.963 (positive)
 - **collisions** vs **dynamic_replanning_count**: 0.963 (positive)
+
+## Enhanced VFE/EFE Dynamics Analysis
+
+### VFE Statistics:
+- **Raw VFE**: Mean=183.23, Std=114.38, Min=1.20, Max=759.19
+- **Log-Normalized VFE**: Mean=4.90, Std=1.12
+
+### EFE Statistics:
+- **Raw EFE**: Mean=-190.89, Std=116.38, Min=-782.12, Max=-7.25
+- **Log-Normalized EFE**: Mean=5.03, Std=0.81
+
+### Energy Minimization Trends:
+- **VFE Trend**: -0.2416 per episode (Improving)
+- **EFE Trend**: 0.2439 per episode (Improving)
 
 ## Planning Behavior Statistics
 - **Replanning Count:** Mean=2.17, Median=1.00, Max=56.00
