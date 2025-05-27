@@ -1,1 +1,5 @@
+<<<<<<< HEAD
 {"status":"running","message":"Server started and listening","port":5555,"timestamp":"2025-05-26T16:16:48.510"}
+=======
+{"status":"running","message":"Server started and listening","port":5555,"timestamp":"2025-05-26T23:41:44.844"}
+>>>>>>> 19fdc8259ff24f3b673340d6ef2e065a8a8e8d77

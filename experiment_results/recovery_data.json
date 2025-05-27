@@ -1,6 +1,13 @@
 {
+<<<<<<< HEAD
   "experiment_dir": "experiment_results\\experiment_20250526_170723",
   "last_episode": 13,
   "timestamp": "2025-05-26 17:17:52",
   "total_episodes": 50
+=======
+  "experiment_dir": "experiment_results\\experiment_20250526_234520",
+  "last_episode": 150,
+  "timestamp": "2025-05-27 00:04:46",
+  "total_episodes": 250
+>>>>>>> 19fdc8259ff24f3b673340d6ef2e065a8a8e8d77
 }

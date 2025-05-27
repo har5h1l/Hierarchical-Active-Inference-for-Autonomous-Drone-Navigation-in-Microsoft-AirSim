@@ -5,7 +5,11 @@
   No Changes to `C:\Users\harshil_airsim_1\Desktop\AirSim\Hierarchical-Active-Inference-for-Autonomous-Drone-Navigation-in-Microsoft-AirSim\Project.toml`
   No Changes to `C:\Users\harshil_airsim_1\Desktop\AirSim\Hierarchical-Active-Inference-for-Autonomous-Drone-Navigation-in-Microsoft-AirSim\Manifest.toml`
 Precompiling project...
+<<<<<<< HEAD
    1568.1 ms  ✓ actinf
+=======
+   1677.9 ms  ✓ actinf
+>>>>>>> 19fdc8259ff24f3b673340d6ef2e065a8a8e8d77
   1 dependency successfully precompiled in 4 seconds. 282 already precompiled.
    Resolving package versions...
   No Changes to `C:\Users\harshil_airsim_1\Desktop\AirSim\Hierarchical-Active-Inference-for-Autonomous-Drone-Navigation-in-Microsoft-AirSim\Project.toml`
@@ -24,7 +28,11 @@ Precompiling project...
   No Changes to `C:\Users\harshil_airsim_1\Desktop\AirSim\Hierarchical-Active-Inference-for-Autonomous-Drone-Navigation-in-Microsoft-AirSim\Project.toml`
   No Changes to `C:\Users\harshil_airsim_1\Desktop\AirSim\Hierarchical-Active-Inference-for-Autonomous-Drone-Navigation-in-Microsoft-AirSim\Manifest.toml`
 Precompiling actinf...
+<<<<<<< HEAD
    1350.5 ms  ✓ actinf
+=======
+   1310.7 ms  ✓ actinf
+>>>>>>> 19fdc8259ff24f3b673340d6ef2e065a8a8e8d77
   1 dependency successfully precompiled in 3 seconds. 177 already precompiled.
 
 === Starting Active Inference Precompilation ===
@@ -60,5 +68,10 @@ Testing actinf package loading...
 Verifying core functionality...
   StateSpace module test: ✓
   Inference module test: ✓
+<<<<<<< HEAD
 ❌ Failed to load or test actinf package: UndefVarError(:suitability_weight, actinf.Planning)
 Failed to load actinf package: UndefVarError(:suitability_weight, actinf.Planning)
+=======
+❌ Failed to load or test actinf package: UndefVarError(:angle_weight, actinf.Planning)
+Failed to load actinf package: UndefVarError(:angle_weight, actinf.Planning)
+>>>>>>> 19fdc8259ff24f3b673340d6ef2e065a8a8e8d77
