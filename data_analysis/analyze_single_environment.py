@@ -509,7 +509,7 @@ class SingleEnvironmentAnalyzer:
                            for ep in sample_success])
             for step in range(max_steps):
                 step_values = []
-                for ep_id in sample_success:
+                for ep_id in success_episodes:
                     ep_data = self.metrics_data[self.metrics_data['episode_id'] == ep_id]
                     if len(ep_data) > step and 'efe' in ep_data.columns:
                         step_values.append(np.log(np.abs(ep_data.iloc[step]['efe']) + 1e-6))
@@ -525,7 +525,7 @@ class SingleEnvironmentAnalyzer:
                            for ep in sample_failure])
             for step in range(max_steps):
                 step_values = []
-                for ep_id in sample_failure:
+                for ep_id in failure_episodes:
                     ep_data = self.metrics_data[self.metrics_data['episode_id'] == ep_id]
                     if len(ep_data) > step and 'efe' in ep_data.columns:
                         step_values.append(np.log(np.abs(ep_data.iloc[step]['efe']) + 1e-6))
@@ -1560,7 +1560,11 @@ Implications:
         self.report_lines.append("- **anova_statistical_testing.png**: Statistical significance testing results")
         self.report_lines.append("- **vfe_efe_correlation_investigation.png**: 12-panel correlation deep dive")
         self.report_lines.append("- **planning_analysis.png**: Planning behavior distributions")
-        self.report_lines.append("- **success_factors.png**: Success vs failure factor analysis")
+        self.report_lines.append("- **log_efe_trajectories.png**: Log-normalized EFE trajectories")
+        self.report_lines.append("- **log_vfe_trajectories.png**: Log-normalized VFE trajectories")
+        self.report_lines.append("- **log_vfe_efe_scatter.png**: Log VFE vs EFE scatter plot")
+        self.report_lines.append("- **planning_time_distribution.png**: Planning time distribution")
+        self.report_lines.append("- **planning_time_by_outcome.png**: Planning time by episode outcome")
         
         self.report_lines.append("\n## Methodology Summary")
         self.report_lines.append("*Statistical methods and analysis approaches used:*")
@@ -1633,60 +1637,392 @@ Implications:
         
         print(f"OK Comprehensive analysis report saved to {report_path}")
     
-    def run_complete_analysis(self):
-        """Run the complete analysis pipeline"""
-        print(">> Starting Single Environment Active Inference Analysis")
-        print("=" * 60)
+    def generate_paper_ready_visualizations(self):
+        """Generate individual PNG files for paper submission"""
+        print("Generating paper-ready visualizations...")
         
-        try:
-            # Load data
-            self.load_data()
+        # 1. Log EFE trajectories
+        self.create_log_efe_trajectories()
+        
+        # 2. Log VFE trajectories  
+        self.create_log_vfe_trajectories()
+        
+        # 3. Log EFE vs log VFE scatter plot
+        self.create_log_vfe_efe_scatter()
+        
+        # 4. Planning time distribution
+        self.create_planning_time_distribution()
+        
+        # 5. Average planning time ms distribution by outcome
+        self.create_planning_time_by_outcome()
+        
+        print("Paper-ready visualizations completed!")
+    
+    def create_log_efe_trajectories(self):
+        """Create standalone log EFE trajectories visualization"""
+        if self.metrics_data is None or 'efe' not in self.metrics_data.columns:
+            return
             
-            # Run analyses
-            print("\n[CHART] Analyzing performance overview...")
-            self.analyze_performance_overview()
+        plt.figure(figsize=(12, 8))
+        
+        # Get episode data for classification
+        episode_status = self.episode_data.set_index('episode_id')['status'].to_dict()
+        all_episodes = sorted(self.metrics_data['episode_id'].unique())
+        success_episodes = [ep for ep in all_episodes if episode_status.get(ep) == 'success']
+        failure_episodes = [ep for ep in all_episodes if episode_status.get(ep) != 'success']
+        
+        # Create color schemes
+        success_colors = plt.cm.Greens(np.linspace(0.3, 0.9, len(success_episodes))) if success_episodes else []
+        failure_colors = plt.cm.Reds(np.linspace(0.3, 0.9, len(failure_episodes))) if failure_episodes else []
+        
+        # Plot successful episodes
+        for i, ep_id in enumerate(success_episodes):
+            ep_data = self.metrics_data[self.metrics_data['episode_id'] == ep_id]
+            if len(ep_data) > 0:
+                log_efe = np.log(np.abs(ep_data['efe']) + 1e-6)
+                plt.plot(ep_data['step'], log_efe, alpha=0.6, 
+                        color=success_colors[i], linewidth=1.2, label='Success' if i == 0 else "")
+        
+        # Plot failed episodes with dashed lines
+        for i, ep_id in enumerate(failure_episodes):
+            ep_data = self.metrics_data[self.metrics_data['episode_id'] == ep_id]
+            if len(ep_data) > 0:
+                log_efe = np.log(np.abs(ep_data['efe']) + 1e-6)
+                plt.plot(ep_data['step'], log_efe, alpha=0.6, 
+                        color=failure_colors[i], linewidth=1.2, linestyle='--', 
+                        label='Failure' if i == 0 else "")
+        
+        # Add average trajectories
+        if success_episodes:
+            success_log_avg = []
+            max_steps = max([len(self.metrics_data[self.metrics_data['episode_id'] == ep]) 
+                           for ep in success_episodes])
+            for step in range(max_steps):
+                step_values = []
+                for ep_id in success_episodes:
+                    ep_data = self.metrics_data[self.metrics_data['episode_id'] == ep_id]
+                    if len(ep_data) > step:
+                        step_values.append(np.log(np.abs(ep_data.iloc[step]['efe']) + 1e-6))
+                if step_values:
+                    success_log_avg.append(np.mean(step_values))
+            if success_log_avg:
+                plt.plot(range(len(success_log_avg)), success_log_avg, color='darkgreen', 
+                        linewidth=3, label=f'Success Average (n={len(success_episodes)})', alpha=0.9)
+        
+        if failure_episodes:
+            failure_log_avg = []
+            max_steps = max([len(self.metrics_data[self.metrics_data['episode_id'] == ep]) 
+                           for ep in failure_episodes])
+            for step in range(max_steps):
+                step_values = []
+                for ep_id in failure_episodes:
+                    ep_data = self.metrics_data[self.metrics_data['episode_id'] == ep_id]
+                    if len(ep_data) > step:
+                        step_values.append(np.log(np.abs(ep_data.iloc[step]['efe']) + 1e-6))
+                if step_values:
+                    failure_log_avg.append(np.mean(step_values))
+            if failure_log_avg:
+                plt.plot(range(len(failure_log_avg)), failure_log_avg, color='darkred', 
+                        linewidth=3, label=f'Failure Average (n={len(failure_episodes)})', alpha=0.9, linestyle='-.')
+        
+        plt.title('Log-Normalized Expected Free Energy (EFE) Trajectories', fontsize=16, fontweight='bold')
+        plt.xlabel('Step', fontsize=14)
+        plt.ylabel('log(|EFE| + 1e-6)', fontsize=14)
+        plt.grid(True, alpha=0.3)
+        plt.legend(fontsize=12)
+        plt.tight_layout()
+        plt.savefig(os.path.join(RESULTS_DIR, 'log_efe_trajectories.png'), dpi=300, bbox_inches='tight')
+        plt.close()
+        print("✓ Created log_efe_trajectories.png")
+    
+    def create_log_vfe_trajectories(self):
+        """Create standalone log VFE trajectories visualization"""
+        if self.metrics_data is None or 'vfe' not in self.metrics_data.columns:
+            return
             
-            print("[CHART] Creating performance dashboard...")
-            self.plot_performance_dashboard()
+        plt.figure(figsize=(12, 8))
+        
+        # Get episode data for classification
+        episode_status = self.episode_data.set_index('episode_id')['status'].to_dict()
+        all_episodes = sorted(self.metrics_data['episode_id'].unique())
+        success_episodes = [ep for ep in all_episodes if episode_status.get(ep) == 'success']
+        failure_episodes = [ep for ep in all_episodes if episode_status.get(ep) != 'success']
+        
+        # Create color schemes
+        success_colors = plt.cm.Greens(np.linspace(0.3, 0.9, len(success_episodes))) if success_episodes else []
+        failure_colors = plt.cm.Reds(np.linspace(0.3, 0.9, len(failure_episodes))) if failure_episodes else []
+        
+        # Plot successful episodes
+        for i, ep_id in enumerate(success_episodes):
+            ep_data = self.metrics_data[self.metrics_data['episode_id'] == ep_id]
+            if len(ep_data) > 0:
+                log_vfe = np.log(np.abs(ep_data['vfe']) + 1e-6)
+                plt.plot(ep_data['step'], log_vfe, alpha=0.6, 
+                        color=success_colors[i], linewidth=1.2, label='Success' if i == 0 else "")
+        
+        # Plot failed episodes with dashed lines
+        for i, ep_id in enumerate(failure_episodes):
+            ep_data = self.metrics_data[self.metrics_data['episode_id'] == ep_id]
+            if len(ep_data) > 0:
+                log_vfe = np.log(np.abs(ep_data['vfe']) + 1e-6)
+                plt.plot(ep_data['step'], log_vfe, alpha=0.6, 
+                        color=failure_colors[i], linewidth=1.2, linestyle='--', 
+                        label='Failure' if i == 0 else "")
+        
+        # Add average trajectories for log-normalized VFE
+        if success_episodes:
+            success_log_avg = []
+            max_steps = max([len(self.metrics_data[self.metrics_data['episode_id'] == ep]) 
+                           for ep in success_episodes])
+            for step in range(max_steps):
+                step_values = []
+                for ep_id in success_episodes:
+                    ep_data = self.metrics_data[self.metrics_data['episode_id'] == ep_id]
+                    if len(ep_data) > step:
+                        step_values.append(np.log(np.abs(ep_data.iloc[step]['vfe']) + 1e-6))
+                if step_values:
+                    success_log_avg.append(np.mean(step_values))
+            if success_log_avg:
+                plt.plot(range(len(success_log_avg)), success_log_avg, color='darkgreen', 
+                        linewidth=3, label=f'Success Average (n={len(success_episodes)})', alpha=0.9)
+        
+        if failure_episodes:
+            failure_log_avg = []
+            max_steps = max([len(self.metrics_data[self.metrics_data['episode_id'] == ep]) 
+                           for ep in failure_episodes])
+            for step in range(max_steps):
+                step_values = []
+                for ep_id in failure_episodes:
+                    ep_data = self.metrics_data[self.metrics_data['episode_id'] == ep_id]
+                    if len(ep_data) > step:
+                        step_values.append(np.log(np.abs(ep_data.iloc[step]['vfe']) + 1e-6))
+                if step_values:
+                    failure_log_avg.append(np.mean(step_values))
+            if failure_log_avg:
+                plt.plot(range(len(failure_log_avg)), failure_log_avg, color='darkred', 
+                        linewidth=3, label=f'Failure Average (n={len(failure_episodes)})', alpha=0.9, linestyle='-.')
+        
+        plt.title('Log-Normalized Variational Free Energy (VFE) Trajectories', fontsize=16, fontweight='bold')
+        plt.xlabel('Step', fontsize=14)
+        plt.ylabel('log(|VFE| + 1e-6)', fontsize=14)
+        plt.grid(True, alpha=0.3)
+        plt.legend(fontsize=12)
+        plt.tight_layout()
+        plt.savefig(os.path.join(RESULTS_DIR, 'log_vfe_trajectories.png'), dpi=300, bbox_inches='tight')
+        plt.close()
+        print("✓ Created log_vfe_trajectories.png")
+    
+    def create_log_vfe_efe_scatter(self):
+        """Create standalone log VFE vs log EFE scatter plot"""
+        if (self.metrics_data is None or 
+            'vfe' not in self.metrics_data.columns or 
+            'efe' not in self.metrics_data.columns):
+            return
             
-            print("[CHART] Analyzing behavioral patterns...")
-            self.analyze_behavioral_patterns()
+        plt.figure(figsize=(10, 8))
+        
+        # Merge with episode data to get success status
+        merged_data = self.metrics_data.merge(
+            self.episode_data[['episode_id', 'status']], 
+            on='episode_id', how='left'
+        )
+        
+        # Log normalize
+        log_vfe = np.log(np.abs(merged_data['vfe']) + 1e-6)
+        log_efe = np.log(np.abs(merged_data['efe']) + 1e-6)
+        
+        # Create scatter plot with success/failure coloring
+        success_mask = merged_data['status'] == 'success'
+        plt.scatter(log_vfe[success_mask], log_efe[success_mask], 
+                   alpha=0.6, c='green', s=20, label=f'Success (n={success_mask.sum()})')
+        plt.scatter(log_vfe[~success_mask], log_efe[~success_mask], 
+                   alpha=0.6, c='red', s=20, label=f'Failure (n={(~success_mask).sum()})')
+        
+        # Add trend line for all data
+        z = np.polyfit(log_vfe.dropna(), log_efe.dropna(), 1)
+        p = np.poly1d(z)
+        x_trend = np.linspace(log_vfe.min(), log_vfe.max(), 100)
+        plt.plot(x_trend, p(x_trend), "k--", alpha=0.8, linewidth=2, 
+                label=f'Trend: y = {z[0]:.2f}x + {z[1]:.2f}')
+        
+        # Calculate and display correlation
+        corr = np.corrcoef(log_vfe.dropna(), log_efe.dropna())[0, 1]
+        plt.text(0.05, 0.95, f'Correlation: r = {corr:.4f}', 
+                transform=plt.gca().transAxes, fontsize=12,
+                bbox=dict(boxstyle="round,pad=0.3", facecolor="lightgray", alpha=0.8))
+        
+        plt.title('Log-Normalized VFE vs EFE Relationship', fontsize=16, fontweight='bold')
+        plt.xlabel('log(|VFE| + 1e-6)', fontsize=14)
+        plt.ylabel('log(|EFE| + 1e-6)', fontsize=14)
+        plt.grid(True, alpha=0.3)
+        plt.legend(fontsize=12)
+        plt.tight_layout()
+        plt.savefig(os.path.join(RESULTS_DIR, 'log_vfe_efe_scatter.png'), dpi=300, bbox_inches='tight')
+        plt.close()
+        print("✓ Created log_vfe_efe_scatter.png")
+    
+    def create_planning_time_distribution(self):
+        """Create standalone planning time distribution visualization"""
+        if self.episode_data is None or 'avg_planning_time_ms' not in self.episode_data.columns:
+            return
             
-            if self.metrics_data is not None:
-                print("[CHART] Analyzing VFE/EFE dynamics...")
-                self.analyze_vfe_efe_dynamics()
+        plt.figure(figsize=(10, 6))
+        
+        planning_times = self.episode_data['avg_planning_time_ms'].dropna()
+        
+        # Create histogram
+        plt.hist(planning_times, bins=30, alpha=0.7, color='skyblue', 
+                edgecolor='black', density=False)
+        
+        # Add statistics
+        mean_time = planning_times.mean()
+        median_time = planning_times.median()
+        std_time = planning_times.std()
+        
+        plt.axvline(mean_time, color='red', linestyle='--', linewidth=2, 
+                   label=f'Mean: {mean_time:.2f} ms')
+        plt.axvline(median_time, color='orange', linestyle='--', linewidth=2, 
+                   label=f'Median: {median_time:.2f} ms')
+        
+        # Add text box with statistics
+        stats_text = f'n = {len(planning_times)}\nMean = {mean_time:.2f} ms\nMedian = {median_time:.2f} ms\nStd = {std_time:.2f} ms'
+        plt.text(0.7, 0.8, stats_text, transform=plt.gca().transAxes, fontsize=11,
+                bbox=dict(boxstyle="round,pad=0.5", facecolor="lightgray", alpha=0.8))
+        
+        plt.title('Planning Time Distribution', fontsize=16, fontweight='bold')
+        plt.xlabel('Average Planning Time (ms)', fontsize=14)
+        plt.ylabel('Frequency', fontsize=14)
+        plt.grid(True, alpha=0.3)
+        plt.legend(fontsize=12)
+        plt.tight_layout()
+        plt.savefig(os.path.join(RESULTS_DIR, 'planning_time_distribution.png'), dpi=300, bbox_inches='tight')
+        plt.close()
+        print("✓ Created planning_time_distribution.png")
+    
+    def create_planning_time_by_outcome(self):
+        """Create standalone planning time distribution by episode outcome"""
+        if (self.episode_data is None or 
+            'avg_planning_time_ms' not in self.episode_data.columns or
+            'status' not in self.episode_data.columns):
+            return
             
-            print("[CHART] Analyzing planning behavior...")
-            self.analyze_planning_behavior()
-            
-            print("[CHART] Analyzing success factors...")
-            self.analyze_success_factors()
-            
-            # NEW ENHANCED ANALYSES
-            print("[CHART] Analyzing computational cost...")
-            self.analyze_computational_cost()
-            
-            print("[STATS] Performing ANOVA testing...")
-            self.perform_anova_testing()
-            
-            print("[DEEP] Investigating VFE-EFE correlation...")
-            self.investigate_vfe_efe_correlation()
-            
-            print("[REPORT] Generating summary report...")
-            self.generate_summary_report()
-            
-            print("\n[SUCCESS] Analysis completed successfully!")
-            print(f"[FOLDER] Results saved in: {RESULTS_DIR}")
-            
-        except Exception as e:
-            print(f"[ERROR] Analysis failed: {str(e)}")
-            import traceback
-            traceback.print_exc()
-
-def main():
-    """Main execution function"""
-    analyzer = SingleEnvironmentAnalyzer()
-    analyzer.run_complete_analysis()
+        plt.figure(figsize=(12, 8))
+        
+        # Get data by outcome
+        success_times = self.episode_data[self.episode_data['status'] == 'success']['avg_planning_time_ms'].dropna()
+        stuck_times = self.episode_data[self.episode_data['status'] == 'stuck']['avg_planning_time_ms'].dropna()
+        timeout_times = self.episode_data[self.episode_data['status'] == 'timeout']['avg_planning_time_ms'].dropna()
+        
+        # Create subplots
+        fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+        fig.suptitle('Planning Time Distribution by Episode Outcome', fontsize=16, fontweight='bold')
+        
+        # Overall distribution
+        all_times = self.episode_data['avg_planning_time_ms'].dropna()
+        axes[0,0].hist(all_times, bins=25, alpha=0.7, color='lightgray', 
+                      edgecolor='black', label=f'All Episodes (n={len(all_times)})')
+        axes[0,0].axvline(all_times.mean(), color='black', linestyle='--', linewidth=2, 
+                         label=f'Mean: {all_times.mean():.2f} ms')
+        axes[0,0].set_title('Overall Distribution')
+        axes[0,0].set_xlabel('Average Planning Time (ms)')
+        axes[0,0].set_ylabel('Frequency')
+        axes[0,0].grid(True, alpha=0.3)
+        axes[0,0].legend()
+        
+        # Success distribution
+        if len(success_times) > 0:
+            axes[0,1].hist(success_times, bins=20, alpha=0.7, color='green', 
+                          edgecolor='black', label=f'Success (n={len(success_times)})')
+            axes[0,1].axvline(success_times.mean(), color='darkgreen', linestyle='--', linewidth=2, 
+                             label=f'Mean: {success_times.mean():.2f} ms')
+            axes[0,1].set_title('Success Episodes')
+            axes[0,1].set_xlabel('Average Planning Time (ms)')
+            axes[0,1].set_ylabel('Frequency')
+            axes[0,1].grid(True, alpha=0.3)
+            axes[0,1].legend()
+        
+        # Stuck distribution
+        if len(stuck_times) > 0:
+            axes[1,0].hist(stuck_times, bins=15, alpha=0.7, color='orange', 
+                          edgecolor='black', label=f'Stuck (n={len(stuck_times)})')
+            axes[1,0].axvline(stuck_times.mean(), color='darkorange', linestyle='--', linewidth=2, 
+                             label=f'Mean: {stuck_times.mean():.2f} ms')
+            axes[1,0].set_title('Stuck Episodes')
+            axes[1,0].set_xlabel('Average Planning Time (ms)')
+            axes[1,0].set_ylabel('Frequency')
+            axes[1,0].grid(True, alpha=0.3)
+            axes[1,0].legend()
+        
+        # Timeout distribution
+        if len(timeout_times) > 0:
+            axes[1,1].hist(timeout_times, bins=15, alpha=0.7, color='red', 
+                          edgecolor='black', label=f'Timeout (n={len(timeout_times)})')
+            axes[1,1].axvline(timeout_times.mean(), color='darkred', linestyle='--', linewidth=2, 
+                             label=f'Mean: {timeout_times.mean():.2f} ms')
+            axes[1,1].set_title('Timeout Episodes')
+            axes[1,1].set_xlabel('Average Planning Time (ms)')
+            axes[1,1].set_ylabel('Frequency')
+            axes[1,1].grid(True, alpha=0.3)
+            axes[1,1].legend()
+        
+        # Add summary statistics text
+        summary_text = f"""Summary Statistics:
+        Success: Mean={success_times.mean():.1f}ms (n={len(success_times)})
+        Stuck: Mean={stuck_times.mean():.1f}ms (n={len(stuck_times)}) 
+        Timeout: Mean={timeout_times.mean():.1f}ms (n={len(timeout_times)})"""
+        
+        if len(timeout_times) == 0:
+            axes[1,1].text(0.1, 0.5, summary_text, transform=axes[1,1].transAxes, fontsize=12,
+                          bbox=dict(boxstyle="round,pad=0.5", facecolor="lightblue", alpha=0.8))
+            axes[1,1].set_xlim(0, 1)
+            axes[1,1].set_ylim(0, 1)
+            axes[1,1].axis('off')
+        
+        plt.tight_layout()
+        plt.savefig(os.path.join(RESULTS_DIR, 'planning_time_by_outcome.png'), dpi=300, bbox_inches='tight')
+        plt.close()
+        print("✓ Created planning_time_by_outcome.png")
 
 if __name__ == "__main__":
-    main()
+    """Main execution block for single environment analysis"""
+    print("="*80)
+    print("SINGLE ENVIRONMENT ACTIVE INFERENCE ANALYSIS")
+    print("="*80)
+    
+    try:
+        # Initialize analyzer
+        analyzer = SingleEnvironmentAnalyzer()
+        
+        # Load data
+        analyzer.load_data()
+        
+        # Perform comprehensive analysis
+        print("\n[ANALYSIS] Running comprehensive analysis pipeline...")
+        
+        # Core analysis methods
+        analyzer.analyze_performance_overview()
+        analyzer.plot_performance_dashboard()
+        analyzer.analyze_behavioral_patterns()
+        analyzer.analyze_vfe_efe_dynamics()
+        analyzer.analyze_planning_behavior()
+        analyzer.analyze_success_factors()
+        analyzer.analyze_computational_cost()
+        analyzer.perform_anova_testing()
+        analyzer.investigate_vfe_efe_correlation()
+        
+        # Generate paper-ready visualizations
+        print("\n[PAPER-READY] Generating individual PNG files for paper submission...")
+        analyzer.generate_paper_ready_visualizations()
+        
+        # Generate final report
+        analyzer.generate_summary_report()
+        
+        print("\n" + "="*80)
+        print("✓ ANALYSIS COMPLETE - All visualizations and reports generated")
+        print("="*80)
+        
+    except Exception as e:
+        print(f"\n[ERROR] Analysis failed: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)

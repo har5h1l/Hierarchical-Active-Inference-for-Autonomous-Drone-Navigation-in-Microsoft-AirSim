@@ -1,6 +1,6 @@
 # Active Inference Experiment Analysis Report
 
-**Generated on:** 2025-05-26 21:45:47
+**Generated on:** 2025-05-27 18:38:37
 **Total Episodes:** 149
 
 ## Episode Outcomes
@@ -87,7 +87,11 @@
 - **anova_statistical_testing.png**: Statistical significance testing results
 - **vfe_efe_correlation_investigation.png**: 12-panel correlation deep dive
 - **planning_analysis.png**: Planning behavior distributions
-- **success_factors.png**: Success vs failure factor analysis
+- **log_efe_trajectories.png**: Log-normalized EFE trajectories
+- **log_vfe_trajectories.png**: Log-normalized VFE trajectories
+- **log_vfe_efe_scatter.png**: Log VFE vs EFE scatter plot
+- **planning_time_distribution.png**: Planning time distribution
+- **planning_time_by_outcome.png**: Planning time by episode outcome
 
 ## Methodology Summary
 *Statistical methods and analysis approaches used:*
@@ -115,5 +119,5 @@
 - **Energy Coupling**: Strong correlation indicates tight VFE-EFE relationship
 
 ---
-**Analysis completed**: 2025-05-26 21:45:58
+**Analysis completed**: 2025-05-27 18:39:01
 **Framework**: Single Environment Active Inference Analysis v2.0
