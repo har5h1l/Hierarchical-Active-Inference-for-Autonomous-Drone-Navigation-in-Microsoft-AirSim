@@ -5,18 +5,27 @@ SINGLE ENVIRONMENT ANALYSIS FOR ACTIVE INFERENCE EXPERIMENTS
 Analyze episode data from a single environment experiment with comprehensive metrics analysis.
 Displays ALL trajectory data over steps for complete test analysis (no sampling).
 
+⚠️  IMPORTANT NOTE ABOUT VFE VALUES:
+The "VFE" values in this analysis are DERIVED from EFE pragmatic components, NOT true 
+Variational Free Energy calculations. The system uses Gaussian kernel belief updating.
+VFE = -EFE_pragmatic_component (derived metric for analysis purposes only).
+
 [FOLDER] Expected Input:
 - episode_summaries.csv: Main episode data with performance metrics
 - metrics.csv: Step-by-step detailed metrics during episodes
 
 [TOOLS] Key Features:
 - Performance analysis and success rate calculations
-- VFE/EFE analysis showing ALL trajectories over steps
+- Derived VFE/EFE analysis showing ALL trajectories over steps
 - Planning and replanning analysis
 - Collision and obstacle avoidance metrics
 - Temporal dynamics and learning curves
 - Complete step-by-step behavioral analysis for all episodes
 - Comprehensive visualizations and reporting
+
+[METRICS] VFE-EFE Relationship:
+The perfect correlation between VFE and EFE (r ≈ -0.999987) is a mathematical artifact
+because VFE = -EFE_pragmatic. This is NOT evidence of deep Active Inference coupling.
 """
 
 import os
@@ -112,10 +121,10 @@ class SingleEnvironmentAnalyzer:
                     self.report_lines.append(f"- **{metric.replace('_', ' ').title()}:** Mean={mean_val:.2f}, Std={std_val:.2f}, Median={median_val:.2f}")
     
     def plot_performance_dashboard(self):
-        """Create comprehensive performance dashboard with both raw and log-normalized VFE vs EFE analysis"""
-        # Expand to 3x3 grid to accommodate log-normalized VFE vs EFE
+        """Create comprehensive performance dashboard with both raw and log-normalized Derived VFE vs EFE analysis"""
+        # Expand to 3x3 grid to accommodate log-normalized Derived VFE vs EFE
         fig, axes = plt.subplots(3, 3, figsize=(24, 18))
-        fig.suptitle('Single Environment Performance Dashboard (Enhanced VFE/EFE Analysis)', fontsize=16, fontweight='bold')
+        fig.suptitle('Single Environment Performance Dashboard (Enhanced Derived VFE/EFE Analysis)', fontsize=16, fontweight='bold')
         
         # Success rate pie chart
         if 'status' in self.episode_data.columns:
@@ -146,7 +155,7 @@ class SingleEnvironmentAnalyzer:
                              color='red', linestyle='--', label='Mean')
             axes[0,2].legend()
         
-        # Raw VFE vs EFE scatter
+        # Raw Derived VFE vs EFE scatter
         if 'avg_vfe' in self.episode_data.columns and 'avg_efe' in self.episode_data.columns:
             success_mask = self.episode_data['status'] == 'success'
             axes[1,0].scatter(self.episode_data.loc[success_mask, 'avg_vfe'], 
@@ -155,9 +164,9 @@ class SingleEnvironmentAnalyzer:
             axes[1,0].scatter(self.episode_data.loc[~success_mask, 'avg_vfe'], 
                             self.episode_data.loc[~success_mask, 'avg_efe'], 
                             alpha=0.6, label='Failure', color='red', s=50)
-            axes[1,0].set_xlabel('Average VFE (Raw)')
+            axes[1,0].set_xlabel('Average Derived VFE (Raw)')
             axes[1,0].set_ylabel('Average EFE (Raw)')
-            axes[1,0].set_title('Raw VFE vs EFE Relationship', fontweight='bold')
+            axes[1,0].set_title('Raw Derived VFE vs EFE Relationship', fontweight='bold')
             axes[1,0].legend()
             axes[1,0].grid(True, alpha=0.3)
         
@@ -1647,13 +1656,16 @@ Implications:
         # 2. Log VFE trajectories  
         self.create_log_vfe_trajectories()
         
-        # 3. Log EFE vs log VFE scatter plot
+        # 3. Log EFE vs Distance trajectories
+        self.create_log_efe_vs_distance_trajectories()
+        
+        # 4. Log EFE vs log VFE scatter plot
         self.create_log_vfe_efe_scatter()
         
-        # 4. Planning time distribution
+        # 5. Planning time distribution
         self.create_planning_time_distribution()
         
-        # 5. Average planning time ms distribution by outcome
+        # 6. Average planning time ms distribution by outcome
         self.create_planning_time_by_outcome()
         
         print("Paper-ready visualizations completed!")
@@ -1811,6 +1823,84 @@ Implications:
         plt.savefig(os.path.join(RESULTS_DIR, 'log_vfe_trajectories.png'), dpi=300, bbox_inches='tight')
         plt.close()
         print("✓ Created log_vfe_trajectories.png")
+    
+    def create_log_efe_vs_distance_trajectories(self):
+        """Create log EFE vs Distance trajectories for each episode"""
+        if (self.metrics_data is None or 
+            'efe' not in self.metrics_data.columns or 
+            'distance_to_target' not in self.metrics_data.columns):
+            return
+            
+        plt.figure(figsize=(14, 10))
+        
+        # Get episode data for classification
+        episode_status = self.episode_data.set_index('episode_id')['status'].to_dict()
+        all_episodes = sorted(self.metrics_data['episode_id'].unique())
+        success_episodes = [ep for ep in all_episodes if episode_status.get(ep) == 'success']
+        failure_episodes = [ep for ep in all_episodes if episode_status.get(ep) != 'success']
+        
+        # Create color schemes
+        success_colors = plt.cm.Greens(np.linspace(0.3, 0.9, len(success_episodes))) if success_episodes else []
+        failure_colors = plt.cm.Reds(np.linspace(0.3, 0.9, len(failure_episodes))) if failure_episodes else []
+        
+        # Plot successful episodes
+        for i, ep_id in enumerate(success_episodes):
+            ep_data = self.metrics_data[self.metrics_data['episode_id'] == ep_id].copy()
+            if len(ep_data) > 0:
+                # Sort by distance for proper trajectory
+                ep_data = ep_data.sort_values('distance_to_target', ascending=False)
+                log_efe = np.log(np.abs(ep_data['efe']) + 1e-6)
+                plt.plot(ep_data['distance_to_target'], log_efe, alpha=0.6, 
+                        color=success_colors[i], linewidth=1.5, marker='o', markersize=2,
+                        label='Success' if i == 0 else "")
+        
+        # Plot failed episodes with different markers
+        for i, ep_id in enumerate(failure_episodes):
+            ep_data = self.metrics_data[self.metrics_data['episode_id'] == ep_id].copy()
+            if len(ep_data) > 0:
+                # Sort by distance for proper trajectory  
+                ep_data = ep_data.sort_values('distance_to_target', ascending=False)
+                log_efe = np.log(np.abs(ep_data['efe']) + 1e-6)
+                plt.plot(ep_data['distance_to_target'], log_efe, alpha=0.6, 
+                        color=failure_colors[i], linewidth=1.5, linestyle='--', 
+                        marker='x', markersize=3, label='Failure' if i == 0 else "")
+        
+        # Add trend analysis
+        if len(self.metrics_data) > 10:
+            # Overall trend line
+            valid_data = self.metrics_data.dropna(subset=['efe', 'distance_to_target'])
+            if len(valid_data) > 0:
+                log_efe_all = np.log(np.abs(valid_data['efe']) + 1e-6)
+                z = np.polyfit(valid_data['distance_to_target'], log_efe_all, 2)  # Quadratic fit
+                p = np.poly1d(z)
+                
+                x_trend = np.linspace(valid_data['distance_to_target'].min(), 
+                                    valid_data['distance_to_target'].max(), 100)
+                plt.plot(x_trend, p(x_trend), color='black', linewidth=3, 
+                        alpha=0.8, label='Overall Trend (Quadratic)', linestyle='-.')
+        
+        plt.title('Log EFE vs Distance to Target Trajectories\n(Phase 1 Gaussian Kernel Analysis)', 
+                 fontsize=16, fontweight='bold')
+        plt.xlabel('Distance to Target (m)', fontsize=14)
+        plt.ylabel('log(|EFE| + 1e-6)', fontsize=14)
+        plt.grid(True, alpha=0.3)
+        plt.legend(fontsize=12, loc='best')
+        
+        # Add statistics text box
+        if len(self.metrics_data) > 0:
+            stats_text = f"""
+            Episodes: {len(all_episodes)}
+            Success: {len(success_episodes)} ({len(success_episodes)/len(all_episodes)*100:.1f}%)
+            Failure: {len(failure_episodes)} ({len(failure_episodes)/len(all_episodes)*100:.1f}%)
+            """
+            plt.text(0.02, 0.98, stats_text, transform=plt.gca().transAxes, 
+                    verticalalignment='top', bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
+        
+        plt.tight_layout()
+        plt.savefig(os.path.join(RESULTS_DIR, 'log_efe_vs_distance_trajectories.png'), 
+                   dpi=300, bbox_inches='tight')
+        plt.close()
+        print("✓ Created log_efe_vs_distance_trajectories.png")
     
     def create_log_vfe_efe_scatter(self):
         """Create standalone log VFE vs log EFE scatter plot"""
