@@ -1847,7 +1847,9 @@ Implications:
         
         # Calculate and display correlation
         corr = np.corrcoef(log_vfe.dropna(), log_efe.dropna())[0, 1]
-        plt.text(0.05, 0.95, f'Correlation: r = {corr:.4f}', 
+        
+        # Move correlation text to the bottom right to avoid legend overlap
+        plt.text(0.70, 0.05, f'Correlation: r = {corr:.4f}', 
                 transform=plt.gca().transAxes, fontsize=12,
                 bbox=dict(boxstyle="round,pad=0.3", facecolor="lightgray", alpha=0.8))
         
@@ -1855,7 +1857,10 @@ Implications:
         plt.xlabel('log(|VFE| + 1e-6)', fontsize=14)
         plt.ylabel('log(|EFE| + 1e-6)', fontsize=14)
         plt.grid(True, alpha=0.3)
-        plt.legend(fontsize=12)
+        
+        # Position the legend at the top left to avoid overlap with correlation text
+        plt.legend(loc='upper left', fontsize=12)
+        
         plt.tight_layout()
         plt.savefig(os.path.join(RESULTS_DIR, 'log_vfe_efe_scatter.png'), dpi=300, bbox_inches='tight')
         plt.close()
