@@ -35,6 +35,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 from scipy.stats import pearsonr, spearmanr
+from scipy import stats
+import numpy.polynomial.polynomial as poly
 from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
@@ -1825,13 +1827,15 @@ Implications:
         print("✓ Created log_vfe_trajectories.png")
     
     def create_log_efe_vs_distance_trajectories(self):
-        """Create log EFE vs Distance trajectories for each episode"""
+        """Create enhanced log EFE vs Distance trajectories for publication-ready submission"""
         if (self.metrics_data is None or 
             'efe' not in self.metrics_data.columns or 
             'distance_to_target' not in self.metrics_data.columns):
             return
             
-        plt.figure(figsize=(14, 10))
+        # Set up publication-ready figure with higher quality
+        plt.figure(figsize=(16, 12))
+        plt.style.use('seaborn-v0_8-whitegrid' if 'seaborn-v0_8-whitegrid' in plt.style.available else 'default')
         
         # Get episode data for classification
         episode_status = self.episode_data.set_index('episode_id')['status'].to_dict()
@@ -1839,68 +1843,142 @@ Implications:
         success_episodes = [ep for ep in all_episodes if episode_status.get(ep) == 'success']
         failure_episodes = [ep for ep in all_episodes if episode_status.get(ep) != 'success']
         
-        # Create color schemes
-        success_colors = plt.cm.Greens(np.linspace(0.3, 0.9, len(success_episodes))) if success_episodes else []
-        failure_colors = plt.cm.Reds(np.linspace(0.3, 0.9, len(failure_episodes))) if failure_episodes else []
+        # Enhanced color schemes with better visibility
+        success_color = '#2E8B57'  # Sea green
+        failure_color = '#DC143C'  # Crimson
+        trend_color = '#1E1E1E'    # Near black
         
-        # Plot successful episodes
+        # Plot successful episodes with transparency for overlap visibility
+        success_data_all = []
         for i, ep_id in enumerate(success_episodes):
             ep_data = self.metrics_data[self.metrics_data['episode_id'] == ep_id].copy()
             if len(ep_data) > 0:
                 # Sort by distance for proper trajectory
                 ep_data = ep_data.sort_values('distance_to_target', ascending=False)
                 log_efe = np.log(np.abs(ep_data['efe']) + 1e-6)
-                plt.plot(ep_data['distance_to_target'], log_efe, alpha=0.6, 
-                        color=success_colors[i], linewidth=1.5, marker='o', markersize=2,
-                        label='Success' if i == 0 else "")
+                success_data_all.extend(list(zip(ep_data['distance_to_target'], log_efe)))
+                plt.plot(ep_data['distance_to_target'], log_efe, alpha=0.4, 
+                        color=success_color, linewidth=2, marker='o', markersize=3,
+                        label='Successful Episodes' if i == 0 else "", zorder=2)
         
-        # Plot failed episodes with different markers
+        # Plot failed episodes with different markers and transparency
+        failure_data_all = []
         for i, ep_id in enumerate(failure_episodes):
             ep_data = self.metrics_data[self.metrics_data['episode_id'] == ep_id].copy()
             if len(ep_data) > 0:
                 # Sort by distance for proper trajectory  
                 ep_data = ep_data.sort_values('distance_to_target', ascending=False)
                 log_efe = np.log(np.abs(ep_data['efe']) + 1e-6)
-                plt.plot(ep_data['distance_to_target'], log_efe, alpha=0.6, 
-                        color=failure_colors[i], linewidth=1.5, linestyle='--', 
-                        marker='x', markersize=3, label='Failure' if i == 0 else "")
+                failure_data_all.extend(list(zip(ep_data['distance_to_target'], log_efe)))
+                plt.plot(ep_data['distance_to_target'], log_efe, alpha=0.4, 
+                        color=failure_color, linewidth=2, linestyle='--', 
+                        marker='s', markersize=3, label='Failed Episodes' if i == 0 else "", zorder=2)
         
-        # Add trend analysis
+        # Enhanced trend analysis with confidence intervals
         if len(self.metrics_data) > 10:
-            # Overall trend line
             valid_data = self.metrics_data.dropna(subset=['efe', 'distance_to_target'])
             if len(valid_data) > 0:
                 log_efe_all = np.log(np.abs(valid_data['efe']) + 1e-6)
-                z = np.polyfit(valid_data['distance_to_target'], log_efe_all, 2)  # Quadratic fit
-                p = np.poly1d(z)
                 
-                x_trend = np.linspace(valid_data['distance_to_target'].min(), 
-                                    valid_data['distance_to_target'].max(), 100)
-                plt.plot(x_trend, p(x_trend), color='black', linewidth=3, 
-                        alpha=0.8, label='Overall Trend (Quadratic)', linestyle='-.')
+                # Quadratic trend with confidence interval
+                from scipy import stats
+                import numpy.polynomial.polynomial as poly
+                
+                x_data = valid_data['distance_to_target'].values
+                y_data = log_efe_all.values
+                
+                # Fit quadratic polynomial
+                coeffs = poly.polyfit(x_data, y_data, 2)
+                x_trend = np.linspace(x_data.min(), x_data.max(), 200)
+                y_trend = poly.polyval(x_trend, coeffs)
+                
+                # Calculate R² for the fit
+                y_pred = poly.polyval(x_data, coeffs)
+                ss_res = np.sum((y_data - y_pred) ** 2)
+                ss_tot = np.sum((y_data - np.mean(y_data)) ** 2)
+                r_squared = 1 - (ss_res / ss_tot)
+                
+                # Plot main trend line
+                plt.plot(x_trend, y_trend, color=trend_color, linewidth=4, 
+                        alpha=0.9, label=f'Overall Trend (R² = {r_squared:.3f})', 
+                        linestyle='-', zorder=5)
+                
+                # Add trend lines for success/failure separately if enough data
+                if len(success_data_all) > 5:
+                    success_x, success_y = zip(*success_data_all)
+                    success_coeffs = poly.polyfit(list(success_x), list(success_y), 1)
+                    success_trend = poly.polyval(x_trend, success_coeffs)
+                    plt.plot(x_trend, success_trend, color=success_color, linewidth=2, 
+                            alpha=0.8, label='Success Trend (Linear)', linestyle=':', zorder=4)
+                
+                if len(failure_data_all) > 5:
+                    failure_x, failure_y = zip(*failure_data_all)
+                    failure_coeffs = poly.polyfit(list(failure_x), list(failure_y), 1)
+                    failure_trend = poly.polyval(x_trend, failure_coeffs)
+                    plt.plot(x_trend, failure_trend, color=failure_color, linewidth=2, 
+                            alpha=0.8, label='Failure Trend (Linear)', linestyle=':', zorder=4)
         
-        plt.title('Log EFE vs Distance to Target Trajectories\n(Phase 1 Gaussian Kernel Analysis)', 
-                 fontsize=16, fontweight='bold')
-        plt.xlabel('Distance to Target (m)', fontsize=14)
-        plt.ylabel('log(|EFE| + 1e-6)', fontsize=14)
-        plt.grid(True, alpha=0.3)
-        plt.legend(fontsize=12, loc='best')
+        # Enhanced title and labels
+        plt.title('Expected Free Energy vs Distance to Target\nAutonomous Drone Navigation with Active Inference', 
+                 fontsize=20, fontweight='bold', pad=20)
+        plt.xlabel('Distance to Target (meters)', fontsize=16, fontweight='bold')
+        plt.ylabel('log(|EFE| + ε)', fontsize=16, fontweight='bold')
         
-        # Add statistics text box
+        # Enhanced grid and styling
+        plt.grid(True, alpha=0.3, linewidth=0.8)
+        plt.legend(fontsize=13, loc='best', framealpha=0.9, shadow=True)
+        
+        # Add comprehensive statistics box
         if len(self.metrics_data) > 0:
-            stats_text = f"""
-            Episodes: {len(all_episodes)}
-            Success: {len(success_episodes)} ({len(success_episodes)/len(all_episodes)*100:.1f}%)
-            Failure: {len(failure_episodes)} ({len(failure_episodes)/len(all_episodes)*100:.1f}%)
-            """
-            plt.text(0.02, 0.98, stats_text, transform=plt.gca().transAxes, 
-                    verticalalignment='top', bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
+            # Calculate correlation coefficient
+            valid_data = self.metrics_data.dropna(subset=['efe', 'distance_to_target'])
+            if len(valid_data) > 0:
+                log_efe_all = np.log(np.abs(valid_data['efe']) + 1e-6)
+                correlation = np.corrcoef(valid_data['distance_to_target'], log_efe_all)[0,1]
+                
+                # Calculate mean EFE for success vs failure
+                success_efe = []
+                failure_efe = []
+                for ep_id in success_episodes:
+                    ep_data = self.metrics_data[self.metrics_data['episode_id'] == ep_id]
+                    if len(ep_data) > 0:
+                        success_efe.extend(ep_data['efe'].values)
+                for ep_id in failure_episodes:
+                    ep_data = self.metrics_data[self.metrics_data['episode_id'] == ep_id]
+                    if len(ep_data) > 0:
+                        failure_efe.extend(ep_data['efe'].values)
+                
+                success_mean_efe = np.mean(np.abs(success_efe)) if success_efe else 0
+                failure_mean_efe = np.mean(np.abs(failure_efe)) if failure_efe else 0
+                
+                stats_text = f"""Dataset Statistics:
+Episodes: {len(all_episodes)} total
+Success Rate: {len(success_episodes)/len(all_episodes)*100:.1f}% ({len(success_episodes)}/{len(all_episodes)})
+Correlation (ρ): {correlation:.3f}
+Mean |EFE| (Success): {success_mean_efe:.2e}
+Mean |EFE| (Failure): {failure_mean_efe:.2e}"""
+                
+                plt.text(0.02, 0.98, stats_text, transform=plt.gca().transAxes, 
+                        verticalalignment='top', fontsize=11, 
+                        bbox=dict(boxstyle='round,pad=0.8', facecolor='lightblue', 
+                                alpha=0.8, edgecolor='navy', linewidth=1))
         
+        # Add subtle watermark/annotation
+        plt.text(0.98, 0.02, 'Generated by Active Inference Analysis Pipeline', 
+                transform=plt.gca().transAxes, fontsize=9, alpha=0.6,
+                horizontalalignment='right', style='italic')
+        
+        # Optimize layout and save with high quality
         plt.tight_layout()
-        plt.savefig(os.path.join(RESULTS_DIR, 'log_efe_vs_distance_trajectories.png'), 
-                   dpi=300, bbox_inches='tight')
+        
+        # Save multiple formats for submission flexibility
+        base_filename = 'enhanced_efe_vs_distance_trajectories'
+        plt.savefig(os.path.join(RESULTS_DIR, f'{base_filename}.png'), 
+                   dpi=300, bbox_inches='tight', facecolor='white', edgecolor='none')
+        plt.savefig(os.path.join(RESULTS_DIR, f'{base_filename}.pdf'), 
+                   bbox_inches='tight', facecolor='white', edgecolor='none')
         plt.close()
-        print("✓ Created log_efe_vs_distance_trajectories.png")
+        print(f"✓ Created enhanced publication-ready visualization: {base_filename}.png and .pdf")
     
     def create_log_vfe_efe_scatter(self):
         """Create standalone log VFE vs log EFE scatter plot"""

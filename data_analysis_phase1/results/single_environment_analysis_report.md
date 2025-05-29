@@ -1,6 +1,6 @@
 # Active Inference Experiment Analysis Report
 
-**Generated on:** 2025-05-27 19:36:59
+**Generated on:** 2025-05-28 16:41:06
 **Total Episodes:** 149
 
 ## Episode Outcomes
@@ -119,5 +119,5 @@
 - **Energy Coupling**: Strong correlation indicates tight VFE-EFE relationship
 
 ---
-**Analysis completed**: 2025-05-27 19:37:25
+**Analysis completed**: 2025-05-28 16:41:32
 **Framework**: Single Environment Active Inference Analysis v2.0
