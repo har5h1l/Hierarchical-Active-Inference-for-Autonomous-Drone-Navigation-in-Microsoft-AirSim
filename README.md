@@ -43,7 +43,7 @@ Our approach introduces a **latent environmental suitability state** inferred fr
 ```bash
 # 1. Start AirSim simulator
 # 2. Run the hierarchical active inference navigation
-julia run_inference.jl
+python data_collection.py
 
 # 3. Analyze experimental results
 cd data_analysis_phase1
