@@ -26,6 +26,9 @@ import random
 from typing import Dict, List, Tuple, Any, Optional
 from datetime import datetime
 from matplotlib import pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+from matplotlib.animation import FuncAnimation
+import matplotlib.patches as patches
 from os import path
 
 # Configure logging

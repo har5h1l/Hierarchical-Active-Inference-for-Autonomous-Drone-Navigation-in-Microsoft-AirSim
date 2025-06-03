@@ -541,8 +541,8 @@ end
     calculate_efe(state, beliefs, action, preference_model;
                  pragmatic_weight=1.0, epistemic_weight=0.2)
 
-Calculate the Expected Free Energy focusing on pragmatic and epistemic values only.
-Risk is handled separately through early elimination of unsafe waypoints.
+Calculate the Expected Free Energy using factorized beliefs and VFE integration.
+EFE = Pragmatic Value + Epistemic Value + VFE term
 """
 function calculate_efe(state::StateSpace.DroneState, 
                       beliefs::Inference.DroneBeliefs, 
@@ -552,63 +552,60 @@ function calculate_efe(state::StateSpace.DroneState,
                       epistemic_weight=0.2,
                       obstacle_density=0.0,
                       obstacle_distance=10.0)
-    # Use expected_state from beliefs
+    
+    # Use expected_state from factorized beliefs
     expected = Inference.expected_state(beliefs)
     
     # Calculate pragmatic value using preference model
     preference_score = evaluate_preference(state, preference_model)
     
-    # Adjust weights based on obstacle density - in high density environments, 
-    # reduce preference for target approach and increase emphasis on exploration
+    # Adjust weights based on obstacle density
     adjusted_pragmatic_weight = pragmatic_weight
     adjusted_epistemic_weight = epistemic_weight
     
-    # Define the density and distance thresholds for adjustment
-    high_density_threshold = 0.3  # Obstacle density above this is considered high
-    close_obstacle_threshold = 3.0  # Obstacles closer than this are considered close
+    high_density_threshold = 0.3
+    close_obstacle_threshold = 3.0
     
-    # Check if we're in a high obstacle density environment
     in_high_density = obstacle_density > high_density_threshold
     obstacles_close = obstacle_distance < close_obstacle_threshold
     
-    # Apply adjustment if either condition is met
     if in_high_density || obstacles_close
-        # Calculate adjustment factor (0.0 to 1.0)
-        density_factor = min(1.0, obstacle_density / 0.5)  # Normalize to 0-1 range
+        density_factor = min(1.0, obstacle_density / 0.5)
         distance_factor = max(0.0, 1.0 - (obstacle_distance / close_obstacle_threshold))
-        
-        # Use the more significant factor
         adjustment_factor = max(density_factor, distance_factor)
         
-        # Reduce pragmatic weight (target seeking) in high density areas
         adjusted_pragmatic_weight = pragmatic_weight * (1.0 - adjustment_factor * 0.4)
-        
-        # Increase epistemic weight (exploration) in high density areas
         adjusted_epistemic_weight = epistemic_weight * (1.0 + adjustment_factor)
     end
     
-    # Add distance reduction bonus - strongly reward actions that decrease distance
+    # Distance reduction bonus
     action_mag = norm(action)
     distance_reduction = expected.distance - state.distance
     distance_bonus = distance_reduction > 0 ? 2.0 * distance_reduction : 0.0
     
-    # Modified pragmatic value with distance bonus
-    pragmatic_value = -pragmatic_weight * (preference_score + distance_bonus) * action_mag
+    # Pragmatic value with distance bonus
+    pragmatic_value = -adjusted_pragmatic_weight * (preference_score + distance_bonus) * action_mag
     
-    # Calculate epistemic value from belief distributions
-    dist_entropy = -sum(beliefs.distance_belief .* log.(beliefs.distance_belief .+ 1e-10))
-    azim_entropy = -sum(beliefs.azimuth_belief .* log.(beliefs.azimuth_belief .+ 1e-10))
-    elev_entropy = -sum(beliefs.elevation_belief .* log.(beliefs.elevation_belief .+ 1e-10))
-    suit_entropy = -sum(beliefs.suitability_belief .* log.(beliefs.suitability_belief .+ 1e-10))
-    dens_entropy = -sum(beliefs.density_belief .* log.(beliefs.density_belief .+ 1e-10))
-      total_entropy = dist_entropy + azim_entropy + elev_entropy + suit_entropy + dens_entropy
-    epistemic_value = -epistemic_weight * 0.5 * total_entropy * action_mag
+    # Epistemic value from factorized belief entropies
+    location_entropy = -sum(beliefs.location_belief .* log.(beliefs.location_belief .+ 1e-10))
+    angle_entropy = -sum(beliefs.angle_belief .* log.(beliefs.angle_belief .+ 1e-10))
+    suitability_entropy = -sum(beliefs.suitability_belief .* log.(beliefs.suitability_belief .+ 1e-10))
     
-    # Calculate total EFE
-    total_efe = pragmatic_value + epistemic_value
+    total_entropy = location_entropy + angle_entropy + suitability_entropy
+    epistemic_value = -adjusted_epistemic_weight * 0.5 * total_entropy * action_mag
     
-    # Return a tuple with all components for more detailed metrics
-    return (total_efe, pragmatic_value, epistemic_value)
+    # Add VFE component for proper active inference
+    vfe_component = 0.0
+    if haskey(beliefs.vfe_cache, "current_vfe")
+        # Include VFE as a small penalty term to encourage belief minimization
+        vfe_component = 0.1 * beliefs.vfe_cache["current_vfe"]
+    end
+    
+    # Total EFE = Pragmatic + Epistemic + VFE penalty
+    total_efe = pragmatic_value + epistemic_value + vfe_component
+    
+    # Return tuple with all components for detailed metrics
+    return (total_efe, pragmatic_value, epistemic_value, vfe_component)
 end
 
 """

@@ -16,7 +16,7 @@ using .Planning
 
 # Export types and functions
 export DroneState, DroneObservation, create_state_from_observation  # from StateSpace
-export DroneBeliefs, initialize_beliefs, update_beliefs!, expected_state  # from Inference
+export DroneBeliefs, initialize_beliefs, update_beliefs!, expected_state, calculate_vfe, discretize_observation  # from Inference
 export serialize_beliefs, deserialize_beliefs  # from Inference
 export PreferenceModel, evaluate_preference, ActionPlanner, select_action  # from Planning
 
