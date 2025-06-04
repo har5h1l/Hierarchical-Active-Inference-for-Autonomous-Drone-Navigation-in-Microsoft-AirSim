@@ -11,7 +11,7 @@ using ..Inference
 
 # Constants for suitability calculation and filtering
 # Make SUITABILITY_THRESHOLD global and mutable so it can be updated from zmq_server.jl
-global SUITABILITY_THRESHOLD = 0.75  # Increased from 0.6 to 0.75 for safer path selection
+global SUITABILITY_THRESHOLD = 0.80  # Increased from 0.75 to 0.80 for more conservative path selection
 const DEFAULT_OBSTACLE_WEIGHT = 0.8  # Increased from 0.7
 const DEFAULT_DENSITY_WEIGHT = 0.4   # Increased from 0.3
 const CUTOFF_DISTANCE = 3.0  # Increased from 2.5 Meters
@@ -56,7 +56,7 @@ function PreferenceModel(;
     angle_weight = 0.5,           # Reduced from 0.8 to prioritize distance over angle
     angle_sharpness = 3.0,
     suitability_weight = 1.0,
-    suitability_threshold = 0.55,
+    suitability_threshold = 0.70,  # Increased from 0.55 for better consistency
     max_distance = 125.0
 )
     return PreferenceModel(
@@ -483,16 +483,17 @@ function simulate_transition(state::StateSpace.DroneState, waypoint::SVector{3, 
                     if projection <= 0
                         continue
                     end
-                    
-                    # Calculate perpendicular distance from voxel to path
-                    # |v - (v·d)d| where d is unit direction vector
+                      # Calculate perpendicular distance from voxel to path
                     # Use a more conservative perpendicular distance calculation that considers
-                    # the drone's size and potential drift during movement                    proj_point = waypoint + projection * to_target_direction
+                    # the drone's physical dimensions (0.4x0.4x0.1 meters) and potential drift
+                    proj_point = waypoint + projection * to_target_direction
                     perp_dist = norm(voxel - proj_point)
                     
-                    # Consider as obstacle if close to direct path
-                    # Increased the perpendicular distance threshold from 1.0 to 1.5 for safety
-                    if perp_dist < 1.5 && projection < to_target_distance
+                    # Consider drone dimensions: 0.4m width/height + safety margin
+                    drone_clearance_radius = 0.2 + 1.0  # Half of 0.4m + 1m safety margin = 1.2m
+                    
+                    # Consider as obstacle if close to direct path accounting for drone size
+                    if perp_dist < drone_clearance_radius && projection < to_target_distance
                         obstacles_between = true
                         break
                     end

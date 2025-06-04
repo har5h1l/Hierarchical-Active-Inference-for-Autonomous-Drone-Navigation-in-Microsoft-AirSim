@@ -418,8 +418,7 @@ function main()
         # Use significantly more samples during critical planning
         adaptive_waypoint_count = Int(WAYPOINT_SAMPLE_COUNT * 1.5)
         println("Increased waypoint sampling for critical planning: $(adaptive_waypoint_count)")
-    end
-      # Select the next waypoint using active inference
+    end    # Select the next waypoint using active inference
     println("\nSelecting next waypoint...")
     next_waypoint_result = select_action(
         planner, 
@@ -428,7 +427,7 @@ function main()
         safety_margin=adaptive_safety_margin,
         policy_length=POLICY_LENGTH,
         density_radius=get(data, "density_radius", 5.0),
-        suitability_threshold=0.75  # Increased to 0.75 for safer path selection
+        suitability_threshold=0.80  # Increased to 0.80 for higher quality path selection
     )
     
     # Extract next_waypoint and metadata from the result
@@ -447,8 +446,7 @@ function main()
     
     # If we didn't get a good waypoint, try again with slightly lower threshold but still higher than default
     if isnothing(next_waypoint) || length(next_waypoint) < 3
-        println("❌ Failed to find waypoint with high suitability, retrying with adjusted parameters")
-          # Retry with lower threshold but still much higher than original
+        println("❌ Failed to find waypoint with high suitability, retrying with adjusted parameters")        # Retry with lower threshold but still much higher than original
         next_waypoint_result = select_action(
             planner, 
             beliefs,
@@ -456,7 +454,7 @@ function main()
             safety_margin=adaptive_safety_margin * 0.85,  # Slightly reduced safety margin
             policy_length=POLICY_LENGTH,
             density_radius=get(data, "density_radius", 5.0),
-            suitability_threshold=0.65  # Fallback threshold still higher than default but lower than primary
+            suitability_threshold=0.70  # Fallback threshold increased to 0.70 for better quality
         )
         
         # Extract next_waypoint and metadata
@@ -474,17 +472,17 @@ function main()
         end
           if isnothing(next_waypoint) || length(next_waypoint) < 3
             println("⚠️ Second attempt failed, using lower threshold in emergency mode")
-            
-        # Last resort - focus on finding high suitability paths with more samples
+              # Last resort - focus on finding high suitability paths with more samples
             # Rather than lowering threshold further, we increase the sample count and search more thoroughly
             println("🔍 Searching more thoroughly for high quality paths...")
             next_waypoint_result = select_action(
                 planner, 
-                beliefs,                num_samples=adaptive_waypoint_count * 5,  # 5x samples for thorough search
+                beliefs,
+                num_samples=adaptive_waypoint_count * 5,  # 5x samples for thorough search
                 safety_margin=adaptive_safety_margin * 0.8,  # Slightly reduced but still safe
                 policy_length=POLICY_LENGTH,
                 density_radius=get(data, "density_radius", 5.0),
-                suitability_threshold=0.6  # Emergency threshold, still relatively high
+                suitability_threshold=0.65  # Emergency threshold increased to 0.65 for better reliability
             )
             
             # Extract next_waypoint and metadata

@@ -228,7 +228,7 @@ function main()
     direct_path_clear = get(obs_data, "direct_path_clear", false)
     direct_path_suitability = get(obs_data, "direct_path_suitability", 0.0)
     
-    if direct_path_clear && direct_path_suitability > 0.6 && distance_percentage < 50.0
+    if direct_path_clear && direct_path_suitability > 0.75 && distance_percentage < 50.0
         # Clear path and closer than halfway - reduce obstacle avoidance further
         obstacle_avoidance_factor *= 0.8
         println("Clear direct path detected: Further reduced obstacle avoidance to $(round(obstacle_avoidance_factor, digits=2))")
