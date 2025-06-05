@@ -31,6 +31,14 @@ from matplotlib.animation import FuncAnimation
 import matplotlib.patches as patches
 from os import path
 
+# Import voxel visualization
+try:
+    from voxel_visualization import VoxelGridVisualizer, create_voxel_visualizer
+except ImportError:
+    VoxelGridVisualizer = None
+    create_voxel_visualizer = None
+    logging.warning("VoxelGridVisualizer not available - 3D visualization disabled")
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -186,7 +194,7 @@ ZMQ_MAX_RETRIES = 3  # Maximum number of retries for ZMQ communication
 
 # Default experiment configuration
 DEFAULT_CONFIG = {
-    "num_episodes": 15,
+    "num_episodes": 5,
     "target_distance_range": (20.0, 100.0),  # min, max in meters
     "random_seed": 42,
     "max_steps_per_episode": 200,
@@ -202,7 +210,13 @@ DEFAULT_CONFIG = {
     "min_ray_checks": 3,  # Minimum number of rays for target validation
     "max_ray_checks": 7,  # Maximum number of rays for target validation 
     "visualize_raycasts": False,  # Visualize raycasts in AirSim
-    "visualization_duration": 60.0  # Duration of visualization markers in seconds
+    "visualization_duration": 60.0,  # Duration of visualization markers in seconds
+      # Voxel grid visualization configuration
+    "enable_voxel_visualization": True,  # Enable real-time 3D voxel visualization
+    "voxel_size": 0.5,  # Size of voxels in meters
+    "visualization_range": 25.0,  # Range around drone to visualize in meters
+    "save_visualization_screenshots": True,  # Save screenshots during episodes
+    "screenshot_interval": 10  # Save screenshot every N steps
 }
 
 # Add the airsim directory to the Python path
@@ -844,13 +858,13 @@ class ZMQInterface:
 
 class Scanner:
     """Scanner for obstacle detection using AirSim's LiDAR data"""
-    def __init__(self, client, scan_range=20.0):
+    def __init__(self, client, scan_range=20.0, enable_visualization=False, voxel_size=0.5):
         self.client = client
         self.scan_range = scan_range
         
         # Enhanced parameters for better obstacle detection
         self.point_density = 1.2  # Increased point density for better resolution
-          # Cache for recent scans to optimize performance during rapid rescanning
+        # Cache for recent scans to optimize performance during rapid rescanning
         self.last_scan_time = 0
         self.scan_cache_ttl = 0.1  # 100ms TTL for cached scan data
         self.cached_positions = []
@@ -862,6 +876,24 @@ class Scanner:
         # Enhanced detection parameters
         self.min_obstacle_distance = 0.1  # Minimum distance to consider as obstacle (filter out drone body)
         self.max_voxel_merge_distance = 0.1  # Maximum distance for merging duplicate obstacles
+        
+        # Voxel grid visualization
+        self.enable_visualization = enable_visualization and VoxelGridVisualizer is not None
+        self.visualizer = None
+        self.voxel_size = voxel_size
+        
+        if self.enable_visualization:
+            try:
+                self.visualizer = create_voxel_visualizer(
+                    voxel_size=voxel_size,
+                    visualization_range=scan_range,
+                    auto_start=True
+                )
+                logging.info("Voxel grid visualization enabled")
+            except Exception as e:
+                logging.warning(f"Failed to initialize voxel visualization: {e}")
+                self.enable_visualization = False
+                self.visualizer = None
 
     def fetch_density_distances(self, use_cache=False):
         """Get obstacle positions and distances with comprehensive multi-scale detection
@@ -1162,8 +1194,7 @@ class Scanner:
             self.cached_positions = obstacle_positions
             self.cached_distances = obstacle_distances
             self.last_scan_time = current_time
-            
-            # Enhanced logging with zone information
+              # Enhanced logging with zone information
             zone_counts = {}
             for obs in final_obstacles:
                 zone = obs.get('zone', 'unknown')
@@ -1171,6 +1202,13 @@ class Scanner:
             
             logging.debug(f"Multi-scale obstacle detection: {processed_points} processed, {valid_points} valid, "
                          f"{len(obstacle_positions)} final obstacles. Zones: {zone_counts}")
+            
+            # Update visualization if enabled
+            if self.enable_visualization and self.visualizer and obstacle_positions:
+                try:
+                    self.visualizer.update_obstacles(obstacle_positions, self.voxel_size)
+                except Exception as e:
+                    logging.debug(f"Error updating visualization in fetch_density_distances: {e}")
             
             return obstacle_positions, obstacle_distances
         
@@ -1799,6 +1837,14 @@ class Scanner:
             logging.debug(f"Comprehensive scan complete: {summary['total_obstacles']} obstacles, "
                          f"density: {local_density:.3f}, closest: {summary['closest_distance']:.2f}m")
             
+            # Update visualization if enabled
+            if self.enable_visualization and self.visualizer:
+                try:
+                    self.visualizer.update_drone_position(drone_pos.tolist())
+                    self.visualizer.update_obstacles(obstacle_positions, self.voxel_size)
+                except Exception as e:
+                    logging.debug(f"Error updating visualization: {e}")
+            
             return result
             
         except Exception as e:
@@ -1809,6 +1855,52 @@ class Scanner:
                 'obstacle_distances': [],
                 'error': str(e)
             }
+    
+    def update_visualization_target(self, target_position: List[float]):
+        """Update the target position in the visualization"""
+        if self.enable_visualization and self.visualizer:
+            try:
+                self.visualizer.update_target_position(target_position)
+            except Exception as e:
+                logging.debug(f"Error updating visualization target: {e}")
+    
+    def update_visualization_drone(self, drone_position: List[float]):
+        """Update the drone position in the visualization"""
+        if self.enable_visualization and self.visualizer:
+            try:
+                self.visualizer.update_drone_position(drone_position)
+            except Exception as e:
+                logging.debug(f"Error updating visualization drone position: {e}")
+    
+    def save_visualization_screenshot(self, filename: str):
+        """Save a screenshot of the current visualization"""
+        if self.enable_visualization and self.visualizer:
+            try:
+                self.visualizer.save_screenshot(filename)
+                return True
+            except Exception as e:
+                logging.warning(f"Error saving visualization screenshot: {e}")
+                return False
+        return False
+    
+    def stop_visualization(self):
+        """Stop the visualization if running"""
+        if self.enable_visualization and self.visualizer:
+            try:
+                self.visualizer.stop_visualization()
+                self.visualizer = None
+                logging.info("Stopped voxel grid visualization")
+            except Exception as e:
+                logging.warning(f"Error stopping visualization: {e}")
+    
+    def get_visualization_stats(self):
+        """Get visualization statistics"""
+        if self.enable_visualization and self.visualizer:
+            try:
+                return self.visualizer.get_visualization_stats()
+            except Exception as e:
+                logging.debug(f"Error getting visualization stats: {e}")
+        return {'is_running': False, 'error': 'Visualization not available'}
 
 def generate_target_pool(start_pos: List[float], distance_range: Tuple[float, float],
                       client: airsim.MultirotorClient, num_targets: int = 100,
@@ -2429,7 +2521,8 @@ def move_to_waypoint(client, current_pos, waypoint, velocity=2, distance_to_targ
 
 def run_episode(episode_id: int, client: airsim.MultirotorClient, 
                 zmq_interface: ZMQInterface, scanner: Scanner, 
-                config: Dict[str, Any], target_pool: List[List[float]] = None) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+                config: Dict[str, Any], target_pool: List[List[float]] = None,
+                experiment_dir: str = None) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     """Run a single navigation episode
     
     Args:
@@ -2691,8 +2784,7 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
                 status = "airsim_crash"
                 raise ConnectionError(f"AirSim connection lost during episode: {e}")
             
-        
-        # Get current drone position
+          # Get current drone position
         try:
             drone_state = client.getMultirotorState().kinematics_estimated
             drone_pos = [
@@ -2709,6 +2801,27 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
                 # For other errors, try to continue
                 logging.warning("Attempting to continue episode despite error")
                 continue
+        
+        # Update visualization with current drone position and target
+        if config.get("enable_voxel_visualization", False):
+            try:
+                scanner.update_visualization_drone(drone_pos)
+                scanner.update_visualization_target(target_pos)
+                  # Save screenshot at specified intervals
+                if (config.get("save_visualization_screenshots", False) and 
+                    step % config.get("screenshot_interval", 10) == 0):
+                    screenshot_filename = f"episode_{episode_id:03d}_step_{step:03d}.png"
+                    if experiment_dir:
+                        # Create screenshots subdirectory in experiment folder
+                        screenshots_dir = os.path.join(experiment_dir, "screenshots")
+                        os.makedirs(screenshots_dir, exist_ok=True)
+                        screenshot_path = os.path.join(screenshots_dir, screenshot_filename)
+                    else:
+                        screenshot_path = screenshot_filename
+                    scanner.save_visualization_screenshot(screenshot_path)
+                    logging.debug(f"Saved visualization screenshot: {screenshot_path}")
+            except Exception as e:
+                logging.debug(f"Error updating visualization at step {step}: {e}")
         
         # Calculate distance to target
         distance_to_target = np.linalg.norm(np.array(target_pos) - np.array(drone_pos))
@@ -3970,12 +4083,19 @@ def run_experiment(config: Dict[str, Any]) -> None:
                 else:
                     logging.error("Maximum retry attempts reached. Please ensure AirSim is running.")
                     raise ConnectionError("Failed to connect to AirSim after multiple attempts")
-    try:
-        # Initialize AirSim client with retry
+    try:        # Initialize AirSim client with retry
         client = initialize_airsim_with_retry()
         
-        # Initialize scanner
-        scanner = Scanner(client)
+        # Initialize scanner with visualization if enabled
+        enable_viz = full_config.get("enable_voxel_visualization", False)
+        voxel_size = full_config.get("voxel_size", 0.5)
+        viz_range = full_config.get("visualization_range", 25.0)
+        
+        scanner = Scanner(client, scan_range=viz_range, 
+                         enable_visualization=enable_viz, voxel_size=voxel_size)
+        
+        if enable_viz:
+            logging.info(f"Voxel visualization enabled: voxel_size={voxel_size}m, range={viz_range}m")
         
         # Start the Julia server
         julia_server = JuliaServer()
@@ -4066,12 +4186,17 @@ def run_experiment(config: Dict[str, Any]) -> None:
                     logging.error(f"Lost connection to AirSim before episode {episode_id}: {e}")
                     logging.info("Attempting to reconnect to AirSim...")
                     client = initialize_airsim_with_retry()
-                    scanner = Scanner(client)  # Reinitialize scanner with new client
-                
+                    # Reinitialize scanner with visualization settings preserved
+                    enable_viz = full_config.get("enable_voxel_visualization", False)
+                    voxel_size = full_config.get("voxel_size", 0.5)
+                    viz_range = full_config.get("visualization_range", 25.0)
+                    scanner = Scanner(client, scan_range=viz_range, 
+                                     enable_visualization=enable_viz, voxel_size=voxel_size)                
                 logging.info(f"Starting episode {episode_id} of {full_config['num_episodes']}")
-                  # Run episode
+                
+                # Run episode
                 step_metrics, episode_summary = run_episode(
-                    episode_id, client, zmq_interface, scanner, full_config, target_pool
+                    episode_id, client, zmq_interface, scanner, full_config, target_pool, experiment_dir
                 )
                 
                 # Track metrics

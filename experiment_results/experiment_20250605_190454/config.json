@@ -1,5 +1,5 @@
 {
-  "num_episodes": 15,
+  "num_episodes": 5,
   "target_distance_range": [
     20.0,
     100.0
@@ -17,9 +17,9 @@
   "max_ray_checks": 7,
   "visualize_raycasts": false,
   "visualization_duration": 60.0,
-  "enable_voxel_visualization": false,
+  "enable_voxel_visualization": true,
   "voxel_size": 0.5,
   "visualization_range": 25.0,
-  "save_visualization_screenshots": false,
+  "save_visualization_screenshots": true,
   "screenshot_interval": 10
 }

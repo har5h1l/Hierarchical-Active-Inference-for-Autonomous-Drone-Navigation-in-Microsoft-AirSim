@@ -1,5 +1,5 @@
 {
-  "num_episodes": 15,
+  "num_episodes": 5,
   "target_distance_range": [
     20.0,
     100.0
