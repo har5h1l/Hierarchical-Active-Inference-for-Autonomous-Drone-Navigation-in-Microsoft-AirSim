@@ -26,7 +26,8 @@ Ensure these settings in your config:
 "save_visualization_screenshots": True, 
 "screenshot_interval": 10,
 "voxel_size": 0.5,
-"visualization_range": 25.0
+"visualization_range": 25.0,
+"screenshot_max_retries": 3  # Windows OpenGL fix
 ```
 
 ## Expected Output
@@ -47,5 +48,16 @@ viz.update_target_position([10, 0, -3])
 ## Dependencies Installed
 - ✅ Open3D 0.19.0 (with GUI and offscreen support)
 - ✅ All required Python packages
+
+## Windows OpenGL Issues Fixed
+- ✅ Thread synchronization for OpenGL contexts
+- ✅ Retry logic for "WGL: Failed to make context current" errors
+- ✅ Configurable retry attempts via `screenshot_max_retries`
+- ✅ Platform-specific timing adjustments
+
+## Troubleshooting
+- **GLFW/WGL errors**: System will automatically retry screenshots
+- **Black screenshots**: Check if Windows graphics drivers support OpenGL
+- **High screenshot failures**: Increase `screenshot_max_retries` to 5-10
 
 The system is ready for cloud testing with AirSim! 

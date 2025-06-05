@@ -220,7 +220,8 @@ DEFAULT_CONFIG = {
     "voxel_size": 0.5,  # Size of voxels in meters
     "visualization_range": 25.0,  # Range around drone to visualize in meters
     "save_visualization_screenshots": True,  # Save screenshots during episodes
-    "screenshot_interval": 10  # Save screenshot every N steps
+    "screenshot_interval": 10,  # Save screenshot every N steps
+    "screenshot_max_retries": 3  # Maximum retries for screenshot capture (Windows OpenGL fix)
 }
 
 # Add the airsim directory to the Python path
@@ -1884,12 +1885,11 @@ class Scanner:
             except Exception as e:
                 logging.debug(f"Error updating visualization drone position: {e}")
     
-    def save_visualization_screenshot(self, filename: str):
+    def save_visualization_screenshot(self, filename: str, max_retries: int = 3):
         """Save a screenshot of the current visualization"""
         if self.enable_visualization and self.visualizer:
             try:
-                self.visualizer.save_screenshot(filename)
-                return True
+                return self.visualizer.save_screenshot(filename, max_retries=max_retries)
             except Exception as e:
                 logging.warning(f"Error saving visualization screenshot: {e}")
                 return False
@@ -2830,8 +2830,12 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
                         screenshot_path = os.path.join(screenshots_dir, screenshot_filename)
                     else:
                         screenshot_path = screenshot_filename
-                    scanner.save_visualization_screenshot(screenshot_path)
-                    logging.debug(f"Saved visualization screenshot: {screenshot_path}")
+                    max_retries = config.get("screenshot_max_retries", 3)
+                    success = scanner.save_visualization_screenshot(screenshot_path, max_retries=max_retries)
+                    if success:
+                        logging.debug(f"Saved visualization screenshot: {screenshot_path}")
+                    else:
+                        logging.debug(f"Failed to save screenshot after {max_retries} attempts: {screenshot_path}")
             except Exception as e:
                 logging.debug(f"Error updating visualization at step {step}: {e}")
         

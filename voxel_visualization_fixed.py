@@ -196,18 +196,28 @@ class VoxelGridVisualizer:
                 while self.is_running:
                     current_time = time.time()
                     
-                    if current_time - last_update >= update_interval:
-                        with self.update_lock:
-                            self._update_visualization()
-                        last_update = current_time
-                    
-                    # Process visualization events
-                    if not self.vis.poll_events():
-                        break
-                    self.vis.update_renderer()
-                    
-                    # Small sleep to prevent excessive CPU usage
-                    time.sleep(0.01)
+                    try:
+                        if current_time - last_update >= update_interval:
+                            with self.update_lock:
+                                self._update_visualization()
+                            last_update = current_time
+                        
+                        # Process visualization events
+                        if not self.vis.poll_events():
+                            break
+                        self.vis.update_renderer()
+                        
+                        # Slightly longer sleep on Windows to reduce context conflicts
+                        sleep_time = 0.02 if platform.system() == 'Windows' else 0.01
+                        time.sleep(sleep_time)
+                        
+                    except Exception as update_error:
+                        if "WGL" in str(update_error) or "GLFW" in str(update_error):
+                            logging.debug(f"OpenGL context warning during update: {update_error}")
+                            time.sleep(0.1)  # Wait longer on OpenGL errors
+                        else:
+                            logging.debug(f"Visualization update error: {update_error}")
+                            time.sleep(0.05)
                 
         except Exception as e:
             logging.error(f"Error in visualization thread: {e}")
@@ -579,8 +589,8 @@ class VoxelGridVisualizer:
         except Exception as e:
             logging.debug(f"Error updating camera view: {e}")
     
-    def save_screenshot(self, filename: str):
-        """Save a screenshot of the current visualization with improved reliability"""
+    def save_screenshot(self, filename: str, max_retries=3):
+        """Save a screenshot of the current visualization with improved reliability and Windows OpenGL fix"""
         try:
             if not self.vis or not self.is_running:
                 logging.debug("Visualizer not initialized or not running - cannot save screenshot")
@@ -590,23 +600,42 @@ class VoxelGridVisualizer:
             os.makedirs(os.path.dirname(filename), exist_ok=True)
             
             if hasattr(self.vis, 'capture_screen_image'):
-                # For GUI visualizer
-                # Force multiple renders to ensure scene is fully updated
-                for _ in range(5):
-                    if not self.is_running:
-                        break
-                    self.vis.poll_events()
-                    self.vis.update_renderer()
-                    time.sleep(0.05)
+                # For GUI visualizer - add thread synchronization and retry logic
+                for attempt in range(max_retries):
+                    try:
+                        # Use thread lock to prevent context conflicts
+                        with self.update_lock:
+                            # Force multiple renders to ensure scene is fully updated
+                            for _ in range(3):  # Reduced from 5 to avoid context conflicts
+                                if not self.is_running:
+                                    break
+                                self.vis.poll_events()
+                                self.vis.update_renderer()
+                                time.sleep(0.1)  # Longer delay for Windows
+                            
+                            # Additional delay before capture to ensure context is ready
+                            time.sleep(0.2)
+                            
+                            # Capture screenshot
+                            success = self.vis.capture_screen_image(filename)
+                            if success:
+                                logging.info(f"Saved visualization screenshot to {filename}")
+                                return True
+                            else:
+                                logging.warning(f"Screenshot capture returned False (attempt {attempt + 1}/{max_retries})")
+                                
+                    except Exception as capture_error:
+                        if "WGL" in str(capture_error) or "GLFW" in str(capture_error):
+                            logging.warning(f"OpenGL context error on attempt {attempt + 1}/{max_retries}: {capture_error}")
+                            # Wait longer between retries for OpenGL context issues
+                            time.sleep(0.5)
+                        else:
+                            logging.warning(f"Screenshot capture error on attempt {attempt + 1}/{max_retries}: {capture_error}")
+                            time.sleep(0.2)
                 
-                # Capture screenshot
-                success = self.vis.capture_screen_image(filename)
-                if success:
-                    logging.info(f"Saved visualization screenshot to {filename}")
-                    return True
-                else:
-                    logging.warning(f"Failed to capture screenshot to {filename}")
-                    return False
+                # All attempts failed
+                logging.warning(f"Failed to capture screenshot to {filename} after {max_retries} attempts")
+                return False
                     
             elif hasattr(self.vis, 'render_to_image'):
                 # For offscreen renderer
