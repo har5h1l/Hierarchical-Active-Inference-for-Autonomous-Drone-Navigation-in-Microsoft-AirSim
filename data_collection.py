@@ -216,7 +216,7 @@ DEFAULT_CONFIG = {
     "visualize_raycasts": False,  # Visualize raycasts in AirSim
     "visualization_duration": 60.0,  # Duration of visualization markers in seconds
       # Voxel grid visualization configuration
-    "enable_voxel_visualization": True,  # Enable real-time 3D voxel visualization
+    "enable_voxel_visualization": True,  # Enable real-time 3D voxel visualization (can be turned off for performance)
     "voxel_size": 0.5,  # Size of voxels in meters
     "visualization_range": 25.0,  # Range around drone to visualize in meters
     "save_visualization_screenshots": True,  # Save screenshots during episodes
@@ -893,9 +893,17 @@ class Scanner:
                     visualization_range=scan_range,
                     auto_start=True
                 )
-                logging.info("Voxel grid visualization enabled")
+                # Wait a moment to see if visualization actually started
+                time.sleep(1.0)
+                if self.visualizer and self.visualizer.is_running:
+                    logging.info("Voxel grid visualization enabled and running")
+                else:
+                    logging.warning("Visualization created but failed to start - disabling")
+                    self.enable_visualization = False
+                    self.visualizer = None
             except Exception as e:
                 logging.warning(f"Failed to initialize voxel visualization: {e}")
+                logging.info("Continuing without visualization - experiment will still run normally")
                 self.enable_visualization = False
                 self.visualizer = None
 

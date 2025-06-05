@@ -12,8 +12,27 @@ import threading
 import logging
 import traceback
 import os
+import platform
 from typing import List, Tuple, Optional, Dict, Any
 from collections import deque
+
+
+def check_visualization_support():
+    """Check if Open3D visualization is supported on this platform"""
+    try:
+        # Try creating a minimal visualizer to test support
+        test_vis = o3d.visualization.Visualizer()
+        test_vis.create_window(width=100, height=100, visible=False)
+        test_vis.destroy_window()
+        return True, "GUI"
+    except Exception as gui_error:
+        try:
+            # Try offscreen rendering
+            test_renderer = o3d.visualization.rendering.OffscreenRenderer(100, 100)
+            del test_renderer
+            return True, "Offscreen"
+        except Exception as offscreen_error:
+            return False, f"GUI failed: {gui_error}, Offscreen failed: {offscreen_error}"
 
 
 class VoxelGridVisualizer:
@@ -86,6 +105,15 @@ class VoxelGridVisualizer:
             logging.warning("Visualization is already running")
             return
         
+        # Check if visualization is supported before starting
+        supported, mode_or_error = check_visualization_support()
+        if not supported:
+            logging.warning(f"Open3D visualization not supported on this platform: {mode_or_error}")
+            logging.info("Visualization will be disabled - continuing without 3D display")
+            return
+        else:
+            logging.info(f"Open3D visualization supported via {mode_or_error}")
+        
         self.is_running = True
         self.visualization_thread = threading.Thread(
             target=self._run_visualization,
@@ -116,19 +144,45 @@ class VoxelGridVisualizer:
     def _run_visualization(self, window_name):
         """Main visualization loop running in separate thread"""
         try:
-            # Check if we're in a headless environment
-            headless = os.environ.get('DISPLAY') is None or os.environ.get('HEADLESS') == '1'
+            # Determine the best visualization mode for this platform
+            is_windows = platform.system() == 'Windows'
+            headless_env = os.environ.get('DISPLAY') is None or os.environ.get('HEADLESS') == '1'
             
-            if headless:
-                logging.info("Running in headless mode - using offscreen renderer")
-                # Use offscreen renderer for headless environments
-                self.vis = o3d.visualization.rendering.OffscreenRenderer(1200, 800)
-                self._setup_offscreen_scene()
-            else:
-                # Initialize Open3D visualizer for GUI mode
+            # On Windows, prefer GUI mode as headless often doesn't work
+            # On Linux/Mac, can try headless first if no display
+            gui_success = False
+            
+            # Try GUI mode first (especially on Windows)
+            try:
+                logging.info("Attempting GUI visualization mode")
                 self.vis = o3d.visualization.Visualizer()
-                self.vis.create_window(window_name=window_name, width=1200, height=800, visible=True)
-                
+                self.vis.create_window(window_name=window_name, width=1200, height=800, visible=False)
+                gui_success = True
+                logging.info("GUI visualization mode initialized successfully")
+            except Exception as gui_error:
+                logging.warning(f"GUI mode failed: {gui_error}")
+                gui_success = False
+            
+            # If GUI failed and we're not on Windows, try offscreen rendering
+            if not gui_success and not is_windows:
+                try:
+                    logging.info("Attempting headless mode - using offscreen renderer")
+                    self.vis = o3d.visualization.rendering.OffscreenRenderer(1200, 800)
+                    self._setup_offscreen_scene()
+                    logging.info("Headless visualization mode initialized successfully")
+                    return  # Exit early for headless mode
+                except Exception as headless_error:
+                    logging.warning(f"Headless mode also failed: {headless_error}")
+            
+            # If both modes failed, disable visualization
+            if not gui_success:
+                logging.warning("All visualization modes failed - disabling visualization")
+                logging.info("Experiment will continue without 3D visualization")
+                self.is_running = False
+                return
+            
+            # Set up the GUI scene if we got here
+            if gui_success:
                 # Set up the initial scene
                 self._setup_initial_scene()
                 
@@ -528,8 +582,8 @@ class VoxelGridVisualizer:
     def save_screenshot(self, filename: str):
         """Save a screenshot of the current visualization with improved reliability"""
         try:
-            if not self.vis:
-                logging.warning("Visualizer not initialized - cannot save screenshot")
+            if not self.vis or not self.is_running:
+                logging.debug("Visualizer not initialized or not running - cannot save screenshot")
                 return False
             
             # Ensure directory exists
@@ -539,6 +593,8 @@ class VoxelGridVisualizer:
                 # For GUI visualizer
                 # Force multiple renders to ensure scene is fully updated
                 for _ in range(5):
+                    if not self.is_running:
+                        break
                     self.vis.poll_events()
                     self.vis.update_renderer()
                     time.sleep(0.05)
@@ -554,16 +610,20 @@ class VoxelGridVisualizer:
                     
             elif hasattr(self.vis, 'render_to_image'):
                 # For offscreen renderer
-                image = self.vis.render_to_image()
-                o3d.io.write_image(filename, image)
-                logging.info(f"Saved offscreen screenshot to {filename}")
-                return True
+                try:
+                    image = self.vis.render_to_image()
+                    o3d.io.write_image(filename, image)
+                    logging.info(f"Saved offscreen screenshot to {filename}")
+                    return True
+                except Exception as render_error:
+                    logging.warning(f"Offscreen rendering failed: {render_error}")
+                    return False
             else:
-                logging.warning("No screenshot capability available")
+                logging.debug("No screenshot capability available")
                 return False
                 
         except Exception as e:
-            logging.error(f"Error saving screenshot: {e}")
+            logging.debug(f"Error saving screenshot: {e}")
             return False
     
     def toggle_camera_follow(self):
@@ -597,7 +657,7 @@ def create_voxel_visualizer(voxel_size=0.5, visualization_range=25.0, auto_start
         auto_start: Whether to automatically start the visualization
     
     Returns:
-        VoxelGridVisualizer instance
+        VoxelGridVisualizer instance (may have is_running=False if visualization failed)
     """
     visualizer = VoxelGridVisualizer(
         voxel_size=voxel_size,
@@ -606,6 +666,9 @@ def create_voxel_visualizer(voxel_size=0.5, visualization_range=25.0, auto_start
     
     if auto_start:
         visualizer.start_visualization()
+        # If visualization failed to start, log it but don't raise an error
+        if not visualizer.is_running:
+            logging.info("Visualization could not be started - continuing without 3D display")
     
     return visualizer
 

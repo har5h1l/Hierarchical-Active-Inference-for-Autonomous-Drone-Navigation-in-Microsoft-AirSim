@@ -90,11 +90,13 @@ experiment_results/experiment_YYYYMMDD_HHMMSS/screenshots/episode_XXX_step_YYY.p
 
 ### Configuration Settings
 The system respects these configuration parameters:
-- `enable_voxel_visualization`: Enable/disable visualization
+- `enable_voxel_visualization`: **True** (default) - Enable/disable visualization (can be set to False for performance)
 - `save_visualization_screenshots`: Enable/disable screenshot saving
 - `screenshot_interval`: Steps between screenshots (default: 10)
 - `voxel_size`: Voxel size in meters (minimum 0.5m enforced)
 - `visualization_range`: Range around drone to visualize (default: 25m)
+
+**Note**: The visualization system will automatically disable itself gracefully if Open3D visualization is not supported on the platform (e.g., Windows without proper graphics drivers). The experiment will continue normally without 3D visualization.
 
 ## Expected Results
 
