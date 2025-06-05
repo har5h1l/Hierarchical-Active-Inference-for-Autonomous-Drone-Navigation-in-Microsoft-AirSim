@@ -169,12 +169,33 @@ class VoxelGridVisualizer:
             try:
                 logging.info("Attempting GUI visualization mode")
                 self.vis = o3d.visualization.Visualizer()
-                self.vis.create_window(window_name=window_name, width=1200, height=800, visible=False)
-                gui_success = True
-                logging.info("GUI visualization mode initialized successfully")
+                
+                # Try to create window with error handling for already existing class
+                try:
+                    self.vis.create_window(window_name=window_name, width=1200, height=800, visible=False)
+                    gui_success = True
+                    logging.info("GUI visualization mode initialized successfully")
+                except Exception as window_error:
+                    if "Class already exists" in str(window_error) or "Failed to create window" in str(window_error):
+                        # Try with a unique window name to avoid conflicts
+                        unique_name = f"{window_name}_{int(time.time())}"
+                        logging.info(f"Retrying with unique window name: {unique_name}")
+                        self.vis.create_window(window_name=unique_name, width=1200, height=800, visible=False)
+                        gui_success = True
+                        logging.info("GUI visualization mode initialized with unique name")
+                    else:
+                        raise window_error
+                        
             except Exception as gui_error:
                 logging.warning(f"GUI mode failed: {gui_error}")
                 gui_success = False
+                # Clean up failed visualizer
+                if self.vis:
+                    try:
+                        self.vis.destroy_window()
+                    except:
+                        pass
+                    self.vis = None
             
             # If GUI failed and we're not on Windows, try offscreen rendering
             if not gui_success and not is_windows:
@@ -255,6 +276,7 @@ class VoxelGridVisualizer:
     def _capture_screenshot_internal(self, filename: str, max_retries: int = 3) -> bool:
         """Internal screenshot capture method that runs in the main visualization thread"""
         if not self.vis or not self.is_running:
+            logging.debug("Visualizer not available or not running")
             return False
             
         if not self.enable_screenshots:
@@ -264,6 +286,11 @@ class VoxelGridVisualizer:
         # Check if we've had too many consecutive failures
         if self.screenshot_consecutive_failures >= self.max_consecutive_failures:
             logging.debug(f"Screenshots disabled due to {self.screenshot_consecutive_failures} consecutive failures")
+            return False
+        
+        # Additional check: verify visualizer has screenshot capability
+        if not hasattr(self.vis, 'capture_screen_image') and not hasattr(self.vis, 'render_to_image'):
+            logging.debug("Visualizer doesn't support screenshot capture")
             return False
         
         # Ensure directory exists
@@ -438,41 +465,65 @@ class VoxelGridVisualizer:
     def _configure_visualization(self):
         """Configure camera and rendering options for optimal visibility"""
         try:
-            # Get render option and view control
-            render_option = self.vis.get_render_option()
-            view_control = self.vis.get_view_control()
+            # Check if visualizer is properly initialized
+            if not self.vis:
+                logging.warning("Visualizer not initialized, skipping configuration")
+                return
+            
+            # Get render option and view control with None checks
+            try:
+                render_option = self.vis.get_render_option()
+                view_control = self.vis.get_view_control()
+            except Exception as e:
+                logging.warning(f"Failed to get visualization controls: {e}")
+                return
+            
+            # Check if controls are valid
+            if render_option is None or view_control is None:
+                logging.warning("Visualization controls are None, skipping configuration")
+                return
             
             # Configure rendering for better visibility and less black screens
-            render_option.background_color = np.asarray([0.1, 0.1, 0.15])  # Dark blue background
-            render_option.point_size = 8.0  # Larger points
-            render_option.line_width = 4.0  # Thicker lines
-            render_option.show_coordinate_frame = True
-            render_option.light_on = True
-            
-            # Enhanced lighting settings
-            if hasattr(render_option, 'mesh_shade_option'):
-                render_option.mesh_shade_option = o3d.visualization.MeshShadeOption.Default
+            try:
+                render_option.background_color = np.asarray([0.1, 0.1, 0.15])  # Dark blue background
+                render_option.point_size = 8.0  # Larger points
+                render_option.line_width = 4.0  # Thicker lines
+                render_option.show_coordinate_frame = True
+                render_option.light_on = True
+                
+                # Enhanced lighting settings
+                if hasattr(render_option, 'mesh_shade_option'):
+                    render_option.mesh_shade_option = o3d.visualization.MeshShadeOption.Default
+                
+                logging.debug("Render options configured successfully")
+            except Exception as e:
+                logging.warning(f"Failed to configure render options: {e}")
             
             # Set optimal camera position for drone navigation view
-            # Position camera behind and above the drone's starting position
-            drone_pos = self.current_drone_pos
-            
-            # Calculate camera position: behind the drone, elevated
-            camera_pos = drone_pos + np.array([-self._camera_distance, 0, self._camera_height_offset])
-            
-            # Set camera parameters
-            view_control.set_zoom(0.3)  # Wider field of view
-            view_control.set_front([0.7, 0.0, -0.7])  # Angled down view
-            view_control.set_lookat(drone_pos)  # Look at drone
-            view_control.set_up([0, 0, 1])  # Z is up in NED coordinates
+            try:
+                # Position camera behind and above the drone's starting position
+                drone_pos = self.current_drone_pos
+                
+                # Set camera parameters
+                view_control.set_zoom(0.3)  # Wider field of view
+                view_control.set_front([0.7, 0.0, -0.7])  # Angled down view
+                view_control.set_lookat(drone_pos)  # Look at drone
+                view_control.set_up([0, 0, 1])  # Z is up in NED coordinates
+                
+                logging.debug("Camera configuration successful")
+            except Exception as e:
+                logging.warning(f"Failed to configure camera: {e}")
             
             # Force multiple renders to ensure proper initialization
-            for _ in range(3):
-                self.vis.poll_events()
-                self.vis.update_renderer()
-                time.sleep(0.1)
-            
-            logging.debug("Visualization configuration complete")
+            try:
+                for _ in range(3):
+                    self.vis.poll_events()
+                    self.vis.update_renderer()
+                    time.sleep(0.1)
+                
+                logging.debug("Visualization configuration complete")
+            except Exception as e:
+                logging.warning(f"Failed to perform initial renders: {e}")
             
         except Exception as e:
             logging.error(f"Error configuring visualization: {e}")
