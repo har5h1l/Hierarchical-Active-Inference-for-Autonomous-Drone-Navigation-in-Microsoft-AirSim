@@ -31,13 +31,17 @@ from matplotlib.animation import FuncAnimation
 import matplotlib.patches as patches
 from os import path
 
-# Import voxel visualization
+# Import voxel visualization (improved version)
 try:
-    from voxel_visualization import VoxelGridVisualizer, create_voxel_visualizer
+    from voxel_visualization_fixed import VoxelGridVisualizer, create_voxel_visualizer
 except ImportError:
-    VoxelGridVisualizer = None
-    create_voxel_visualizer = None
-    logging.warning("VoxelGridVisualizer not available - 3D visualization disabled")
+    # Fallback to original if fixed version not available
+    try:
+        from voxel_visualization import VoxelGridVisualizer, create_voxel_visualizer
+    except ImportError:
+        VoxelGridVisualizer = None
+        create_voxel_visualizer = None
+        logging.warning("VoxelGridVisualizer not available - 3D visualization disabled")
 
 # Configure logging
 logging.basicConfig(
