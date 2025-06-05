@@ -221,7 +221,8 @@ DEFAULT_CONFIG = {
     "visualization_range": 25.0,  # Range around drone to visualize in meters
     "save_visualization_screenshots": True,  # Save screenshots during episodes
     "screenshot_interval": 10,  # Save screenshot every N steps
-    "screenshot_max_retries": 3  # Maximum retries for screenshot capture (Windows OpenGL fix)
+    "screenshot_max_retries": 3,  # Maximum retries for screenshot capture (Windows OpenGL fix)
+    "enable_screenshot_functionality": True  # Enable/disable screenshot functionality (Windows OpenGL context fix)
 }
 
 # Add the airsim directory to the Python path
@@ -863,7 +864,7 @@ class ZMQInterface:
 
 class Scanner:
     """Scanner for obstacle detection using AirSim's LiDAR data"""
-    def __init__(self, client, scan_range=20.0, enable_visualization=False, voxel_size=0.5):
+    def __init__(self, client, scan_range=20.0, enable_visualization=False, voxel_size=0.5, enable_screenshots=True):
         self.client = client
         self.scan_range = scan_range
         
@@ -886,18 +887,21 @@ class Scanner:
         self.enable_visualization = enable_visualization and VoxelGridVisualizer is not None
         self.visualizer = None
         self.voxel_size = voxel_size
+        self.enable_screenshots = enable_screenshots
         
         if self.enable_visualization:
             try:
+                # Use the enable_screenshots parameter passed to constructor
                 self.visualizer = create_voxel_visualizer(
                     voxel_size=voxel_size,
                     visualization_range=scan_range,
-                    auto_start=True
+                    auto_start=True,
+                    enable_screenshots=self.enable_screenshots
                 )
                 # Wait a moment to see if visualization actually started
                 time.sleep(1.0)
                 if self.visualizer and self.visualizer.is_running:
-                    logging.info("Voxel grid visualization enabled and running")
+                    logging.info(f"Voxel grid visualization enabled and running (screenshots: {self.enable_screenshots})")
                 else:
                     logging.warning("Visualization created but failed to start - disabling")
                     self.enable_visualization = False
@@ -4106,9 +4110,11 @@ def run_experiment(config: Dict[str, Any]) -> None:
         enable_viz = full_config.get("enable_voxel_visualization", False)
         voxel_size = full_config.get("voxel_size", 0.5)
         viz_range = full_config.get("visualization_range", 25.0)
+        enable_screenshots = full_config.get("enable_screenshot_functionality", True)
         
         scanner = Scanner(client, scan_range=viz_range, 
-                         enable_visualization=enable_viz, voxel_size=voxel_size)
+                         enable_visualization=enable_viz, voxel_size=voxel_size,
+                         enable_screenshots=enable_screenshots)
         
         if enable_viz:
             logging.info(f"Voxel visualization enabled: voxel_size={voxel_size}m, range={viz_range}m")
@@ -4206,8 +4212,10 @@ def run_experiment(config: Dict[str, Any]) -> None:
                     enable_viz = full_config.get("enable_voxel_visualization", False)
                     voxel_size = full_config.get("voxel_size", 0.5)
                     viz_range = full_config.get("visualization_range", 25.0)
+                    enable_screenshots = full_config.get("enable_screenshot_functionality", True)
                     scanner = Scanner(client, scan_range=viz_range, 
-                                     enable_visualization=enable_viz, voxel_size=voxel_size)                
+                                     enable_visualization=enable_viz, voxel_size=voxel_size,
+                                     enable_screenshots=enable_screenshots)                
                 logging.info(f"Starting episode {episode_id} of {full_config['num_episodes']}")
                 
                 # Run episode

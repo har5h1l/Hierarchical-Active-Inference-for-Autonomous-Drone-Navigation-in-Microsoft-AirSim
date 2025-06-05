@@ -3,6 +3,8 @@ Voxel Grid Visualization Module using Open3D
 
 This module provides real-time 3D visualization of the drone's environment using voxel grids,
 showing obstacles, the drone's position, path history, and target location.
+
+Enhanced with Windows OpenGL context fix and thread-safe screenshot management.
 """
 
 import open3d as o3d
@@ -13,6 +15,7 @@ import logging
 import traceback
 import os
 import platform
+import queue
 from typing import List, Tuple, Optional, Dict, Any
 from collections import deque
 
@@ -36,10 +39,10 @@ def check_visualization_support():
 
 
 class VoxelGridVisualizer:
-    """Real-time 3D voxel grid visualization for drone navigation"""
+    """Real-time 3D voxel grid visualization for drone navigation with Windows OpenGL fix"""
     
     def __init__(self, voxel_size=0.5, grid_size=50, max_path_points=200, 
-                 visualization_range=25.0, update_rate=10.0):
+                 visualization_range=25.0, update_rate=10.0, enable_screenshots=True):
         """
         Initialize the voxel grid visualizer
         
@@ -49,18 +52,27 @@ class VoxelGridVisualizer:
             max_path_points: Maximum number of path points to keep in history
             visualization_range: Range around drone to visualize (meters)
             update_rate: Target update rate in Hz
+            enable_screenshots: Whether to enable screenshot functionality
         """
         self.voxel_size = voxel_size
         self.grid_size = grid_size
         self.max_path_points = max_path_points
         self.visualization_range = visualization_range
         self.update_rate = update_rate
+        self.enable_screenshots = enable_screenshots
         
         # Visualization state
         self.vis = None
         self.is_running = False
         self.visualization_thread = None
         self.update_lock = threading.Lock()
+        
+        # Screenshot queue and management for thread-safe Windows OpenGL handling
+        self.screenshot_queue = queue.Queue()
+        self.screenshot_results = {}
+        self.screenshot_enabled = enable_screenshots and platform.system() == 'Windows'
+        self.screenshot_consecutive_failures = 0
+        self.max_consecutive_failures = 5  # Disable screenshots after this many failures
         
         # Data storage
         self.drone_path = deque(maxlen=max_path_points)
@@ -97,7 +109,8 @@ class VoxelGridVisualizer:
         self._camera_height_offset = 8.0
         
         logging.info(f"Initialized VoxelGridVisualizer with voxel_size={voxel_size}m, "
-                    f"grid_size={grid_size}, range={visualization_range}m")
+                    f"grid_size={grid_size}, range={visualization_range}m, "
+                    f"screenshots={'enabled' if self.enable_screenshots else 'disabled'}")
     
     def start_visualization(self, window_name="Drone Navigation - Voxel Grid Visualization"):
         """Start the visualization in a separate thread"""
@@ -142,7 +155,7 @@ class VoxelGridVisualizer:
         logging.info("Stopped voxel grid visualization")
     
     def _run_visualization(self, window_name):
-        """Main visualization loop running in separate thread"""
+        """Main visualization loop running in separate thread with screenshot queue processing"""
         try:
             # Determine the best visualization mode for this platform
             is_windows = platform.system() == 'Windows'
@@ -189,7 +202,7 @@ class VoxelGridVisualizer:
                 # Configure camera and rendering options
                 self._configure_visualization()
                 
-                # Main update loop for GUI mode
+                # Main update loop for GUI mode with screenshot queue processing
                 last_update = 0
                 update_interval = 1.0 / self.update_rate
                 
@@ -197,38 +210,131 @@ class VoxelGridVisualizer:
                     current_time = time.time()
                     
                     try:
+                        # Process screenshot queue first (in the main visualization thread for Windows)
+                        self._process_screenshot_queue()
+                        
                         if current_time - last_update >= update_interval:
                             with self.update_lock:
                                 self._update_visualization()
+                                self.vis.poll_events()
+                                self.vis.update_renderer()
                             last_update = current_time
                         
-                        # Process visualization events
-                        if not self.vis.poll_events():
-                            break
-                        self.vis.update_renderer()
+                        # Small sleep to prevent excessive CPU usage
+                        time.sleep(0.02)  # 50 FPS max
                         
-                        # Slightly longer sleep on Windows to reduce context conflicts
-                        sleep_time = 0.02 if platform.system() == 'Windows' else 0.01
-                        time.sleep(sleep_time)
-                        
-                    except Exception as update_error:
-                        if "WGL" in str(update_error) or "GLFW" in str(update_error):
-                            logging.debug(f"OpenGL context warning during update: {update_error}")
-                            time.sleep(0.1)  # Wait longer on OpenGL errors
-                        else:
-                            logging.debug(f"Visualization update error: {update_error}")
-                            time.sleep(0.05)
-                
+                    except Exception as e:
+                        logging.debug(f"Error in visualization loop: {e}")
+                        time.sleep(0.1)
+        
         except Exception as e:
-            logging.error(f"Error in visualization thread: {e}")
+            logging.error(f"Critical error in visualization thread: {e}")
             traceback.print_exc()
         finally:
-            if self.vis and hasattr(self.vis, 'destroy_window'):
+            self.is_running = False
+
+    def _process_screenshot_queue(self):
+        """Process pending screenshot requests in the main visualization thread"""
+        while not self.screenshot_queue.empty():
+            try:
+                request_id, filename, max_retries = self.screenshot_queue.get_nowait()
+                success = self._capture_screenshot_internal(filename, max_retries)
+                self.screenshot_results[request_id] = success
+                
+                # Clean up old results to prevent memory leak
+                if len(self.screenshot_results) > 10:
+                    oldest_keys = list(self.screenshot_results.keys())[:-5]
+                    for key in oldest_keys:
+                        del self.screenshot_results[key]
+                        
+            except queue.Empty:
+                break
+            except Exception as e:
+                logging.warning(f"Error processing screenshot queue: {e}")
+
+    def _capture_screenshot_internal(self, filename: str, max_retries: int = 3) -> bool:
+        """Internal screenshot capture method that runs in the main visualization thread"""
+        if not self.vis or not self.is_running:
+            return False
+            
+        if not self.enable_screenshots:
+            logging.debug("Screenshots disabled")
+            return False
+            
+        # Check if we've had too many consecutive failures
+        if self.screenshot_consecutive_failures >= self.max_consecutive_failures:
+            logging.debug(f"Screenshots disabled due to {self.screenshot_consecutive_failures} consecutive failures")
+            return False
+        
+        # Ensure directory exists
+        try:
+            os.makedirs(os.path.dirname(filename), exist_ok=True)
+        except Exception as e:
+            logging.warning(f"Could not create directory for screenshot: {e}")
+            return False
+        
+        if hasattr(self.vis, 'capture_screen_image'):
+            # For GUI visualizer with enhanced Windows OpenGL handling
+            for attempt in range(max_retries):
                 try:
-                    self.vis.destroy_window()
-                except:
-                    pass
-    
+                    # Pre-capture preparation - ensure scene is stable
+                    for _ in range(2):  # Minimal renders to avoid context conflicts
+                        if not self.is_running:
+                            return False
+                        self.vis.poll_events()
+                        self.vis.update_renderer()
+                        time.sleep(0.05)  # Short delay
+                    
+                    # Additional stabilization delay for Windows
+                    if platform.system() == 'Windows':
+                        time.sleep(0.15)
+                    
+                    # Capture screenshot
+                    success = self.vis.capture_screen_image(filename)
+                    if success:
+                        logging.info(f"Saved visualization screenshot to {filename}")
+                        self.screenshot_consecutive_failures = 0  # Reset failure counter
+                        return True
+                    else:
+                        logging.warning(f"Screenshot capture returned False (attempt {attempt + 1}/{max_retries})")
+                        
+                except Exception as capture_error:
+                    if "WGL" in str(capture_error) or "GLFW" in str(capture_error):
+                        logging.warning(f"OpenGL context error on attempt {attempt + 1}/{max_retries}: {capture_error}")
+                        # Longer wait for OpenGL context issues
+                        time.sleep(0.3 + attempt * 0.2)
+                    else:
+                        logging.warning(f"Screenshot capture error on attempt {attempt + 1}/{max_retries}: {capture_error}")
+                        time.sleep(0.1)
+            
+            # All attempts failed
+            self.screenshot_consecutive_failures += 1
+            logging.warning(f"Failed to capture screenshot to {filename} after {max_retries} attempts "
+                          f"(consecutive failures: {self.screenshot_consecutive_failures})")
+            
+            # Disable screenshots if too many failures
+            if self.screenshot_consecutive_failures >= self.max_consecutive_failures:
+                logging.warning(f"Disabling screenshots due to {self.screenshot_consecutive_failures} consecutive failures")
+                self.enable_screenshots = False
+            
+            return False
+                
+        elif hasattr(self.vis, 'render_to_image'):
+            # For offscreen renderer
+            try:
+                image = self.vis.render_to_image()
+                o3d.io.write_image(filename, image)
+                logging.info(f"Saved offscreen screenshot to {filename}")
+                self.screenshot_consecutive_failures = 0
+                return True
+            except Exception as render_error:
+                logging.warning(f"Offscreen rendering failed: {render_error}")
+                self.screenshot_consecutive_failures += 1
+                return False
+        else:
+            logging.debug("No screenshot capability available")
+            return False
+
     def _setup_offscreen_scene(self):
         """Set up scene for offscreen rendering"""
         try:
@@ -589,71 +695,45 @@ class VoxelGridVisualizer:
         except Exception as e:
             logging.debug(f"Error updating camera view: {e}")
     
-    def save_screenshot(self, filename: str, max_retries=3):
-        """Save a screenshot of the current visualization with improved reliability and Windows OpenGL fix"""
-        try:
-            if not self.vis or not self.is_running:
-                logging.debug("Visualizer not initialized or not running - cannot save screenshot")
-                return False
+    def save_screenshot(self, filename: str, max_retries: int = 3, timeout: float = 2.0) -> bool:
+        """
+        Save a screenshot of the current visualization using thread-safe queue system
+        
+        Args:
+            filename: Path where to save the screenshot
+            max_retries: Maximum number of capture attempts
+            timeout: Maximum time to wait for screenshot completion
             
-            # Ensure directory exists
-            os.makedirs(os.path.dirname(filename), exist_ok=True)
-            
-            if hasattr(self.vis, 'capture_screen_image'):
-                # For GUI visualizer - add thread synchronization and retry logic
-                for attempt in range(max_retries):
-                    try:
-                        # Use thread lock to prevent context conflicts
-                        with self.update_lock:
-                            # Force multiple renders to ensure scene is fully updated
-                            for _ in range(3):  # Reduced from 5 to avoid context conflicts
-                                if not self.is_running:
-                                    break
-                                self.vis.poll_events()
-                                self.vis.update_renderer()
-                                time.sleep(0.1)  # Longer delay for Windows
-                            
-                            # Additional delay before capture to ensure context is ready
-                            time.sleep(0.2)
-                            
-                            # Capture screenshot
-                            success = self.vis.capture_screen_image(filename)
-                            if success:
-                                logging.info(f"Saved visualization screenshot to {filename}")
-                                return True
-                            else:
-                                logging.warning(f"Screenshot capture returned False (attempt {attempt + 1}/{max_retries})")
-                                
-                    except Exception as capture_error:
-                        if "WGL" in str(capture_error) or "GLFW" in str(capture_error):
-                            logging.warning(f"OpenGL context error on attempt {attempt + 1}/{max_retries}: {capture_error}")
-                            # Wait longer between retries for OpenGL context issues
-                            time.sleep(0.5)
-                        else:
-                            logging.warning(f"Screenshot capture error on attempt {attempt + 1}/{max_retries}: {capture_error}")
-                            time.sleep(0.2)
-                
-                # All attempts failed
-                logging.warning(f"Failed to capture screenshot to {filename} after {max_retries} attempts")
-                return False
-                    
-            elif hasattr(self.vis, 'render_to_image'):
-                # For offscreen renderer
-                try:
-                    image = self.vis.render_to_image()
-                    o3d.io.write_image(filename, image)
-                    logging.info(f"Saved offscreen screenshot to {filename}")
-                    return True
-                except Exception as render_error:
-                    logging.warning(f"Offscreen rendering failed: {render_error}")
-                    return False
-            else:
-                logging.debug("No screenshot capability available")
-                return False
-                
-        except Exception as e:
-            logging.debug(f"Error saving screenshot: {e}")
+        Returns:
+            bool: True if screenshot was saved successfully, False otherwise
+        """
+        if not self.vis or not self.is_running:
+            logging.debug("Visualizer not initialized or not running - cannot save screenshot")
             return False
+            
+        if not self.enable_screenshots:
+            logging.debug("Screenshots disabled")
+            return False
+        
+        # For non-Windows platforms or offscreen rendering, use direct capture
+        if platform.system() != 'Windows' or hasattr(self.vis, 'render_to_image'):
+            return self._capture_screenshot_internal(filename, max_retries)
+        
+        # For Windows GUI mode, use queue system to avoid threading issues
+        request_id = f"{time.time()}_{filename}"
+        self.screenshot_queue.put((request_id, filename, max_retries))
+        
+        # Wait for the screenshot to be processed
+        start_time = time.time()
+        while request_id not in self.screenshot_results:
+            if time.time() - start_time > timeout:
+                logging.warning(f"Screenshot request timed out after {timeout}s")
+                return False
+            time.sleep(0.05)
+        
+        # Get the result and clean up
+        result = self.screenshot_results.pop(request_id)
+        return result
     
     def toggle_camera_follow(self):
         """Toggle camera following mode"""
@@ -676,7 +756,7 @@ class VoxelGridVisualizer:
 
 
 # Convenience function for quick visualization setup
-def create_voxel_visualizer(voxel_size=0.5, visualization_range=25.0, auto_start=True):
+def create_voxel_visualizer(voxel_size=0.5, visualization_range=25.0, auto_start=True, enable_screenshots=True):
     """
     Create and optionally start a voxel grid visualizer
     
@@ -684,13 +764,15 @@ def create_voxel_visualizer(voxel_size=0.5, visualization_range=25.0, auto_start
         voxel_size: Size of voxels in meters
         visualization_range: Range around drone to visualize
         auto_start: Whether to automatically start the visualization
+        enable_screenshots: Whether to enable screenshot functionality
     
     Returns:
         VoxelGridVisualizer instance (may have is_running=False if visualization failed)
     """
     visualizer = VoxelGridVisualizer(
         voxel_size=voxel_size,
-        visualization_range=visualization_range
+        visualization_range=visualization_range,
+        enable_screenshots=enable_screenshots
     )
     
     if auto_start:
