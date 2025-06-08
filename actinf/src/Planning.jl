@@ -652,7 +652,7 @@ function select_action(state::StateSpace.DroneState, beliefs::Inference.DroneBel
     # Adapt step size based on obstacle conditions
     # When obstacles are close or density is high, ensure we have a substantial minimum step
     # to avoid getting stuck with tiny movements
-    obstacle_factor = clamp(1.0 - (obstacle_density * 5.0), 0.3, 1.0)  # Scale down with density
+    obstacle_factor = clamp(1.0 - (obstacle_density * 4.0), 0.3, 1.0)  # Scale down with density (updated from 5.0 to 4.0)
     distance_factor = clamp(obstacle_distance / 10.0, 0.3, 1.0)        # Scale up with distance
     
     # Combine obstacle factors - in high-density or close-obstacle scenarios, 
@@ -680,13 +680,13 @@ function select_action(state::StateSpace.DroneState, beliefs::Inference.DroneBel
     
     # Increase waypoints significantly in high obstacle density or when obstacles are near
     # This provides more options to find viable paths in complex environments
-    if obstacle_density > 0.1 || obstacle_distance < 5.0
+    if obstacle_density > 0.1 || obstacle_distance < 4.0  # Updated from 5.0 to 4.0 (new density radius)
         density_scale = clamp(obstacle_density * 10.0, 1.0, 3.0)  # Scale from 1.0 to 3.0
-        distance_scale = clamp(5.0 / max(obstacle_distance, 1.0), 1.0, 2.5)  # Scale from 1.0 to 2.5
+        distance_scale = clamp(4.0 / max(obstacle_distance, 1.0), 1.0, 2.5)  # Updated from 5.0 to 4.0, Scale from 1.0 to 2.5
         obstacle_scale = max(density_scale, distance_scale)
         
         # Apply scaling to waypoint count, being more aggressive when both density is high and obstacles are close
-        if obstacle_density > 0.1 && obstacle_distance < 5.0
+        if obstacle_density > 0.1 && obstacle_distance < 4.0  # Updated from 5.0 to 4.0 (new density radius)
             obstacle_scale = obstacle_scale * 1.2  # Additional 20% boost
         end
         

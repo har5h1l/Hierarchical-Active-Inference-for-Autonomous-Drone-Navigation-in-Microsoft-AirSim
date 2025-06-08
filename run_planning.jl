@@ -426,7 +426,7 @@ function main()
         num_samples=adaptive_waypoint_count, 
         safety_margin=adaptive_safety_margin,
         policy_length=POLICY_LENGTH,
-        density_radius=get(data, "density_radius", 5.0),
+        density_radius=get(data, "density_radius", 4.0),
         suitability_threshold=0.80  # Increased to 0.80 for higher quality path selection
     )
     
@@ -453,7 +453,7 @@ function main()
             num_samples=adaptive_waypoint_count * 2,  # Double the samples to find more alternatives
             safety_margin=adaptive_safety_margin * 0.85,  # Slightly reduced safety margin
             policy_length=POLICY_LENGTH,
-            density_radius=get(data, "density_radius", 5.0),
+            density_radius=get(data, "density_radius", 4.0),
             suitability_threshold=0.70  # Fallback threshold increased to 0.70 for better quality
         )
         
@@ -481,7 +481,7 @@ function main()
                 num_samples=adaptive_waypoint_count * 5,  # 5x samples for thorough search
                 safety_margin=adaptive_safety_margin * 0.8,  # Slightly reduced but still safe
                 policy_length=POLICY_LENGTH,
-                density_radius=get(data, "density_radius", 5.0),
+                density_radius=get(data, "density_radius", 4.0),
                 suitability_threshold=0.65  # Emergency threshold increased to 0.65 for better reliability
             )
             

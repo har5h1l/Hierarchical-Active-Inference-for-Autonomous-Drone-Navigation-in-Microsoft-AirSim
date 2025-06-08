@@ -189,7 +189,7 @@ function process_observation(observation_data::Dict)
         
         # Get optional parameters
         safety_margin = get(observation_data, "safety_margin", 1.5)
-        density_radius = get(observation_data, "density_radius", 5.0)
+        density_radius = get(observation_data, "density_radius", 4.0)
         policy_length = get(observation_data, "policy_length", POLICY_LENGTH)
         
         # Handle obstacle data
@@ -208,13 +208,51 @@ function process_observation(observation_data::Dict)
             obstacle_distances = Float64.(observation_data["obstacle_distances"])
         end
         
-        # Calculate obstacle density
+        # Calculate obstacle density with improved clustering-aware calculation
         obstacle_density = 0.0
         if !isempty(obstacle_positions)
-            # Count obstacles within density_radius of drone position
-            nearby_count = count(p -> norm(p - drone_position) < density_radius, obstacle_positions)
-            volume = (4/3) * π * density_radius^3
-            obstacle_density = nearby_count / volume
+            # The obstacle positions from Python are now already clustered, but we can apply
+            # additional distance thresholding to ensure no over-counting of nearby obstacles
+            
+            # Step 1: Apply distance-based deduplication as additional safety measure
+            min_obstacle_separation = 1.0  # Minimum distance to consider obstacles as separate
+            filtered_positions = Vector{SVector{3, Float64}}()
+            
+            for pos in obstacle_positions
+                # Check if this position is too close to any already filtered position
+                is_too_close = false
+                for filtered_pos in filtered_positions
+                    if norm(pos - filtered_pos) < min_obstacle_separation
+                        is_too_close = true
+                        break
+                    end
+                end
+                
+                if !is_too_close
+                    push!(filtered_positions, pos)
+                end
+            end
+            
+            # Step 2: Calculate density using filtered positions and adaptive radius
+            if !isempty(filtered_positions)
+                # Use adaptive density radius based on obstacle distribution
+                adaptive_radius = density_radius
+                
+                # If we have many nearby obstacles, increase the radius to get better density estimate
+                nearby_count = count(p -> norm(p - drone_position) < density_radius, filtered_positions)
+                if nearby_count > 8
+                    adaptive_radius = density_radius * 1.2  # Expand radius slightly for dense areas
+                elseif nearby_count < 3
+                    adaptive_radius = density_radius * 0.8  # Contract radius for sparse areas
+                end
+                
+                # Count obstacles within adaptive radius
+                final_count = count(p -> norm(p - drone_position) < adaptive_radius, filtered_positions)
+                volume = (4/3) * π * adaptive_radius^3
+                obstacle_density = final_count / volume
+                
+                println("Obstacle density calculation: $(length(obstacle_positions)) raw -> $(length(filtered_positions)) filtered -> $final_count within $(round(adaptive_radius, digits=2))m")
+            end
         end
         
         # Print key information for debugging

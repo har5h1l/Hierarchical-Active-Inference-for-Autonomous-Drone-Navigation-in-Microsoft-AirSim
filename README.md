@@ -229,7 +229,7 @@ The hierarchical active inference navigation system operates through a continuou
 2. **Depth Camera Processing**: RGB-D imagery for visual obstacle detection
 3. **Voxel Grid Generation**: Convert sensor data into 3D occupancy grid (0.5m resolution)
 4. **Obstacle Distance Calculation**: Find nearest obstacle in each direction
-5. **Density Analysis**: Calculate local obstacle density in 5m radius
+5. **Density Analysis**: Calculate local obstacle density in 4m radius (max action length + buffer)
 
 #### 🧠 Phase 3: Belief State Updates
 1. **Sensor Fusion**: Combine LiDAR and camera data into unified environmental model

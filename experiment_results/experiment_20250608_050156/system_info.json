@@ -1,0 +1,41 @@
+{
+  "timestamp": "2025-06-08 05:01:56",
+  "os": {
+    "name": "Windows",
+    "version": "10.0.26100",
+    "platform": "Windows-11-10.0.26100-SP0",
+    "release": "11",
+    "architecture": "AMD64"
+  },
+  "python": {
+    "version": "3.12.10",
+    "implementation": "CPython",
+    "compiler": "MSC v.1943 64 bit (AMD64)"
+  },
+  "julia": {
+    "version": "julia version 1.11.5",
+    "path": "julia",
+    "packages": "Status `C:\\Users\\harshil_airsim_1\\.julia\\environments\\v1.11\\Project.toml`\n  [682c06a0] JSON v0.21.4\n\u00e2\u0152\u0192 [86711068] RxInfer v3.10.1\n  [90137ffa] StaticArrays v1.9.13\n  [c2297ded] ZMQ v1.4.0\n  [d0498c39] actinf v0.1.0 `..\\..\\..\\Desktop\\AirSim\\Hierarchical-Active-Inference-for-Autonomous-Drone-Navigation-in-Microsoft-AirSim\\actinf`\n  [37e2e46d] LinearAlgebra v1.11.0\nInfo Packages marked with \u00e2\u0152\u0192 have new versions available and may be upgradable."
+  },
+  "cpu": {
+    "physical_cores": 2,
+    "total_cores": 4,
+    "usage_percent": 85.7
+  },
+  "memory": {
+    "total_gb": 13.95,
+    "available_gb": 5.66,
+    "used_percent": 59.4
+  },
+  "gpu": {
+    "note": "No GPU detected"
+  },
+  "airsim": {
+    "version": "1.8.1"
+  },
+  "libraries": {
+    "numpy": "2.2.6",
+    "pandas": "2.2.3",
+    "zmq": "26.4.0"
+  }
+}

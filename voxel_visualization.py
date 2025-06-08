@@ -3,8 +3,6 @@ Voxel Grid Visualization Module using Open3D
 
 This module provides real-time 3D visualization of the drone's environment using voxel grids,
 showing obstacles, the drone's position, path history, and target location.
-
-This is now a wrapper that uses the robust visualization implementation to handle OpenGL context failures.
 """
 
 import open3d as o3d
@@ -13,33 +11,15 @@ import time
 import threading
 import logging
 import traceback
-import os
 from typing import List, Tuple, Optional, Dict, Any
 from collections import deque
-
-# Import the robust visualization system
-try:
-    from voxel_visualization_robust import RobustVoxelGridVisualizer
-    ROBUST_AVAILABLE = True
-    logging.info("Using robust voxel visualization system")
-except ImportError:
-    ROBUST_AVAILABLE = False
-    logging.warning("Robust visualization not available, using original implementation")
-
-# Optional imports for enhanced screenshot functionality
-try:
-    from PIL import Image
-    PIL_AVAILABLE = True
-except ImportError:
-    PIL_AVAILABLE = False
-    logging.warning("PIL not available - some screenshot methods may not work")
 
 
 class VoxelGridVisualizer:
     """Real-time 3D voxel grid visualization for drone navigation"""
     
-    def __init__(self, voxel_size=0.5, grid_size=50, max_path_points=200, 
-                 visualization_range=25.0, update_rate=10.0):
+    def __init__(self, voxel_size=0.5, grid_size=75, max_path_points=200, 
+                 visualization_range=50.0, update_rate=8.0, enable_screenshots=True):
         """
         Initialize the voxel grid visualizer
         
@@ -49,28 +29,15 @@ class VoxelGridVisualizer:
             max_path_points: Maximum number of path points to keep in history
             visualization_range: Range around drone to visualize (meters)
             update_rate: Target update rate in Hz
+            enable_screenshots: Whether to enable screenshot functionality
         """
         self.voxel_size = voxel_size
         self.grid_size = grid_size
         self.max_path_points = max_path_points
         self.visualization_range = visualization_range
         self.update_rate = update_rate
+        self.enable_screenshots = enable_screenshots
         
-        # Use robust implementation if available
-        if ROBUST_AVAILABLE:
-            logging.info("Using robust visualization implementation")
-            self._robust_viz = RobustVoxelGridVisualizer(voxel_size, visualization_range)
-            self._use_robust = True
-        else:
-            logging.warning("Using fallback implementation")
-            self._use_robust = False
-            self._initialize_fallback()
-        
-        logging.info(f"Initialized VoxelGridVisualizer with voxel_size={voxel_size}m, "
-                    f"grid_size={grid_size}, range={visualization_range}m")
-    
-    def _initialize_fallback(self):
-        """Initialize fallback visualization components"""
         # Visualization state
         self.vis = None
         self.is_running = False
@@ -78,7 +45,7 @@ class VoxelGridVisualizer:
         self.update_lock = threading.Lock()
         
         # Data storage
-        self.drone_path = deque(maxlen=self.max_path_points)
+        self.drone_path = deque(maxlen=max_path_points)
         self.current_drone_pos = np.array([0.0, 0.0, 0.0])
         self.target_pos = np.array([0.0, 0.0, 0.0])
         self.obstacle_positions = []
@@ -104,12 +71,12 @@ class VoxelGridVisualizer:
             'ground': [0.3, 0.3, 0.3],        # Dark gray
             'axes': [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]  # RGB for XYZ
         }
+        
+        logging.info(f"Initialized VoxelGridVisualizer with voxel_size={voxel_size}m, "
+                    f"grid_size={grid_size}, range={visualization_range}m")
     
     def start_visualization(self, window_name="Drone Navigation - Voxel Grid Visualization"):
         """Start the visualization in a separate thread"""
-        if self._use_robust:
-            return self._robust_viz.start_visualization(window_name)
-        
         if self.is_running:
             logging.warning("Visualization is already running")
             return
@@ -128,10 +95,6 @@ class VoxelGridVisualizer:
     
     def stop_visualization(self):
         """Stop the visualization"""
-        if self._use_robust:
-            return self._robust_viz.stop_visualization()
-        
-        # Fallback implementation
         self.is_running = False
         if self.visualization_thread and self.visualization_thread.is_alive():
             self.visualization_thread.join(timeout=2.0)
@@ -275,11 +238,15 @@ class VoxelGridVisualizer:
             if hasattr(render_option, 'mesh_shade_option'):
                 render_option.mesh_shade_option = o3d.visualization.MeshShadeOption.Default
             
-            # Set initial camera position (bird's eye view)
-            view_control.set_zoom(0.4)
+            # Set initial camera position (bird's eye view) - PROPER DISTANCE VERSION
+            view_control.set_zoom(0.5)  # Use reasonable zoom value
             view_control.set_front([0.2, 0.2, -1.0])  # Slightly angled view
-            view_control.set_lookat([0, 0, -3])       # Look at drone level
+            view_control.set_lookat([0, 0, -10])       # Look at higher altitude for better overview
             view_control.set_up([0, 1, 0])            # Y is up
+            
+            # Now use camera_local_translate to move camera further back for wide view
+            # Negative forward value moves camera backwards (further away)
+            view_control.camera_local_translate(forward=-50.0, right=0.0, up=0.0)
             
             # Force initial render
             self.vis.poll_events()
@@ -290,51 +257,26 @@ class VoxelGridVisualizer:
         except Exception as e:
             logging.error(f"Error configuring visualization: {e}")
     
-    def update_obstacles(self, obstacles):
-        """Update obstacles in the visualization"""
-        if self._use_robust:
-            return self._robust_viz.update_obstacles(obstacles)
-        
-        # Fallback implementation
-        with self.update_lock:
-            self.obstacle_positions = obstacles.copy() if obstacles else []
-    
-    def update_drone_position(self, position):
-        """Update drone position"""
-        if self._use_robust:
-            return self._robust_viz.update_drone_position(position)
-        
-        # Fallback implementation
+    def update_drone_position(self, position: List[float]):
+        """Update the drone's current position"""
         with self.update_lock:
             self.current_drone_pos = np.array(position)
             self.drone_path.append(position.copy())
+            self.last_update_time = time.time()
     
-    def update_target_position(self, position):
-        """Update target position"""
-        if self._use_robust:
-            return self._robust_viz.update_target_position(position)
-        
-        # Fallback implementation
+    def update_target_position(self, position: List[float]):
+        """Update the target position"""
         with self.update_lock:
             self.target_pos = np.array(position)
     
-    def save_screenshot(self, filepath):
-        """Save screenshot using robust fallback methods"""
-        if self._use_robust:
-            return self._robust_viz.save_screenshot(filepath)
-        
-        # Fallback implementation
-        logging.warning("Using fallback screenshot method - basic Open3D capture")
-        try:
-            os.makedirs(os.path.dirname(filepath), exist_ok=True)
-            if self.vis:
-                return self.vis.capture_screen_image(filepath)
-            else:
-                logging.error("Visualization not initialized for screenshot")
-                return False
-        except Exception as e:
-            logging.error(f"Fallback screenshot failed: {e}")
-            return False
+    def update_obstacles(self, obstacle_positions: List[List[float]], 
+                        voxel_size: Optional[float] = None):
+        """Update obstacle positions and create voxel grid"""
+        with self.update_lock:
+            self.obstacle_positions = obstacle_positions
+            if voxel_size:
+                self.voxel_size = voxel_size
+            self._create_voxel_grid()
     
     def _create_voxel_grid(self):
         """Create voxel grid from obstacle positions"""
@@ -408,14 +350,14 @@ class VoxelGridVisualizer:
             if self.drone_sphere:
                 center = self.drone_sphere.get_center()
                 translation = self.current_drone_pos - np.asarray(center)
-                self.drone_sphere.translate(translation, relative=False)
+                self.drone_sphere.translate(translation)
                 self.vis.update_geometry(self.drone_sphere)
             
             # Update target position
             if self.target_sphere:
                 center = self.target_sphere.get_center()
                 translation = self.target_pos - np.asarray(center)
-                self.target_sphere.translate(translation, relative=False)
+                self.target_sphere.translate(translation)
                 self.vis.update_geometry(self.target_sphere)
             
             # Update path
@@ -481,231 +423,60 @@ class VoxelGridVisualizer:
     def _update_camera_view(self):
         """Update camera to follow the drone while maintaining good overview"""
         try:
-            if not hasattr(self, 'camera_follow_enabled'):
-                self.camera_follow_enabled = True
+            if not self.vis:
+                return
             
-            if self.camera_follow_enabled:
-                view_control = self.vis.get_view_control()
+            view_control = self.vis.get_view_control()
+            
+            # Simple camera following - keep the working approach but with proper distance
+            if len(self.drone_path) > 0:
+                # Look at current drone position with smooth following
+                current_lookat = np.array(view_control.get_lookat())
+                target_lookat = self.current_drone_pos
                 
-                # Calculate new camera position (follow drone with offset)
-                drone_pos = self.current_drone_pos
+                # Smooth interpolation to follow drone
+                interpolation_factor = 0.05
+                new_lookat = current_lookat + interpolation_factor * (target_lookat - current_lookat)
                 
-                # Look at point slightly ahead of drone
-                look_at_pos = drone_pos + np.array([2, 0, 0])
+                view_control.set_lookat(new_lookat)
+                # Keep the working camera settings with proper distance
+                view_control.set_front([0.2, 0.2, -1.0])
+                view_control.set_up([0, 1, 0])
                 
-                # Update camera smoothly using compatible API
-                try:
-                    # Use the newer API if available
-                    camera_params = view_control.convert_to_pinhole_camera_parameters()
-                    
-                    # Smoothly interpolate to new look-at position
-                    if hasattr(self, '_last_lookat'):
-                        new_lookat = 0.9 * self._last_lookat + 0.1 * look_at_pos
-                    else:
-                        new_lookat = look_at_pos
-                    
-                    self._last_lookat = new_lookat
-                    view_control.set_lookat(new_lookat)
-                    
-                except AttributeError:
-                    # Fallback for older Open3D versions
-                    try:
-                        current_lookat = view_control.get_lookat()
-                        new_lookat = 0.9 * np.array(current_lookat) + 0.1 * look_at_pos
-                        view_control.set_lookat(new_lookat)
-                    except:
-                        pass  # Skip camera updates if not supported
+                # Maintain camera distance for wide view - translate back if needed
+                # This ensures we stay at a good viewing distance as we follow the drone
+                current_params = view_control.convert_to_pinhole_camera_parameters()
+                camera_position = current_params.extrinsic[:3, 3]
+                lookat_position = new_lookat
+                
+                # Calculate distance from camera to lookat point
+                distance = np.linalg.norm(camera_position - lookat_position)
+                
+                # If camera is too close (less than desired distance), move it back
+                desired_distance = 60.0  # meters - good distance for wide overview
+                if distance < desired_distance:
+                    # Calculate how much to move back
+                    move_back = desired_distance - distance
+                    view_control.camera_local_translate(forward=-move_back, right=0.0, up=0.0)
+            
         except Exception as e:
             logging.debug(f"Error updating camera view: {e}")
     
-    def save_screenshot(self, filename: str):
-        """Save a screenshot of the current visualization with enhanced OpenGL context handling"""
+    def save_screenshot(self, filename: str) -> bool:
+        """Save a screenshot of the current visualization"""
         try:
-            if not self.vis or not hasattr(self.vis, 'capture_screen_image'):
-                logging.error("Visualizer not available or doesn't support screenshot capture")
-                return False
-            
-            # Ensure the visualization is running and window is valid
-            if not self.is_running:
-                logging.error("Visualization is not running")
-                return False
-            
-            max_attempts = 5
-            success = False
-            
-            for attempt in range(max_attempts):
-                try:
-                    logging.debug(f"Screenshot attempt {attempt + 1}/{max_attempts}")
-                    
-                    # Force window to foreground and ensure it's visible
-                    try:
-                        # Try to bring window to front (may not work in all environments)
-                        if hasattr(self.vis, 'get_window_name'):
-                            logging.debug("Attempting to bring window to foreground")
-                    except:
-                        pass
-                    
-                    # Extensive rendering preparation
-                    for render_cycle in range(10):
-                        try:
-                            # Poll events to handle any pending window operations
-                            if not self.vis.poll_events():
-                                logging.warning("Window may be closing or invalid")
-                                break
-                            
-                            # Force a complete scene update
-                            with self.update_lock:
-                                self._update_visualization()
-                            
-                            # Update renderer
-                            self.vis.update_renderer()
-                            
-                            # Progressive delay to allow rendering to complete
-                            time.sleep(0.1 + (render_cycle * 0.01))
-                            
-                        except Exception as render_error:
-                            logging.debug(f"Render cycle {render_cycle} error: {render_error}")
-                            continue
-                    
-                    # Additional stabilization delay
-                    time.sleep(0.5)
-                    
-                    # Ensure we have valid geometry to render
-                    if not any([self.drone_sphere, self.target_sphere, self.obstacles_pcd]):
-                        logging.warning("No geometry available to render")
-                        # Try to force add basic geometry
-                        self._ensure_basic_geometry()
-                    
-                    # Try alternative screenshot methods
-                    screenshot_methods = [
-                        self._capture_screen_image_standard,
-                        self._capture_screen_image_with_buffer,
-                        self._capture_screen_image_fallback
-                    ]
-                    
-                    for method_idx, method in enumerate(screenshot_methods):
-                        try:
-                            logging.debug(f"Trying screenshot method {method_idx + 1}")
-                            success = method(filename)
-                            if success:
-                                break
-                        except Exception as method_error:
-                            logging.debug(f"Screenshot method {method_idx + 1} failed: {method_error}")
-                            continue
-                    
-                    if success:
-                        # Verify the screenshot
-                        if os.path.exists(filename):
-                            file_size = os.path.getsize(filename)
-                            if file_size > 10000:  # Increased threshold to 10KB
-                                logging.info(f"Successfully saved screenshot to {filename} ({file_size} bytes)")
-                                return True
-                            else:
-                                logging.warning(f"Screenshot file too small ({file_size} bytes), likely empty")
-                                success = False
-                    
-                    if not success and attempt < max_attempts - 1:
-                        logging.debug(f"Screenshot attempt {attempt + 1} failed, retrying in 1 second...")
-                        time.sleep(1.0)
-                    
-                except Exception as attempt_error:
-                    logging.warning(f"Screenshot attempt {attempt + 1} failed with error: {attempt_error}")
-                    if attempt < max_attempts - 1:
-                        time.sleep(1.0)
-                    continue
-            
-            logging.error(f"Failed to capture screenshot after {max_attempts} attempts")
-            return False
-                
-        except Exception as e:
-            logging.error(f"Critical error in save_screenshot: {e}")
-            traceback.print_exc()
-            return False
-    def _capture_screen_image_standard(self, filename: str) -> bool:
-        """Standard Open3D screenshot method"""
-        try:
-            self.vis.capture_screen_image(filename)
-            return True
-        except Exception as e:
-            logging.debug(f"Standard capture failed: {e}")
-            return False
-    
-    def _capture_screen_image_with_buffer(self, filename: str) -> bool:
-        """Screenshot using float buffer method"""
-        try:
-            if not PIL_AVAILABLE:
-                logging.debug("PIL not available for buffer-based screenshot")
-                return False
-                
-            # Try using the float buffer method
-            buffer = self.vis.capture_screen_float_buffer()
-            if buffer is not None and len(buffer) > 0:
-                # Convert float buffer to image and save
-                import numpy as np
-                
-                # Convert float buffer to numpy array
-                height = self.vis.get_render_option().window_height if hasattr(self.vis.get_render_option(), 'window_height') else 800
-                width = self.vis.get_render_option().window_width if hasattr(self.vis.get_render_option(), 'window_width') else 1200
-                
-                # Try to get actual window size
-                try:
-                    # This may not be available in all Open3D versions
-                    if hasattr(self.vis, 'get_window_size'):
-                        width, height = self.vis.get_window_size()
-                except:
-                    pass
-                
-                # Reshape buffer to image
-                img_array = np.array(buffer).reshape((height, width, 3))
-                img_array = (img_array * 255).astype(np.uint8)
-                
-                # Flip vertically (OpenGL convention)
-                img_array = np.flipud(img_array)
-                
-                # Save using PIL
-                img = Image.fromarray(img_array, 'RGB')
-                img.save(filename)
-                return True
-            return False
-        except Exception as e:
-            logging.debug(f"Float buffer capture failed: {e}")
-            return False
-    
-    def _capture_screen_image_fallback(self, filename: str) -> bool:
-        """Fallback screenshot method with alternative approach"""
-        try:
-            # Force one more complete render cycle
-            for _ in range(3):
+            if self.vis and self.enable_screenshots:
+                # Ensure the window is rendered before capturing
                 self.vis.poll_events()
                 self.vis.update_renderer()
-                time.sleep(0.1)
-            
-            # Try the standard method one more time
-            self.vis.capture_screen_image(filename)
-            return True
-        except Exception as e:
-            logging.debug(f"Fallback capture failed: {e}")
-            return False
-    
-    def _ensure_basic_geometry(self):
-        """Ensure basic geometry exists for rendering"""
-        try:
-            # Make sure we have at least basic geometry visible
-            if self.drone_sphere is None:
-                self.drone_sphere = o3d.geometry.TriangleMesh.create_sphere(radius=0.3)
-                self.drone_sphere.paint_uniform_color(self.colors['drone'])
-                self.drone_sphere.translate(self.current_drone_pos)
-                self.vis.add_geometry(self.drone_sphere)
-            
-            if self.target_sphere is None:
-                self.target_sphere = o3d.geometry.TriangleMesh.create_sphere(radius=0.4)
-                self.target_sphere.paint_uniform_color(self.colors['target'])
-                self.target_sphere.translate(self.target_pos)
-                self.vis.add_geometry(self.target_sphere)
+                time.sleep(0.1)  # Small delay to ensure rendering is complete
                 
-            logging.debug("Ensured basic geometry is available")
+                self.vis.capture_screen_image(filename)
+                logging.info(f"Saved visualization screenshot to {filename}")
+                return True
         except Exception as e:
-            logging.debug(f"Error ensuring basic geometry: {e}")
+            logging.error(f"Error saving screenshot: {e}")
+            return False
     
     def toggle_camera_follow(self):
         """Toggle camera following mode"""
@@ -727,8 +498,7 @@ class VoxelGridVisualizer:
         }
 
 
-# Convenience function for quick visualization setup
-def create_voxel_visualizer(voxel_size=0.5, visualization_range=25.0, auto_start=True):
+def create_voxel_visualizer(voxel_size=0.5, visualization_range=25.0, auto_start=True, enable_screenshots=True):
     """
     Create and optionally start a voxel grid visualizer
     
@@ -736,13 +506,15 @@ def create_voxel_visualizer(voxel_size=0.5, visualization_range=25.0, auto_start
         voxel_size: Size of voxels in meters
         visualization_range: Range around drone to visualize
         auto_start: Whether to automatically start the visualization
+        enable_screenshots: Whether to enable screenshot functionality
     
     Returns:
         VoxelGridVisualizer instance
     """
     visualizer = VoxelGridVisualizer(
         voxel_size=voxel_size,
-        visualization_range=visualization_range
+        visualization_range=visualization_range,
+        enable_screenshots=enable_screenshots
     )
     
     if auto_start:
@@ -757,7 +529,7 @@ if __name__ == "__main__":
     
     try:
         # Create visualizer
-        viz = create_voxel_visualizer(voxel_size=0.3, visualization_range=20.0)
+        viz = create_voxel_visualizer(voxel_size=0.3, visualization_range=30.0)
         
         # Wait for visualization to start
         time.sleep(2.0)
@@ -780,51 +552,12 @@ if __name__ == "__main__":
             initial_obstacles.append(obs_pos)
         viz.update_obstacles(initial_obstacles)
         
-        # Simulate drone movement
-        for i in range(50):
-            # Update drone position (circular motion)
-            t = i * 0.2
-            drone_pos = [5 * np.cos(t), 5 * np.sin(t), -5 + 2 * np.sin(t * 2)]
-            viz.update_drone_position(drone_pos)
-            
-            # Update target occasionally
-            if i % 20 == 0:
-                target_pos = [10 + 5 * np.cos(t/2), 5 * np.sin(t/2), -5]
-                viz.update_target_position(target_pos)
-            
-            # Add some dynamic obstacles
-            if i % 15 == 0:  # Update obstacles every 15 iterations
-                obstacles = []
-                for _ in range(25):
-                    obs_pos = [
-                        random.uniform(-15, 15),
-                        random.uniform(-15, 15),
-                        random.uniform(-10, 0)
-                    ]
-                    obstacles.append(obs_pos)
-                viz.update_obstacles(obstacles)
-            
-            # Save occasional screenshots
-            if i % 10 == 0:
-                viz.save_screenshot(f"demo_screenshot_{i:02d}.png")
-            
-            time.sleep(0.2)
+        # Run for demonstration
+        time.sleep(17.0)
         
-        # Keep visualization running
-        print("\nVisualization demo complete!")
-        print("You should see a 3D window with:")
-        print("- Blue sphere: Drone position")
-        print("- Red sphere: Target position")
-        print("- Green line: Drone path")
-        print("- Orange/yellow points: Obstacles")
-        print("- Gray grid: Ground reference")
-        print("- Colored voxels: 3D obstacle grid")
-        print("\nPress Enter to stop visualization...")
-        input()
+        # Clean shutdown
+        viz.stop_visualization()
         
     except Exception as e:
-        logging.error(f"Error in demo: {e}")
+        logging.error(f"Demo failed: {e}")
         traceback.print_exc()
-    finally:
-        if 'viz' in locals():
-            viz.stop_visualization()

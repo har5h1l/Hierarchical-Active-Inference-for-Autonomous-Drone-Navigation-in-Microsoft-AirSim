@@ -12,36 +12,38 @@ This file collects experimental data from the Active Inference drone navigation 
 import airsim
 import numpy as np
 import time
-import os
-import json
-import subprocess
-import sys
-import zmq
-import math
-import platform
-import traceback
 import logging
-import pandas as pd
+import traceback
+import json
+import os
+import sys
+import uuid
+import hashlib
 import random
-from typing import Dict, List, Tuple, Any, Optional
+from pathlib import Path
+from os import path
+from typing import Dict, Any, List, Tuple, Optional
 from datetime import datetime
+import subprocess
+import threading
+import zmq
+import socket
+import psutil
+import platform
+import pandas as pd
 from matplotlib import pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from matplotlib.animation import FuncAnimation
 import matplotlib.patches as patches
-from os import path
+import math
 
-# Import voxel visualization (improved version)
+# Import visualization components with fallback
 try:
-    from voxel_visualization_fixed import VoxelGridVisualizer, create_voxel_visualizer
+    from voxel_visualization import VoxelGridVisualizer, create_voxel_visualizer
 except ImportError:
-    # Fallback to original if fixed version not available
-    try:
-        from voxel_visualization import VoxelGridVisualizer, create_voxel_visualizer
-    except ImportError:
-        VoxelGridVisualizer = None
-        create_voxel_visualizer = None
-        logging.warning("VoxelGridVisualizer not available - 3D visualization disabled")
+    VoxelGridVisualizer = None
+    create_voxel_visualizer = None
+    logging.warning("VoxelGridVisualizer not available - 3D visualization disabled")
 
 # Configure logging
 logging.basicConfig(
@@ -189,7 +191,12 @@ TARGET_LOCATION = [-20.0, -20.0, -30.0]  # [x, y, z] in NED coordinates
 MARGIN = 1.5  # Safety margin for waypoint generation (meters)
 WAYPOINT_SAMPLE_COUNT = 75  # Number of waypoints to consider
 POLICY_LENGTH = 3  # Number of steps in the policy
-DENSITY_RADIUS = 5.0  # Radius for density evaluation
+
+# Dynamic density radius calculation based on max action length
+MAX_ACTION_LENGTH = 3.0  # Maximum action magnitude observed in experiments (from line 3865: min(3.0, action_magnitude))
+DENSITY_BUFFER = 1.0     # Additional buffer beyond max action length for comprehensive density evaluation
+DENSITY_RADIUS = MAX_ACTION_LENGTH + DENSITY_BUFFER  # 4.0m total radius (was 5.0m fixed)
+
 ARRIVAL_THRESHOLD = 1.5 # meters
 MAX_ITERATIONS = 100
 DEFAULT_ZMQ_PORT = 5555  # Default ZMQ server port
@@ -198,7 +205,7 @@ ZMQ_MAX_RETRIES = 3  # Maximum number of retries for ZMQ communication
 
 # Default experiment configuration
 DEFAULT_CONFIG = {
-    "num_episodes": 5,
+    "num_episodes": 15,
     "target_distance_range": (20.0, 100.0),  # min, max in meters
     "random_seed": 42,
     "max_steps_per_episode": 200,
@@ -217,10 +224,11 @@ DEFAULT_CONFIG = {
     "visualization_duration": 60.0,  # Duration of visualization markers in seconds
       # Voxel grid visualization configuration
     "enable_voxel_visualization": True,  # Enable real-time 3D voxel visualization (can be turned off for performance)
+    "disable_all_visualizations": False,  # Master switch to disable all visualizations for headless operation
     "voxel_size": 0.5,  # Size of voxels in meters
-    "visualization_range": 25.0,  # Range around drone to visualize in meters
+    "visualization_range": 100,  # Range around drone to visualize in meters
     "save_visualization_screenshots": True,  # Save screenshots during episodes
-    "screenshot_interval": 10,  # Save screenshot every N steps
+    "screenshot_interval": 1,  # Save screenshot every N steps (changed from 10 to 1 for every step)
     "screenshot_max_retries": 3,  # Maximum retries for screenshot capture (Windows OpenGL fix)
     "enable_screenshot_functionality": True  # Enable/disable screenshot functionality (Windows OpenGL context fix)
 }
@@ -865,484 +873,157 @@ class ZMQInterface:
 class Scanner:
     """Scanner for obstacle detection using AirSim's LiDAR data"""
     def __init__(self, client, scan_range=20.0, enable_visualization=False, voxel_size=0.5, enable_screenshots=True):
+        """Initialize the Scanner with obstacle detection capabilities
+        
+        Args:
+            client: AirSim client instance
+            scan_range: Maximum distance for obstacle detection (meters)
+            enable_visualization: Whether to enable 3D visualization
+            voxel_size: Size of voxels for spatial discretization (meters)
+            enable_screenshots: Whether to enable screenshot capture functionality
+        """
         self.client = client
         self.scan_range = scan_range
-        
-        # Enhanced parameters for better obstacle detection
-        self.point_density = 1.2  # Increased point density for better resolution
-        # Cache for recent scans to optimize performance during rapid rescanning
-        self.last_scan_time = 0
-        self.scan_cache_ttl = 0.1  # 100ms TTL for cached scan data
-        self.cached_positions = []
-        self.cached_distances = []
-        
-        # Parameters for directional scanning (used in real-time path monitoring)
-        self.fov_angle = 120  # Field of view angle in degrees for forward scan
-        
-        # Enhanced detection parameters
-        self.min_obstacle_distance = 0.1  # Minimum distance to consider as obstacle (filter out drone body)
-        self.max_voxel_merge_distance = 0.1  # Maximum distance for merging duplicate obstacles
-        
-        # Voxel grid visualization
-        self.enable_visualization = enable_visualization and VoxelGridVisualizer is not None
-        self.visualizer = None
         self.voxel_size = voxel_size
+        self.enable_visualization = enable_visualization
         self.enable_screenshots = enable_screenshots
         
+        # Clustering configuration for improved density calculation
+        self.clustering_method = "connected_components"  # Options: "connected_components", "dbscan", "none"
+        self.cluster_radius = 1.5  # Radius for connected components clustering
+        self.dbscan_eps = 1.5      # Epsilon for DBSCAN clustering  
+        self.dbscan_min_samples = 2  # Minimum samples for DBSCAN core points
+        
+        # Cache for obstacle detection to improve performance
+        self.cached_positions = []
+        self.cached_distances = []
+        self.last_scan_time = 0
+        self.scan_cache_ttl = 0.1  # Cache time-to-live in seconds
+        self.last_cluster_info = []  # Store information about last clustering operation
+        
+        # Initialize visualization if enabled
+        self.visualizer = None
         if self.enable_visualization:
             try:
-                # Use the enable_screenshots parameter passed to constructor
-                self.visualizer = create_voxel_visualizer(
-                    voxel_size=voxel_size,
-                    visualization_range=scan_range,
-                    auto_start=True,
-                    enable_screenshots=self.enable_screenshots
-                )
-                # Wait a moment to see if visualization actually started
-                time.sleep(1.0)
-                if self.visualizer and self.visualizer.is_running:
-                    logging.info(f"Voxel grid visualization enabled and running (screenshots: {self.enable_screenshots})")
-                else:
-                    logging.warning("Visualization created but failed to start - disabling")
-                    self.enable_visualization = False
-                    self.visualizer = None
+                from voxel_visualization import VoxelGridVisualizer
+                self.visualizer = VoxelGridVisualizer(voxel_size=self.voxel_size, visualization_range=self.scan_range)
+                # Start the visualization
+                self.visualizer.start_visualization("Drone Navigation - Obstacle Detection")
+                logging.info(f"Initialized voxel visualization with voxel_size={self.voxel_size}m, range={self.scan_range}m")
+            except ImportError as e:
+                logging.warning(f"Visualization not available: {e} - continuing without it")
+                self.enable_visualization = False
+                self.visualizer = None
             except Exception as e:
-                logging.warning(f"Failed to initialize voxel visualization: {e}")
-                logging.info("Continuing without visualization - experiment will still run normally")
+                logging.warning(f"Failed to start visualization: {e} - continuing without it")
                 self.enable_visualization = False
                 self.visualizer = None
 
-    def fetch_density_distances(self, use_cache=False):
-        """Get obstacle positions and distances with comprehensive multi-scale detection
+    def _cluster_obstacles_for_density(self, obstacle_positions, obstacle_distances, cluster_radius=1.5):
+        """
+        Cluster nearby obstacles using connected components to treat them as single entities
+        for density calculation. This prevents inflated density from large obstacles 
+        represented as many adjacent voxels.
         
         Args:
-            use_cache: Whether to use cached results if available within TTL
+            obstacle_positions: List of obstacle positions [x, y, z]
+            obstacle_distances: List of distances to each obstacle from drone
+            cluster_radius: Maximum distance between obstacles to consider them part of same cluster
             
         Returns:
-            tuple: (obstacle_positions, obstacle_distances)
+            tuple: (clustered_positions, clustered_distances, cluster_info)
+                - clustered_positions: Representative positions for each cluster
+                - clustered_distances: Distances to cluster representatives  
+                - cluster_info: Additional info about each cluster (size, extent, etc.)
         """
+        if not obstacle_positions or len(obstacle_positions) == 0:
+            return [], [], []
+        
         try:
-            current_time = time.time()
+            import numpy as np
+            from collections import defaultdict
             
-            # Check if we can use cached results
-            if use_cache and current_time - self.last_scan_time < self.scan_cache_ttl:
-                return self.cached_positions, self.cached_distances
+            positions = np.array(obstacle_positions)
+            distances = np.array(obstacle_distances)
+            n_obstacles = len(positions)
             
-            # Initialize empty lists for return values
-            obstacle_positions = []
-            obstacle_distances = []
-
-            # Get drone state
-            drone_state = self.client.getMultirotorState().kinematics_estimated
-            drone_pos = np.array([
-                drone_state.position.x_val, 
-                drone_state.position.y_val, 
-                drone_state.position.z_val
-            ])
+            # Build adjacency graph for connected components
+            visited = set()
+            clusters = []
             
-            # Get drone orientation quaternion (w, x, y, z)
-            drone_quat = np.array([
-                drone_state.orientation.w_val,
-                drone_state.orientation.x_val, 
-                drone_state.orientation.y_val,
-                drone_state.orientation.z_val
-            ])
-            
-            # Validate drone position
-            if np.any(np.isnan(drone_pos)) or np.any(np.isinf(drone_pos)):
-                logging.warning("Invalid drone position detected, using default [0,0,0]")
-                drone_pos = np.array([0.0, 0.0, 0.0])
-            
-            # Validate drone orientation
-            quat_norm = np.linalg.norm(drone_quat)
-            if quat_norm < 0.001 or np.any(np.isnan(drone_quat)) or np.any(np.isinf(drone_quat)):
-                logging.warning("Invalid drone orientation detected, using identity quaternion")
-                drone_quat = np.array([1.0, 0.0, 0.0, 0.0])  # Identity quaternion
-            else:
-                # Normalize quaternion
-                drone_quat = drone_quat / quat_norm
-            
-            # Get lidar data
-            lidar_data = self.client.getLidarData()
-            
-            if len(lidar_data.point_cloud) < 3:
-                logging.debug("No lidar points detected")
-                return [], []
-            
-            # Convert point cloud to positions
-            try:
-                points = np.array(lidar_data.point_cloud, dtype=np.float32).reshape(-1, 3)
-            except (ValueError, TypeError) as e:
-                logging.error(f"Error reshaping point cloud: {e}")
-                return [], []
-
-            # Improved quaternion utility functions with better numerical stability
-            def quaternion_multiply(q1, q2):
-                """Multiply two quaternions (w, x, y, z format)"""
-                w1, x1, y1, z1 = q1
-                w2, x2, y2, z2 = q2
-                return np.array([
-                    w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2,  # w
-                    w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2,  # x
-                    w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2,  # y
-                    w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2   # z
-                ])
-            
-            def quaternion_conjugate(q):
-                """Get quaternion conjugate (w, x, y, z) -> (w, -x, -y, -z)"""
-                return np.array([q[0], -q[1], -q[2], -q[3]])
-            
-            def rotate_point_by_quaternion(point, quat):
-                """Rotate a 3D point by a quaternion using proper formula"""
-                # Convert point to pure quaternion (0, x, y, z)
-                point_quat = np.array([0.0, point[0], point[1], point[2]])
+            def dfs_cluster(start_idx, current_cluster):
+                """Depth-first search to find connected obstacles"""
+                if start_idx in visited:
+                    return
                 
-                # Apply rotation: q * p * q_conjugate
-                quat_conj = quaternion_conjugate(quat)
-                temp = quaternion_multiply(quat, point_quat)
-                rotated_quat = quaternion_multiply(temp, quat_conj)
+                visited.add(start_idx)
+                current_cluster.append(start_idx)
                 
-                # Extract the vector part (x, y, z)
-                return rotated_quat[1:4]
-
-            # ===== MULTI-SCALE OBSTACLE DETECTION =====
-            # Process points in multiple stages for comprehensive obstacle detection
+                # Find all neighbors within cluster_radius
+                start_pos = positions[start_idx]
+                for neighbor_idx in range(n_obstacles):
+                    if neighbor_idx not in visited:
+                        neighbor_pos = positions[neighbor_idx]
+                        distance = np.linalg.norm(start_pos - neighbor_pos)
+                        if distance <= cluster_radius:
+                            dfs_cluster(neighbor_idx, current_cluster)
             
-            # Stage 1: Direct Point Analysis (for isolated/sparse obstacles)
-            processed_points = 0
-            valid_points = 0
-            single_point_obstacles = []
-            all_global_points = []
+            # Find all connected components
+            for i in range(n_obstacles):
+                if i not in visited:
+                    cluster = []
+                    dfs_cluster(i, cluster)
+                    if cluster:
+                        clusters.append(cluster)
             
-            # Transform all points to global coordinates first
-            for point in points:
-                # Skip invalid points
-                if np.any(np.isnan(point)) or np.any(np.isinf(point)):
-                    continue
-                    
-                processed_points += 1
+            # Process each cluster to create representative obstacles
+            clustered_positions = []
+            clustered_distances = []
+            cluster_info = []
+            
+            for cluster_indices in clusters:
+                cluster_positions = positions[cluster_indices]
+                cluster_distances = distances[cluster_indices]
                 
-                try:
-                    # Transform point from drone's local coordinate system to global coordinates
-                    global_point = rotate_point_by_quaternion(point, drone_quat)
-                    global_point = global_point + drone_pos
-                    
-                    # Calculate distance from drone
-                    dist = np.linalg.norm(global_point - drone_pos)
-                    
-                    # Skip invalid distances and points too close (likely drone itself)
-                    if np.isnan(dist) or np.isinf(dist) or dist < 0.1:
-                        continue
-                    
-                    # Only include obstacles within scan range
-                    if dist <= self.scan_range:
-                        valid_points += 1
-                        all_global_points.append({
-                            'position': global_point,
-                            'distance': dist,
-                            'original_point': point
-                        })
-                        
-                except Exception as e:
-                    logging.debug(f"Error processing point {point}: {e}")
-                    continue
-            
-            if not all_global_points:
-                logging.debug("No valid transformed points")
-                return [], []
-            
-            # Stage 2: Distance-based Adaptive Voxelization
-            # Use different voxel sizes based on distance to preserve detail where needed
-            distance_zones = [
-                {'max_dist': 2.0, 'voxel_size': 0.05, 'min_points': 1},   # Very close: 5cm voxels, single points OK
-                {'max_dist': 5.0, 'voxel_size': 0.08, 'min_points': 1},   # Close: 8cm voxels, single points OK  
-                {'max_dist': 10.0, 'voxel_size': 0.12, 'min_points': 1},  # Medium: 12cm voxels, single points OK
-                {'max_dist': float('inf'), 'voxel_size': 0.20, 'min_points': 2}  # Far: 20cm voxels, need 2+ points
-            ]
-            
-            # Process each distance zone separately
-            zone_obstacles = []
-            
-            for zone in distance_zones:
-                zone_points = [p for p in all_global_points 
-                             if p['distance'] <= zone['max_dist'] and 
-                                (len(zone_obstacles) == 0 or p['distance'] > distance_zones[distance_zones.index(zone)-1]['max_dist'] if distance_zones.index(zone) > 0 else True)]
+                # Calculate cluster properties
+                cluster_center = np.mean(cluster_positions, axis=0)
+                min_distance = np.min(cluster_distances)
+                max_distance = np.max(cluster_distances)
+                cluster_size = len(cluster_indices)
                 
-                if not zone_points:
-                    continue
+                # Calculate cluster extent (maximum distance between any two points in cluster)
+                max_extent = 0.0
+                if cluster_size > 1:
+                    for i in range(len(cluster_positions)):
+                        for j in range(i + 1, len(cluster_positions)):
+                            extent = np.linalg.norm(cluster_positions[i] - cluster_positions[j])
+                            max_extent = max(max_extent, extent)
                 
-                # Create voxel grid for this zone
-                voxel_grid = {}
-                voxel_size = zone['voxel_size']
-                min_points = zone['min_points']
+                # Use the position of the closest obstacle in the cluster as representative
+                closest_idx = np.argmin(cluster_distances)
+                representative_position = cluster_positions[closest_idx]
+                representative_distance = cluster_distances[closest_idx]
                 
-                for point_data in zone_points:
-                    global_point = point_data['position']
-                    dist = point_data['distance']
-                    
-                    # Calculate voxel index for this zone
-                    voxel_idx = tuple(np.floor(global_point / voxel_size).astype(int))
-                    
-                    # Add to voxel grid
-                    if voxel_idx in voxel_grid:
-                        voxel_grid[voxel_idx]["count"] += 1
-                        voxel_grid[voxel_idx]["min_dist"] = min(voxel_grid[voxel_idx]["min_dist"], dist)
-                        voxel_grid[voxel_idx]["max_dist"] = max(voxel_grid[voxel_idx]["max_dist"], dist)
-                        
-                        # Update centroid with running average
-                        current_count = voxel_grid[voxel_idx]["count"]
-                        old_pos = np.array(voxel_grid[voxel_idx]["position"])
-                        voxel_grid[voxel_idx]["position"] = (
-                            (old_pos * (current_count - 1) + global_point) / current_count
-                        ).tolist()
-                        
-                        # Store all points for density calculation
-                        voxel_grid[voxel_idx]["points"].append(global_point.tolist())
-                    else:
-                        voxel_grid[voxel_idx] = {
-                            "count": 1,
-                            "position": global_point.tolist(),
-                            "min_dist": dist,
-                            "max_dist": dist,
-                            "points": [global_point.tolist()],
-                            "zone": zone['max_dist']
-                        }
+                clustered_positions.append(representative_position.tolist())
+                clustered_distances.append(float(representative_distance))
                 
-                # Extract obstacles from this zone
-                for voxel_data in voxel_grid.values():
-                    if voxel_data["count"] >= min_points:
-                        zone_obstacles.append({
-                            'position': voxel_data["position"],
-                            'distance': voxel_data["min_dist"],
-                            'point_count': voxel_data["count"],
-                            'extent': voxel_data["max_dist"] - voxel_data["min_dist"],
-                            'zone': voxel_data["zone"]
-                        })
-            
-            # Stage 3: Critical Safety Detection (for very close obstacles)
-            # Always include obstacles within critical safety distance regardless of clustering
-            critical_distance = 1.5  # Critical safety threshold
-            critical_obstacles = []
-            
-            for point_data in all_global_points:
-                if point_data['distance'] <= critical_distance:
-                    # Check if this point is already represented in zone obstacles
-                    is_already_included = False
-                    for zone_obs in zone_obstacles:
-                        if np.linalg.norm(np.array(zone_obs['position']) - point_data['position']) < 0.1:
-                            is_already_included = True
-                            break
-                    
-                    if not is_already_included:
-                        critical_obstacles.append({
-                            'position': point_data['position'].tolist(),
-                            'distance': point_data['distance'],
-                            'point_count': 1,
-                            'extent': 0.0,
-                            'zone': 'critical'
-                        })
-            
-            # Stage 4: Outlier Detection (for sparse but important obstacles)
-            # Find isolated points that might represent important obstacles
-            outlier_obstacles = []
-            outlier_threshold = 0.5  # Distance threshold for considering points isolated
-            
-            for point_data in all_global_points:
-                # Skip if already included in zone obstacles or critical obstacles
-                is_included = False
-                for obs_list in [zone_obstacles, critical_obstacles]:
-                    for obs in obs_list:
-                        if np.linalg.norm(np.array(obs['position']) - np.array(point_data['position'])) < 0.15:
-                            is_included = True
-                            break
-                    if is_included:
-                        break
-                
-                if not is_included and point_data['distance'] <= self.scan_range * 0.7:  # Only consider outliers in closer range
-                    # Check if this point is isolated (no other points nearby)
-                    nearby_count = 0                    
-                    for other_point in all_global_points:
-                        if (other_point is not point_data and 
-                            np.linalg.norm(other_point['position'] - point_data['position']) < outlier_threshold):
-                            nearby_count += 1
-                    
-                    # If isolated (few nearby points), consider it a valid obstacle
-                    if nearby_count <= 2:  # Allow up to 2 nearby points for isolated obstacles
-                        outlier_obstacles.append({
-                            'position': point_data['position'].tolist(),
-                            'distance': point_data['distance'],
-                            'point_count': 1,
-                            'extent': 0.0,
-                            'zone': 'outlier'
-                        })
-            
-            # Stage 5: Combine all obstacle detections
-            all_obstacles = zone_obstacles + critical_obstacles + outlier_obstacles
-            
-            # Remove duplicates based on proximity
-            final_obstacles = []
-            duplicate_threshold = 0.1  # 10cm threshold for considering obstacles as duplicates
-            
-            # Sort by distance (closest first) to prioritize closer obstacles in deduplication
-            all_obstacles.sort(key=lambda x: x['distance'])
-            
-            for obs in all_obstacles:
-                is_duplicate = False
-                for existing_obs in final_obstacles:
-                    if np.linalg.norm(np.array(obs['position']) - np.array(existing_obs['position'])) < duplicate_threshold:
-                        # Found a duplicate, keep the one with more points or closer distance
-                        if (obs['point_count'] > existing_obs['point_count'] or 
-                            (obs['point_count'] == existing_obs['point_count'] and obs['distance'] < existing_obs['distance'])):
-                            # Replace existing with current (better) obstacle
-                            final_obstacles.remove(existing_obs)
-                            final_obstacles.append(obs)
-                        is_duplicate = True
-                        break
-                
-                if not is_duplicate:
-                    final_obstacles.append(obs)
-            
-            # Extract final positions and distances
-            for obs in final_obstacles:
-                obstacle_positions.append(obs['position'])
-                obstacle_distances.append(obs['distance'])
-            
-            # Update cache
-            self.cached_positions = obstacle_positions
-            self.cached_distances = obstacle_distances
-            self.last_scan_time = current_time
-              # Enhanced logging with zone information
-            zone_counts = {}
-            for obs in final_obstacles:
-                zone = obs.get('zone', 'unknown')
-                zone_counts[zone] = zone_counts.get(zone, 0) + 1
-            
-            logging.debug(f"Multi-scale obstacle detection: {processed_points} processed, {valid_points} valid, "
-                         f"{len(obstacle_positions)} final obstacles. Zones: {zone_counts}")
-            
-            # Update visualization if enabled
-            if self.enable_visualization and self.visualizer and obstacle_positions:
-                try:
-                    self.visualizer.update_obstacles(obstacle_positions, self.voxel_size)
-                except Exception as e:
-                    logging.debug(f"Error updating visualization in fetch_density_distances: {e}")
-            
-            return obstacle_positions, obstacle_distances
-        
-        except Exception as e:
-            logging.error(f"Error in enhanced fetch_density_distances: {e}")            
-            traceback.print_exc()
-            return [], []
-    def scan_path_for_obstacles(self, start_pos, end_pos, safety_radius=3.0):
-        """Simplified scan for obstacles along a planned movement path with drone dimension awareness
-        
-        Args:
-            start_pos: Starting position [x, y, z]
-            end_pos: Ending position [x, y, z]
-            safety_radius: Safety radius around path to check for obstacles (meters)
-            
-        Returns:
-            tuple: (obstacle_detected, obstacle_position, obstacle_distance)
-        """
-        try:
-            # Convert positions to numpy arrays for calculations
-            start_pos = np.array(start_pos)
-            end_pos = np.array(end_pos)
-            
-            # Calculate path vector and properties
-            path_vector = end_pos - start_pos
-            path_length = np.linalg.norm(path_vector)
-            
-            if path_length < 0.001:  # Effectively not moving
-                return False, None, None
-                
-            path_direction = path_vector / path_length
-            
-            # Drone physical dimensions (0.4x0.4x0.1 meters)
-            drone_width = 0.4
-            drone_height = 0.4
-            drone_depth = 0.1
-            
-            # Calculate effective safety radius including drone dimensions
-            effective_safety_radius = safety_radius + max(drone_width, drone_height) / 2
-            
-            # Get obstacle data using basic sensor intersection detection
-            obstacle_positions, obstacle_distances = self.fetch_density_distances(use_cache=True)
-            
-            if not obstacle_positions:
-                return False, None, None
-            
-            # Merge nearby obstacles within 1 meter to avoid duplicate detections
-            merged_obstacles = self._merge_nearby_obstacles(obstacle_positions, obstacle_distances, merge_distance=1.0)
-            
-            # Basic intersection detection with drone dimensions
-            closest_obstacle = None
-            closest_distance = float('inf')
-            
-            for obstacle_pos, obstacle_dist in merged_obstacles:
-                obstacle_pos = np.array(obstacle_pos)
-                
-                # Calculate perpendicular distance from obstacle to path
-                obstacle_vector = obstacle_pos - start_pos
-                projection = np.dot(obstacle_vector, path_direction)
-                
-                # Only consider obstacles along the path
-                if 0 <= projection <= path_length:
-                    closest_point = start_pos + projection * path_direction
-                    perpendicular_dist = np.linalg.norm(obstacle_pos - closest_point)
-                    
-                    # Check if obstacle intersects with drone's path considering dimensions
-                    if perpendicular_dist <= effective_safety_radius:
-                        if obstacle_dist < closest_distance:
-                            closest_distance = obstacle_dist
-                            closest_obstacle = obstacle_pos
-            
-            # If obstacle detected, verify with line-of-sight check
-            if closest_obstacle is not None:
-                start_vector = airsim.Vector3r(start_pos[0], start_pos[1], start_pos[2])
-                obs_vector = airsim.Vector3r(closest_obstacle[0], closest_obstacle[1], closest_obstacle[2])
-                
-                # If line of sight is blocked, confirm obstacle
-                if not self.client.simTestLineOfSightBetweenPoints(start_vector, obs_vector):
-                    return True, closest_obstacle.tolist(), closest_distance
-            
-            # No obstacles detected
-            return False, None, None
-            
-        except Exception as e:
-            logging.error(f"Error in scan_path_for_obstacles: {e}")
-            traceback.print_exc()
-            return False, None, None
-    
-    def _cluster_obstacles(self, obstacle_positions, cluster_radius=2.0):
-        """Group nearby obstacles to detect large structures"""
-        if not obstacle_positions:
-            return []
-        
-        obstacles = np.array(obstacle_positions)
-        clusters = []
-        processed = set()
-        
-        for i, obs in enumerate(obstacles):
-            if i in processed:
-                continue
-                
-            # Find all obstacles within cluster radius
-            distances = np.linalg.norm(obstacles - obs, axis=1)
-            cluster_indices = np.where(distances <= cluster_radius)[0]
-            
-            if len(cluster_indices) > 0:
-                cluster_obstacles = obstacles[cluster_indices]
-                cluster_center = np.mean(cluster_obstacles, axis=0)
-                max_extent = np.max(np.linalg.norm(cluster_obstacles - cluster_center, axis=1))
-                
-                clusters.append({                'center': cluster_center,
-                    'obstacles': cluster_obstacles,
-                    'indices': cluster_indices.tolist(),
-                    'max_extent': max_extent
+                cluster_info.append({
+                    'center': cluster_center.tolist(),
+                    'representative_position': representative_position.tolist(),
+                    'size': cluster_size,
+                    'min_distance': float(min_distance),
+                    'max_distance': float(max_distance),
+                    'extent': float(max_extent),
+                    'original_indices': cluster_indices
                 })
-                processed.update(cluster_indices)
-        return clusters
+            
+            logging.debug(f"Clustered {len(obstacle_positions)} obstacles into {len(clustered_positions)} clusters")
+            return clustered_positions, clustered_distances, cluster_info
+            
+        except Exception as e:
+            logging.error(f"Error in obstacle clustering: {e}")
+            # Fallback to original obstacles if clustering fails
+            return obstacle_positions, obstacle_distances, []
     
     def _merge_nearby_obstacles(self, obstacle_positions, obstacle_distances, merge_distance=1.0):
         """Merge obstacles that are within merge_distance of each other to prevent path planning between them
@@ -1400,6 +1081,166 @@ class Scanner:
             traceback.print_exc()
             # Return original obstacles as fallback
             return list(zip(obstacle_positions, obstacle_distances))
+    
+    def _cluster_obstacles_dbscan_like(self, obstacle_positions, obstacle_distances, eps=1.5, min_samples=2):
+        """
+        Alternative clustering method using DBSCAN-like approach for obstacle density calculation.
+        This method is more robust to noise and provides better handling of sparse obstacles.
+        
+        Args:
+            obstacle_positions: List of obstacle positions [x, y, z]
+            obstacle_distances: List of distances to each obstacle from drone
+            eps: Maximum distance between two samples for them to be considered neighbors
+            min_samples: Minimum number of samples in a neighborhood for a point to be core
+            
+        Returns:
+            tuple: (clustered_positions, clustered_distances, cluster_info)
+        """
+        if not obstacle_positions or len(obstacle_positions) == 0:
+            return [], [], []
+        
+        try:
+            import numpy as np
+            
+            positions = np.array(obstacle_positions)
+            distances = np.array(obstacle_distances)
+            n_obstacles = len(positions)
+            
+            # Initialize cluster labels (-1 means noise/outlier)
+            labels = np.full(n_obstacles, -1, dtype=int)
+            cluster_id = 0
+            
+            # Core points identification and clustering
+            for i in range(n_obstacles):
+                if labels[i] != -1:  # Already processed
+                    continue
+                
+                # Find neighbors within eps distance
+                neighbors = []
+                for j in range(n_obstacles):
+                    if i != j and np.linalg.norm(positions[i] - positions[j]) <= eps:
+                        neighbors.append(j)
+                
+                # If point has enough neighbors, start a new cluster
+                if len(neighbors) >= min_samples - 1:  # -1 because we don't count the point itself
+                    labels[i] = cluster_id
+                    
+                    # Expand cluster using queue-based approach
+                    queue = neighbors.copy()
+                    while queue:
+                        neighbor_idx = queue.pop(0)
+                        
+                        # If neighbor is noise, add to current cluster
+                        if labels[neighbor_idx] == -1:
+                            labels[neighbor_idx] = cluster_id
+                            
+                            # Find neighbors of this neighbor
+                            neighbor_neighbors = []
+                            for k in range(n_obstacles):
+                                if neighbor_idx != k and np.linalg.norm(positions[neighbor_idx] - positions[k]) <= eps:
+                                    neighbor_neighbors.append(k)
+                            
+                            # If this neighbor is also a core point, add its neighbors to queue
+                            if len(neighbor_neighbors) >= min_samples - 1:
+                                for nn in neighbor_neighbors:
+                                    if labels[nn] == -1:  # Only add unprocessed points
+                                        queue.append(nn)
+                        
+                        # If neighbor is unassigned, assign to current cluster
+                        elif labels[neighbor_idx] == -1:
+                            labels[neighbor_idx] = cluster_id
+                    
+                    cluster_id += 1
+            
+            # Process clusters and noise points
+            clustered_positions = []
+            clustered_distances = []
+            cluster_info = []
+            
+            # Handle clustered points
+            for cid in range(cluster_id):
+                cluster_mask = labels == cid
+                cluster_indices = np.where(cluster_mask)[0]
+                
+                if len(cluster_indices) == 0:
+                    continue
+                
+                cluster_positions = positions[cluster_indices]
+                cluster_distances = distances[cluster_indices]
+                
+                # Calculate cluster properties
+                cluster_center = np.mean(cluster_positions, axis=0)
+                min_distance = np.min(cluster_distances)
+                max_distance = np.max(cluster_distances)
+                cluster_size = len(cluster_indices)
+                
+                # Calculate cluster extent
+                max_extent = 0.0
+                if cluster_size > 1:
+                    for i in range(len(cluster_positions)):
+                        for j in range(i + 1, len(cluster_positions)):
+                            extent = np.linalg.norm(cluster_positions[i] - cluster_positions[j])
+                            max_extent = max(max_extent, extent)
+                
+                # Use closest point in cluster as representative
+                closest_idx = np.argmin(cluster_distances)
+                representative_position = cluster_positions[closest_idx]
+                representative_distance = cluster_distances[closest_idx]
+                
+                clustered_positions.append(representative_position.tolist())
+                clustered_distances.append(float(representative_distance))
+                
+                cluster_info.append({
+                    'center': cluster_center.tolist(),
+                    'representative_position': representative_position.tolist(),
+                    'size': cluster_size,
+                    'min_distance': float(min_distance),
+                    'max_distance': float(max_distance),
+                    'extent': float(max_extent),
+                    'original_indices': cluster_indices.tolist(),
+                    'cluster_type': 'core'
+                })
+            
+            # Handle noise points (outliers) - include them as individual obstacles
+            # These are often important isolated obstacles
+            noise_mask = labels == -1
+            noise_indices = np.where(noise_mask)[0]
+            
+            for idx in noise_indices:
+                pos = positions[idx]
+                dist = distances[idx]
+                
+                # Only include noise points that are within reasonable distance
+                # and not too close to existing clustered obstacles
+                min_dist_to_clusters = float('inf')
+                for cluster_pos in clustered_positions:
+                    cluster_pos_array = np.array(cluster_pos)
+                    dist_to_cluster = np.linalg.norm(pos - cluster_pos_array)
+                    min_dist_to_clusters = min(min_dist_to_clusters, dist_to_cluster)
+                
+                # Include noise point if it's far enough from existing clusters
+                if min_dist_to_clusters > eps * 0.5:  # Half the clustering radius
+                    clustered_positions.append(pos.tolist())
+                    clustered_distances.append(float(dist))
+                    
+                    cluster_info.append({
+                        'center': pos.tolist(),
+                        'representative_position': pos.tolist(),
+                        'size': 1,
+                        'min_distance': float(dist),
+                        'max_distance': float(dist),
+                        'extent': 0.0,
+                        'original_indices': [int(idx)],
+                        'cluster_type': 'noise'
+                    })
+            
+            logging.debug(f"DBSCAN-like clustering: {len(obstacle_positions)} obstacles -> {cluster_id} core clusters + {len(noise_indices)} noise points -> {len(clustered_positions)} final obstacles")
+            return clustered_positions, clustered_distances, cluster_info
+            
+        except Exception as e:
+            logging.error(f"Error in DBSCAN-like clustering: {e}")
+            # Fallback to original obstacles if clustering fails
+            return obstacle_positions, obstacle_distances, []
     
     def scan_in_direction(self, direction, max_distance=10.0, cone_angle=45.0):
         """Scan for obstacles in a specific direction with a cone-shaped field of view
@@ -1893,10 +1734,14 @@ class Scanner:
         """Save a screenshot of the current visualization"""
         if self.enable_visualization and self.visualizer:
             try:
-                return self.visualizer.save_screenshot(filename, max_retries=max_retries)
+                # The VoxelGridVisualizer's save_screenshot method only takes filename
+                # It handles retries internally, so we just call it directly
+                return self.visualizer.save_screenshot(filename)
             except Exception as e:
                 logging.warning(f"Error saving visualization screenshot: {e}")
                 return False
+        else:
+            logging.debug("Visualization not enabled or visualizer not available for screenshot")
         return False
     
     def stop_visualization(self):
@@ -1917,6 +1762,483 @@ class Scanner:
             except Exception as e:
                 logging.debug(f"Error getting visualization stats: {e}")
         return {'is_running': False, 'error': 'Visualization not available'}
+
+    def set_clustering_method(self, method="connected_components", cluster_radius=1.5, dbscan_eps=1.5, dbscan_min_samples=2):
+        """
+        Set the clustering method and parameters for obstacle density calculation.
+        
+        Args:
+            method: Clustering method to use ("connected_components", "dbscan", or "none")
+            cluster_radius: Radius for connected components clustering (meters)
+            dbscan_eps: Epsilon parameter for DBSCAN clustering (meters)
+            dbscan_min_samples: Minimum samples parameter for DBSCAN clustering
+        """
+        valid_methods = ["connected_components", "dbscan", "none"]
+        if method not in valid_methods:
+            logging.warning(f"Invalid clustering method '{method}'. Using 'connected_components'.")
+            method = "connected_components"
+        
+        self.clustering_method = method
+        self.cluster_radius = cluster_radius
+        self.dbscan_eps = dbscan_eps
+        self.dbscan_min_samples = dbscan_min_samples
+        
+        logging.info(f"Clustering method set to '{method}' with parameters: "
+                    f"radius={cluster_radius}, eps={dbscan_eps}, min_samples={dbscan_min_samples}")
+    
+    def test_clustering_methods(self, obstacle_positions, obstacle_distances):
+        """
+        Test and compare different clustering methods on the given obstacle data.
+        Returns detailed comparison information for analysis.
+        
+        Args:
+            obstacle_positions: List of obstacle positions [x, y, z]
+            obstacle_distances: List of distances to each obstacle from drone
+            
+        Returns:
+            dict: Comparison results for different clustering methods
+        """
+        if not obstacle_positions:
+            return {"error": "No obstacle data provided for testing"}
+        
+        results = {}
+        original_count = len(obstacle_positions)
+        
+        # Test connected components clustering
+        try:
+            cc_pos, cc_dist, cc_info = self._cluster_obstacles_for_density(
+                obstacle_positions, obstacle_distances, cluster_radius=1.5
+            )
+            results["connected_components"] = {
+                "clustered_count": len(cc_pos),
+                "reduction_ratio": len(cc_pos) / original_count if original_count > 0 else 0,
+                "cluster_info": cc_info
+            }
+        except Exception as e:
+            results["connected_components"] = {"error": str(e)}
+        
+        # Test DBSCAN-like clustering
+        try:
+            db_pos, db_dist, db_info = self._cluster_obstacles_dbscan_like(
+                obstacle_positions, obstacle_distances, eps=1.5, min_samples=2
+            )
+            results["dbscan"] = {
+                "clustered_count": len(db_pos),
+                "reduction_ratio": len(db_pos) / original_count if original_count > 0 else 0,
+                "cluster_info": db_info
+            }
+        except Exception as e:
+            results["dbscan"] = {"error": str(e)}
+        
+        # No clustering (original)
+        results["none"] = {
+            "clustered_count": original_count,
+            "reduction_ratio": 1.0,
+            "cluster_info": []
+        }
+        
+        # Add summary
+        results["summary"] = {
+            "original_obstacle_count": original_count,
+            "best_reduction": min([r.get("reduction_ratio", 1.0) for r in results.values() 
+                                  if isinstance(r, dict) and "reduction_ratio" in r])
+        }
+        
+        return results
+
+    def fetch_density_distances(self, use_cache=False):
+        """Get obstacle positions and distances with comprehensive multi-scale detection
+        
+        Args:
+            use_cache: Whether to use cached results if available within TTL
+            
+        Returns:
+            tuple: (obstacle_positions, obstacle_distances)
+        """
+        try:
+            current_time = time.time()
+            
+            # Check if we can use cached results
+            if use_cache and current_time - self.last_scan_time < self.scan_cache_ttl:
+                return self.cached_positions, self.cached_distances
+            
+            # Initialize empty lists for return values
+            obstacle_positions = []
+            obstacle_distances = []
+
+            # Get drone state
+            drone_state = self.client.getMultirotorState().kinematics_estimated
+            drone_pos = np.array([
+                drone_state.position.x_val, 
+                drone_state.position.y_val, 
+                drone_state.position.z_val
+            ])
+            
+            # Get drone orientation quaternion (w, x, y, z)
+            drone_quat = np.array([
+                drone_state.orientation.w_val,
+                drone_state.orientation.x_val, 
+                drone_state.orientation.y_val,
+                drone_state.orientation.z_val
+            ])
+            
+            # Validate drone position
+            if np.any(np.isnan(drone_pos)) or np.any(np.isinf(drone_pos)):
+                logging.warning("Invalid drone position detected, using default [0,0,0]")
+                drone_pos = np.array([0.0, 0.0, 0.0])
+            
+            # Validate drone orientation
+            quat_norm = np.linalg.norm(drone_quat)
+            if quat_norm < 0.001 or np.any(np.isnan(drone_quat)) or np.any(np.isinf(drone_quat)):
+                logging.warning("Invalid drone orientation detected, using identity quaternion")
+                drone_quat = np.array([1.0, 0.0, 0.0, 0.0])  # Identity quaternion
+            else:
+                # Normalize quaternion
+                drone_quat = drone_quat / quat_norm
+            
+            # Get lidar data
+            lidar_data = self.client.getLidarData()
+            
+            if len(lidar_data.point_cloud) < 3:
+                logging.debug("No lidar points detected")
+                return [], []
+            
+            # Convert point cloud to positions
+            try:
+                points = np.array(lidar_data.point_cloud, dtype=np.float32).reshape(-1, 3)
+            except (ValueError, TypeError) as e:
+                logging.error(f"Error reshaping point cloud: {e}")
+                return [], []
+
+            # Improved quaternion utility functions with better numerical stability
+            def quaternion_multiply(q1, q2):
+                """Multiply two quaternions (w, x, y, z format)"""
+                w1, x1, y1, z1 = q1
+                w2, x2, y2, z2 = q2
+                return np.array([
+                    w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2,  # w
+                    w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2,  # x
+                    w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2,  # y
+                    w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2   # z
+                ])
+            
+            def quaternion_conjugate(q):
+                """Get quaternion conjugate (w, x, y, z) -> (w, -x, -y, -z)"""
+                return np.array([q[0], -q[1], -q[2], -q[3]])
+            
+            def rotate_point_by_quaternion(point, quat):
+                """Rotate a 3D point by a quaternion using proper formula"""
+                # Convert point to pure quaternion (0, x, y, z)
+                point_quat = np.array([0.0, point[0], point[1], point[2]])
+                
+                # Apply rotation: q * p * q_conjugate
+                quat_conj = quaternion_conjugate(quat)
+                temp = quaternion_multiply(quat, point_quat)
+                rotated_quat = quaternion_multiply(temp, quat_conj)
+                
+                # Extract the vector part (x, y, z)
+                return rotated_quat[1:4]
+
+            # ===== MULTI-SCALE OBSTACLE DETECTION =====
+            # Process points in multiple stages for comprehensive obstacle detection
+            
+            # Stage 1: Direct Point Analysis (for isolated/sparse obstacles)
+            processed_points = 0
+            valid_points = 0
+            all_global_points = []
+            
+            # Transform all points to global coordinates first
+            for point in points:
+                # Skip invalid points
+                if np.any(np.isnan(point)) or np.any(np.isinf(point)):
+                    continue
+                    
+                processed_points += 1
+                
+                try:
+                    # Transform point from drone's local coordinate system to global coordinates
+                    global_point = rotate_point_by_quaternion(point, drone_quat)
+                    global_point = global_point + drone_pos
+                    
+                    # Calculate distance from drone
+                    dist = np.linalg.norm(global_point - drone_pos)
+                    
+                    # Skip invalid distances and points too close (likely drone itself)
+                    if np.isnan(dist) or np.isinf(dist) or dist < 0.1:
+                        continue
+                    
+                    # Only include obstacles within scan range
+                    if dist <= self.scan_range:
+                        valid_points += 1
+                        all_global_points.append({
+                            'position': global_point,
+                            'distance': dist,
+                            'original_point': point
+                        })
+                        
+                except Exception as e:
+                    logging.debug(f"Error processing point {point}: {e}")
+                    continue
+            
+            if not all_global_points:
+                logging.debug("No valid transformed points")
+                return [], []
+            
+            # Stage 2: Distance-based Adaptive Voxelization
+            # Use different voxel sizes based on distance to preserve detail where needed
+            distance_zones = [
+                {'max_dist': 2.0, 'voxel_size': 0.05, 'min_points': 1},   # Very close: 5cm voxels, single points OK
+                {'max_dist': 5.0, 'voxel_size': 0.08, 'min_points': 1},   # Close: 8cm voxels, single points OK  
+                {'max_dist': 10.0, 'voxel_size': 0.12, 'min_points': 1},  # Medium: 12cm voxels, single points OK
+                {'max_dist': float('inf'), 'voxel_size': 0.20, 'min_points': 2}  # Far: 20cm voxels, need 2+ points
+            ]
+            
+            # Process each distance zone separately
+            zone_obstacles = []
+            
+            for zone in distance_zones:
+                zone_points = [p for p in all_global_points 
+                             if p['distance'] <= zone['max_dist'] and 
+                                (len(zone_obstacles) == 0 or p['distance'] > distance_zones[distance_zones.index(zone)-1]['max_dist'] if distance_zones.index(zone) > 0 else True)]
+                
+                if not zone_points:
+                    continue
+                
+                # Create voxel grid for this zone
+                voxel_grid = {}
+                voxel_size = zone['voxel_size']
+                min_points = zone['min_points']
+                
+                for point_data in zone_points:
+                    global_point = point_data['position']
+                    dist = point_data['distance']
+                    
+                    # Calculate voxel index for this zone
+                    voxel_idx = tuple(np.floor(global_point / voxel_size).astype(int))
+                    
+                    # Add to voxel grid
+                    if voxel_idx in voxel_grid:
+                        voxel_grid[voxel_idx]["count"] += 1
+                        voxel_grid[voxel_idx]["min_dist"] = min(voxel_grid[voxel_idx]["min_dist"], dist)
+                        voxel_grid[voxel_idx]["max_dist"] = max(voxel_grid[voxel_idx]["max_dist"], dist)
+                        
+                        # Update centroid with running average
+                        current_count = voxel_grid[voxel_idx]["count"]
+                        old_pos = np.array(voxel_grid[voxel_idx]["position"])
+                        voxel_grid[voxel_idx]["position"] = (
+                            (old_pos * (current_count - 1) + global_point) / current_count
+                        ).tolist()
+                        
+                        # Store all points for density calculation
+                        voxel_grid[voxel_idx]["points"].append(global_point.tolist())
+                    else:
+                        voxel_grid[voxel_idx] = {
+                            "count": 1,
+                            "position": global_point.tolist(),
+                            "min_dist": dist,
+                            "max_dist": dist,
+                            "points": [global_point.tolist()],
+                            "zone": zone['max_dist']
+                        }
+                
+                # Extract obstacles from this zone
+                for voxel_data in voxel_grid.values():
+                    if voxel_data["count"] >= min_points:
+                        zone_obstacles.append({
+                            'position': voxel_data["position"],
+                            'distance': voxel_data["min_dist"],
+                            'point_count': voxel_data["count"],
+                            'extent': voxel_data["max_dist"] - voxel_data["min_dist"],
+                            'zone': voxel_data["zone"]
+                        })
+            
+            # Stage 3: Critical Safety Detection (for very close obstacles)
+            # Always include obstacles within critical safety distance regardless of clustering
+            critical_distance = 1.5  # Critical safety threshold
+            critical_obstacles = []
+            
+            for point_data in all_global_points:
+                if point_data['distance'] <= critical_distance:
+                    # Check if this point is already represented in zone obstacles
+                    is_already_included = False
+                    for zone_obs in zone_obstacles:
+                        if np.linalg.norm(np.array(zone_obs['position']) - point_data['position']) < 0.1:
+                            is_already_included = True
+                            break
+                    
+                    if not is_already_included:
+                        critical_obstacles.append({
+                            'position': point_data['position'].tolist(),
+                            'distance': point_data['distance'],
+                            'point_count': 1,
+                            'extent': 0.0,
+                            'zone': 'critical'
+                        })
+            
+            # Stage 4: Outlier Detection (for sparse but important obstacles)
+            # Find isolated points that might represent important obstacles
+            outlier_obstacles = []
+            outlier_threshold = 0.5  # Distance threshold for considering points isolated
+            
+            for point_data in all_global_points:
+                # Skip if already included in zone obstacles or critical obstacles
+                is_included = False
+                for obs_list in [zone_obstacles, critical_obstacles]:
+                    for obs in obs_list:
+                        if np.linalg.norm(np.array(obs['position']) - np.array(point_data['position'])) < 0.15:
+                            is_included = True
+                            break
+                    if is_included:
+                        break
+                
+                if not is_included and point_data['distance'] <= self.scan_range * 0.7:  # Only consider outliers in closer range
+                    # Check if this point is isolated (no other points nearby)
+                    nearby_count = 0                    
+                    for other_point in all_global_points:
+                        if (other_point is not point_data and 
+                            np.linalg.norm(other_point['position'] - point_data['position']) < outlier_threshold):
+                            nearby_count += 1
+                    
+                    # If isolated (few nearby points), consider it a valid obstacle
+                    if nearby_count <= 2:  # Allow up to 2 nearby points for isolated obstacles
+                        outlier_obstacles.append({
+                            'position': point_data['position'].tolist(),
+                            'distance': point_data['distance'],
+                            'point_count': 1,
+                            'extent': 0.0,
+                            'zone': 'outlier'
+                        })
+            
+            # Stage 5: Combine all obstacle detections
+            all_obstacles = zone_obstacles + critical_obstacles + outlier_obstacles
+            
+            # Remove duplicates based on proximity
+            final_obstacles = []
+            duplicate_threshold = 0.1  # 10cm threshold for considering obstacles as duplicates
+            
+            # Sort by distance (closest first) to prioritize closer obstacles in deduplication
+            all_obstacles.sort(key=lambda x: x['distance'])
+            
+            for obs in all_obstacles:
+                is_duplicate = False
+                for existing_obs in final_obstacles:
+                    if np.linalg.norm(np.array(obs['position']) - np.array(existing_obs['position'])) < duplicate_threshold:
+                        # Found a duplicate, keep the one with more points or closer distance
+                        if (obs['point_count'] > existing_obs['point_count'] or 
+                            (obs['point_count'] == existing_obs['point_count'] and obs['distance'] < existing_obs['distance'])):
+                            # Replace existing with current (better) obstacle
+                            final_obstacles.remove(existing_obs)
+                            final_obstacles.append(obs)
+                        is_duplicate = True
+                        break
+                
+                if not is_duplicate:
+                    final_obstacles.append(obs)
+            
+            # Extract final positions and distances
+            raw_positions = []
+            raw_distances = []
+            for obs in final_obstacles:
+                raw_positions.append(obs['position'])
+                raw_distances.append(obs['distance'])
+            
+            # ===== APPLY CLUSTERING FOR DENSITY CALCULATION =====
+            # Cluster the obstacles to get better density representation
+            if self.clustering_method == "connected_components":
+                clustered_positions, clustered_distances, cluster_info = self._cluster_obstacles_for_density(
+                    raw_positions, raw_distances, cluster_radius=self.cluster_radius
+                )
+            elif self.clustering_method == "dbscan":
+                clustered_positions, clustered_distances, cluster_info = self._cluster_obstacles_dbscan_like(
+                    raw_positions, raw_distances, eps=self.dbscan_eps, min_samples=self.dbscan_min_samples
+                )
+            else:  # clustering_method == "none"
+                clustered_positions = raw_positions
+                clustered_distances = raw_distances
+                cluster_info = []
+            
+            # Use clustered results as the final output for density calculation
+            obstacle_positions = clustered_positions
+            obstacle_distances = clustered_distances
+            
+            # Update cache with clustered data
+            self.cached_positions = obstacle_positions
+            self.cached_distances = obstacle_distances
+            self.last_scan_time = current_time
+            
+            # Enhanced logging with clustering information
+            zone_counts = {}
+            for obs in final_obstacles:
+                zone = obs.get('zone', 'unknown')
+                zone_counts[zone] = zone_counts.get(zone, 0) + 1
+            
+            logging.debug(f"Multi-scale obstacle detection: {processed_points} processed, {valid_points} valid, "
+                         f"{len(raw_positions)} raw obstacles, {len(obstacle_positions)} clustered obstacles. "
+                         f"Zones: {zone_counts}")
+            
+            # Store cluster info for debugging if needed
+            self.last_cluster_info = cluster_info
+            
+            # Update visualization if enabled
+            if self.enable_visualization and self.visualizer and obstacle_positions:
+                try:
+                    self.visualizer.update_obstacles(obstacle_positions, self.voxel_size)
+                except Exception as e:
+                    logging.debug(f"Error updating visualization in fetch_density_distances: {e}")
+            
+            return obstacle_positions, obstacle_distances
+        
+        except Exception as e:
+            logging.error(f"Error in enhanced fetch_density_distances: {e}")            
+            import traceback
+            traceback.print_exc()
+            return [], []
+
+    def scan_path_for_obstacles(self, start_pos, end_pos, safety_radius=2.0):
+        """
+        Scan along a path from start to end position to check for obstacles.
+        Returns (obstacle_detected: bool, obstacle_pos: List[float], obstacle_dist: float)
+        """
+        try:
+            # Convert to numpy arrays for easier calculation
+            start = np.array(start_pos)
+            end = np.array(end_pos)
+            
+            # Calculate path vector and distance
+            path_vector = end - start
+            path_distance = np.linalg.norm(path_vector)
+            
+            if path_distance < 0.1:  # Very short path, no obstacles
+                return False, None, None
+            
+            # Normalize path direction
+            path_direction = path_vector / path_distance
+            
+            # Scan in the direction of the path
+            obstacles, distances = self.scan_in_direction(
+                path_direction, max_distance=path_distance + safety_radius, cone_angle=30.0
+            )
+            
+            if not obstacles or not distances:
+                return False, None, None
+            
+            # Filter obstacles that are within the safety radius of the path
+            path_obstacles = []
+            for i, (obstacle, distance) in enumerate(zip(obstacles, distances)):
+                if distance <= safety_radius:
+                    path_obstacles.append((obstacle, distance))
+            
+            if not path_obstacles:
+                return False, None, None
+            
+            # Find the closest obstacle
+            closest_obstacle, closest_distance = min(path_obstacles, key=lambda x: x[1])
+            
+            return True, closest_obstacle, closest_distance
+            
+        except Exception as e:
+            print(f"Error in scan_path_for_obstacles: {e}")
+            return False, None, None
 
 def generate_target_pool(start_pos: List[float], distance_range: Tuple[float, float],
                       client: airsim.MultirotorClient, num_targets: int = 100,
@@ -2825,7 +3147,7 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
                 scanner.update_visualization_target(target_pos)
                   # Save screenshot at specified intervals
                 if (config.get("save_visualization_screenshots", False) and 
-                    step % config.get("screenshot_interval", 10) == 0):
+                    step % config.get("screenshot_interval", 1) == 0):
                     screenshot_filename = f"episode_{episode_id:03d}_step_{step:03d}.png"
                     if experiment_dir:
                         # Create screenshots subdirectory in experiment folder
@@ -2834,14 +3156,21 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
                         screenshot_path = os.path.join(screenshots_dir, screenshot_filename)
                     else:
                         screenshot_path = screenshot_filename
+                    
+                    logging.info(f"Attempting screenshot at step {step}: {screenshot_filename}")
                     max_retries = config.get("screenshot_max_retries", 3)
                     success = scanner.save_visualization_screenshot(screenshot_path, max_retries=max_retries)
                     if success:
-                        logging.debug(f"Saved visualization screenshot: {screenshot_path}")
+                        logging.info(f"Successfully saved visualization screenshot: {screenshot_path}")
                     else:
-                        logging.debug(f"Failed to save screenshot after {max_retries} attempts: {screenshot_path}")
+                        logging.error(f"FAILED to save screenshot after {max_retries} attempts: {screenshot_path}")
             except Exception as e:
-                logging.debug(f"Error updating visualization at step {step}: {e}")
+                logging.error(f"Error updating visualization at step {step}: {e}")
+                logging.error(f"Visualization error details: {traceback.format_exc()}")
+                # Check if visualization is still running
+                if hasattr(scanner, 'visualizer') and scanner.visualizer:
+                    viz_stats = scanner.get_visualization_stats()
+                    logging.info(f"Visualization stats after error: {viz_stats}")
         
         # Calculate distance to target
         distance_to_target = np.linalg.norm(np.array(target_pos) - np.array(drone_pos))
@@ -3291,7 +3620,8 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
         adaptive_density_radius = DENSITY_RADIUS
         if high_density_area:
             # Reduce density radius in high-density areas for more precise planning
-            adaptive_density_radius = max(2.0, DENSITY_RADIUS * 0.6)
+            # But ensure it doesn't go below MAX_ACTION_LENGTH to maintain coverage of reachable space
+            adaptive_density_radius = max(MAX_ACTION_LENGTH, DENSITY_RADIUS * 0.8)  # Changed from 0.6 to 0.8 and min from 2.0 to MAX_ACTION_LENGTH
             logging.debug(f"Episode {episode_id}: High obstacle density area - reduced density radius to {adaptive_density_radius:.1f}m")
         
         # Log obstacle detection info for debugging
@@ -3313,7 +3643,7 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
                 "waypoint_count": WAYPOINT_SAMPLE_COUNT,
                 "safety_margin": adaptive_safety_margin,
                 "policy_length": POLICY_LENGTH,
-                "density_radius": adaptive_density_radius,
+                "density_radius": DENSITY_RADIUS,  # Use consistent, objective density radius
                 "near_goal": near_goal,  # Add flag to inform planner we're near the goal
                 "distance_to_target": distance_to_target,  # Explicitly include distance to target
                 "initial_distance": initial_distance_to_target,  # Provide initial distance for percentage calculations
@@ -4108,9 +4438,18 @@ def run_experiment(config: Dict[str, Any]) -> None:
         
         # Initialize scanner with visualization if enabled
         enable_viz = full_config.get("enable_voxel_visualization", False)
+        # Check if all visualizations are disabled (master switch)
+        if full_config.get("disable_all_visualizations", False):
+            enable_viz = False
+            logging.info("All visualizations disabled by disable_all_visualizations setting")
+        
         voxel_size = full_config.get("voxel_size", 0.5)
         viz_range = full_config.get("visualization_range", 25.0)
         enable_screenshots = full_config.get("enable_screenshot_functionality", True)
+        
+        # Also disable screenshots if all visualizations are disabled
+        if full_config.get("disable_all_visualizations", False):
+            enable_screenshots = False
         
         scanner = Scanner(client, scan_range=viz_range, 
                          enable_visualization=enable_viz, voxel_size=voxel_size,
