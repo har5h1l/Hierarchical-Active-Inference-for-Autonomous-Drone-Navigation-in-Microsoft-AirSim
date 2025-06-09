@@ -11,6 +11,7 @@ import time
 import threading
 import logging
 import traceback
+import os
 from typing import List, Tuple, Optional, Dict, Any
 from collections import deque
 
@@ -52,7 +53,7 @@ class VoxelGridVisualizer:
         self.voxel_grid = None
         self.last_update_time = 0
         
-        # Visualization objects
+        # Visualization objects - track geometries for camera calculations
         self.drone_sphere = None
         self.target_sphere = None
         self.path_line = None
@@ -60,6 +61,7 @@ class VoxelGridVisualizer:
         self.ground_grid = None
         self.obstacles_pcd = None
         self.voxel_grid_vis = None
+        self.orientation_frame = None  # For camera reset
         
         # Color scheme
         self.colors = {
@@ -108,14 +110,20 @@ class VoxelGridVisualizer:
     def _run_visualization(self, window_name):
         """Main visualization loop running in separate thread"""
         try:
-            # Initialize Open3D visualizer
-            self.vis = o3d.visualization.Visualizer()
-            self.vis.create_window(window_name=window_name, width=1200, height=800)
+            # Initialize Open3D visualizer with key callbacks
+            self.vis = o3d.visualization.VisualizerWithKeyCallback()
+            self.vis.create_window(window_name=window_name, width=1200, height=800, visible=True)
+            
+            # Initialize screenshot capability first
+            self._initialize_screenshot_capability()
+            
+            # Register key callbacks
+            self._register_key_callbacks()
             
             # Set up the initial scene
             self._setup_initial_scene()
             
-            # Configure camera and rendering options
+            # Configure camera and rendering options with optimal wide-view settings
             self._configure_visualization()
             
             # Main update loop
@@ -147,23 +155,27 @@ class VoxelGridVisualizer:
     def _setup_initial_scene(self):
         """Set up the initial 3D scene with ground grid and coordinate axes"""
         try:
-            # Add coordinate frame at origin
+            # Add coordinate frame at origin with larger size for visibility
             self.coordinate_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(
-                size=2.0, origin=[0, 0, 0]
+                size=5.0, origin=[0, 0, 0]  # Increased size from 2.0 to 5.0
             )
             self.vis.add_geometry(self.coordinate_frame)
             
             # Create ground grid
             self._create_ground_grid()
             
-            # Initialize drone representation
-            self.drone_sphere = o3d.geometry.TriangleMesh.create_sphere(radius=0.3)
+            # Initialize drone representation - make it larger and more visible
+            self.drone_sphere = o3d.geometry.TriangleMesh.create_sphere(radius=1.0)  # Increased from 0.3
             self.drone_sphere.paint_uniform_color(self.colors['drone'])
+            # Position at origin initially
+            self.drone_sphere.translate([0, 0, 0])
             self.vis.add_geometry(self.drone_sphere)
             
-            # Initialize target representation
-            self.target_sphere = o3d.geometry.TriangleMesh.create_sphere(radius=0.4)
+            # Initialize target representation - make it larger and more visible
+            self.target_sphere = o3d.geometry.TriangleMesh.create_sphere(radius=1.2)  # Increased from 0.4
             self.target_sphere.paint_uniform_color(self.colors['target'])
+            # Position at a visible default location
+            self.target_sphere.translate([10, 10, -2])
             self.vis.add_geometry(self.target_sphere)
             
             # Initialize path line
@@ -179,16 +191,39 @@ class VoxelGridVisualizer:
             self.voxel_grid_vis = o3d.geometry.VoxelGrid()
             self.vis.add_geometry(self.voxel_grid_vis)
             
-            logging.debug("Initial 3D scene setup complete")
+            # Add some test markers to show the visualization is working
+            self._add_debug_markers()
+            
+            logging.info("Initial 3D scene setup complete with enhanced visibility")
             
         except Exception as e:
             logging.error(f"Error setting up initial scene: {e}")
             traceback.print_exc()
     
+    def _add_debug_markers(self):
+        """Add debug markers to show the scene is working"""
+        try:
+            # Add four corner markers to show scene bounds
+            marker_positions = [
+                [-10, -10, -1], [10, -10, -1], 
+                [-10, 10, -1], [10, 10, -1]
+            ]
+            
+            for i, pos in enumerate(marker_positions):
+                marker = o3d.geometry.TriangleMesh.create_sphere(radius=0.5)
+                marker.paint_uniform_color([0.8, 0.8, 0.0])  # Yellow markers
+                marker.translate(pos)
+                self.vis.add_geometry(marker)
+                
+            logging.debug("Added debug markers at scene corners")
+            
+        except Exception as e:
+            logging.debug(f"Error adding debug markers: {e}")
+    
     def _create_ground_grid(self):
         """Create a ground reference grid"""
         try:
-            grid_range = self.visualization_range
+            grid_range = min(self.visualization_range, 25.0)  # Cap at 25m for visibility
             grid_spacing = 2.0  # meters
             
             # Create grid lines
@@ -213,15 +248,17 @@ class VoxelGridVisualizer:
             self.ground_grid = o3d.geometry.LineSet()
             self.ground_grid.points = o3d.utility.Vector3dVector(points)
             self.ground_grid.lines = o3d.utility.Vector2iVector(lines)
-            self.ground_grid.paint_uniform_color(self.colors['ground'])
+            self.ground_grid.paint_uniform_color([0.4, 0.4, 0.4])  # Lighter gray for better visibility
             
             self.vis.add_geometry(self.ground_grid)
+            
+            logging.info(f"Created ground grid: {grid_range}m range, {grid_spacing}m spacing, {len(lines)} lines")
             
         except Exception as e:
             logging.error(f"Error creating ground grid: {e}")
     
     def _configure_visualization(self):
-        """Configure camera and rendering options"""
+        """Configure camera and rendering options with optimal wide-view settings"""
         try:
             # Get render option and view control
             render_option = self.vis.get_render_option()
@@ -238,24 +275,45 @@ class VoxelGridVisualizer:
             if hasattr(render_option, 'mesh_shade_option'):
                 render_option.mesh_shade_option = o3d.visualization.MeshShadeOption.Default
             
-            # Set initial camera position (bird's eye view) - PROPER DISTANCE VERSION
-            view_control.set_zoom(0.5)  # Use reasonable zoom value
-            view_control.set_front([0.2, 0.2, -1.0])  # Slightly angled view
-            view_control.set_lookat([0, 0, -10])       # Look at higher altitude for better overview
-            view_control.set_up([0, 1, 0])            # Y is up
+            # CONSERVATIVE CAMERA CONFIGURATION - Start with default view
+            # Use safe, conservative camera settings that ensure visibility
             
-            # Now use camera_local_translate to move camera further back for wide view
-            # Negative forward value moves camera backwards (further away)
-            view_control.camera_local_translate(forward=-50.0, right=0.0, up=0.0)
+            # Set safe default camera position - moderate distance, slight angle
+            view_control.set_front([0.3, -0.2, -0.9])         # Gentle angled view (not straight down)
+            view_control.set_lookat([0.0, 0.0, -2.0])         # Look at origin/ground level
+            view_control.set_up([0.0, 1.0, 0.0])              # Y-up for proper orientation
+            view_control.set_zoom(0.6)                        # Conservative zoom (not too wide)
             
-            # Force initial render
+            # Try gentle camera positioning - if this fails, fallback to defaults
+            try:
+                view_control.camera_local_translate(
+                    forward=-15.0,    # Moderate distance back (15 meters)
+                    right=0.0,        # No lateral movement  
+                    up=8.0           # Moderate elevation for perspective
+                )
+                logging.info("Applied conservative camera configuration: moderate angled view at 15m distance, 8m height")
+            except Exception as e:
+                logging.warning(f"Camera translate failed, using default positioning: {e}")
+                # Fallback to just zoom adjustment if translate fails
+                view_control.set_zoom(0.8)  # Even more conservative zoom
+                view_control.set_front([0.0, 0.0, -1.0])  # Simple forward view
+                view_control.set_lookat([0.0, 0.0, 0.0])  # Look at origin
+            
+            # Disable camera following initially - let user manually adjust if needed
+            self.camera_follow_enabled = False
+            
+            # Force initial render with new camera settings
             self.vis.poll_events()
             self.vis.update_renderer()
             
-            logging.debug("Visualization configuration complete")
+            # Wait a moment for camera to stabilize
+            time.sleep(0.1)
+            
+            logging.info("Visualization configuration complete - conservative default view ready")
             
         except Exception as e:
             logging.error(f"Error configuring visualization: {e}")
+            traceback.print_exc()
     
     def update_drone_position(self, position: List[float]):
         """Update the drone's current position"""
@@ -263,11 +321,13 @@ class VoxelGridVisualizer:
             self.current_drone_pos = np.array(position)
             self.drone_path.append(position.copy())
             self.last_update_time = time.time()
+            logging.debug(f"Updated drone position to: {position}")
     
     def update_target_position(self, position: List[float]):
         """Update the target position"""
         with self.update_lock:
             self.target_pos = np.array(position)
+            logging.debug(f"Updated target position to: {position}")
     
     def update_obstacles(self, obstacle_positions: List[List[float]], 
                         voxel_size: Optional[float] = None):
@@ -277,6 +337,7 @@ class VoxelGridVisualizer:
             if voxel_size:
                 self.voxel_size = voxel_size
             self._create_voxel_grid()
+            logging.info(f"Updated obstacles: {len(obstacle_positions)} obstacles, voxel_size={self.voxel_size}")
     
     def _create_voxel_grid(self):
         """Create voxel grid from obstacle positions"""
@@ -462,20 +523,77 @@ class VoxelGridVisualizer:
         except Exception as e:
             logging.debug(f"Error updating camera view: {e}")
     
-    def save_screenshot(self, filename: str) -> bool:
-        """Save a screenshot of the current visualization"""
+    def _initialize_screenshot_capability(self):
+        """Initialize and test screenshot capability"""
         try:
-            if self.vis and self.enable_screenshots:
-                # Ensure the window is rendered before capturing
+            if not self.enable_screenshots:
+                logging.info("Screenshots disabled by configuration")
+                return
+                
+            # Force initial render and allow window to stabilize
+            time.sleep(0.2)
+            self.vis.poll_events()
+            self.vis.update_renderer()
+            time.sleep(0.1)
+            
+            # Test screenshot capability
+            test_filename = "test_screenshot_capability.png"
+            try:
+                self.vis.capture_screen_image(test_filename)
+                
+                # Verify the file was created and has reasonable size
+                if os.path.exists(test_filename):
+                    file_size = os.path.getsize(test_filename)
+                    if file_size > 1024:  # At least 1KB
+                        logging.info(f"Screenshot capability confirmed - test file: {file_size} bytes")
+                        os.remove(test_filename)  # Clean up test file
+                        return
+                    else:
+                        logging.warning(f"Test screenshot file too small: {file_size} bytes")
+                else:
+                    logging.warning("Test screenshot file was not created")
+                    
+            except Exception as e:
+                logging.warning(f"Screenshot capability test failed: {e}")
+                
+        except Exception as e:
+            logging.error(f"Error initializing screenshot capability: {e}")
+    
+    def save_screenshot(self, filename: str) -> bool:
+        """Save a screenshot of the current visualization with enhanced error handling"""
+        try:
+            if not self.vis or not self.enable_screenshots:
+                logging.debug("Screenshot not available - visualizer not initialized or screenshots disabled")
+                return False
+                
+            # Enhanced rendering preparation
+            for _ in range(3):  # Multiple render cycles for stability
                 self.vis.poll_events()
                 self.vis.update_renderer()
-                time.sleep(0.1)  # Small delay to ensure rendering is complete
+                time.sleep(0.05)  # Allow time for rendering to complete
+            
+            # Additional stabilization
+            time.sleep(0.1)
+            
+            # Capture screenshot
+            self.vis.capture_screen_image(filename)
+            
+            # Verify file was created and has reasonable size
+            if os.path.exists(filename):
+                file_size = os.path.getsize(filename)
+                if file_size > 1024:  # At least 1KB for a valid image
+                    logging.info(f"Saved visualization screenshot: {filename} ({file_size} bytes)")
+                    return True
+                else:
+                    logging.warning(f"Screenshot file created but too small: {filename} ({file_size} bytes)")
+                    return False
+            else:
+                logging.error(f"Screenshot file was not created: {filename}")
+                return False
                 
-                self.vis.capture_screen_image(filename)
-                logging.info(f"Saved visualization screenshot to {filename}")
-                return True
         except Exception as e:
             logging.error(f"Error saving screenshot: {e}")
+            traceback.print_exc()
             return False
     
     def toggle_camera_follow(self):
@@ -496,6 +614,175 @@ class VoxelGridVisualizer:
             'target_position': self.target_pos.tolist(),
             'last_update': self.last_update_time
         }
+    
+    def reset_camera_view(self):
+        """
+        Reset camera to optimal bird's eye view showing all scene geometry.
+        Centers the camera on all geometries with proper zoom and orientation.
+        """
+        try:
+            if not self.vis:
+                logging.warning("Visualizer not initialized - cannot reset camera")
+                return
+            
+            view_control = self.vis.get_view_control()
+            
+            # Collect all meaningful points in the scene for bounding box calculation
+            all_points = []
+            
+            # Add drone position
+            if hasattr(self, 'current_drone_pos') and self.current_drone_pos is not None:
+                all_points.append(self.current_drone_pos)
+            
+            # Add target position
+            if hasattr(self, 'target_pos') and self.target_pos is not None:
+                all_points.append(self.target_pos)
+            
+            # Add path points
+            if hasattr(self, 'drone_path') and len(self.drone_path) > 0:
+                all_points.extend(list(self.drone_path))
+            
+            # Add obstacle positions
+            if hasattr(self, 'obstacle_positions') and self.obstacle_positions:
+                all_points.extend(self.obstacle_positions)
+            
+            # If we have no points, use default scene
+            if not all_points:
+                all_points = [
+                    [-20, -20, -10], [20, 20, 10],  # Default bounding box
+                    [0, 0, 0]  # Origin
+                ]
+            
+            # Convert to numpy array and compute scene bounds
+            points_array = np.array(all_points)
+            scene_min = np.min(points_array, axis=0)
+            scene_max = np.max(points_array, axis=0)
+            scene_center = (scene_min + scene_max) / 2.0
+            scene_extent = scene_max - scene_min
+            
+            # Ensure minimum scene size for very small scenes
+            min_extent = 10.0
+            for i in range(3):
+                if scene_extent[i] < min_extent:
+                    padding = (min_extent - scene_extent[i]) / 2.0
+                    scene_min[i] -= padding
+                    scene_max[i] += padding
+                    scene_extent[i] = min_extent
+            
+            # Recalculate center after padding
+            scene_center = (scene_min + scene_max) / 2.0
+            diagonal_length = np.linalg.norm(scene_extent)
+            
+            # Set camera to bird's eye view
+            view_control.set_lookat(scene_center.tolist())
+            view_control.set_up([0, 1, 0])  # Y-up for proper orientation
+            
+            # Set camera orientation - diagonal top-down view
+            # Front vector points from camera to lookat - negative means camera looks down
+            view_control.set_front([0.3, -0.5, -0.8])  # Slightly angled bird's eye view
+            
+            # Set appropriate zoom - larger values = wider view
+            # Start with a conservative zoom that shows everything
+            view_control.set_zoom(0.3)
+            
+            # Move camera back to ensure everything is visible
+            # Use diagonal length to determine appropriate distance
+            camera_distance = diagonal_length * 1.8  # 1.8x diagonal for safe margin
+            
+            # Move camera backward (negative forward value)
+            try:
+                view_control.camera_local_translate(
+                    forward=-camera_distance, 
+                    right=0.0, 
+                    up=camera_distance * 0.3  # Slightly elevated
+                )
+            except Exception as e:
+                logging.debug(f"Camera translate failed, using alternative method: {e}")
+                # Alternative: directly set zoom to achieve wide view
+                view_control.set_zoom(0.1)  # Very wide zoom as fallback
+            
+            # Add/update orientation coordinate frame at scene center
+            self._add_orientation_frame(scene_center)
+            
+            # Force render update
+            self.vis.poll_events()
+            self.vis.update_renderer()
+            
+            logging.info(f"Camera reset - Center: {scene_center}, "
+                        f"Extent: {scene_extent}, "
+                        f"Diagonal: {diagonal_length:.1f}m, "
+                        f"Camera distance: {camera_distance:.1f}m")
+            
+        except Exception as e:
+            logging.error(f"Error resetting camera view: {e}")
+            traceback.print_exc()
+    
+    def _add_orientation_frame(self, position):
+        """Add or update coordinate frame at specified position for orientation reference"""
+        try:
+            # Remove existing orientation frame if present
+            if self.orientation_frame:
+                self.vis.remove_geometry(self.orientation_frame, reset_bounding_box=False)
+            
+            # Create new coordinate frame at scene center
+            frame_size = max(5.0, np.linalg.norm(self.current_drone_pos - position) * 0.1)
+            self.orientation_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(
+                size=frame_size, 
+                origin=position.tolist()
+            )
+            
+            # Add to scene
+            self.vis.add_geometry(self.orientation_frame, reset_bounding_box=False)
+            
+        except Exception as e:
+            logging.debug(f"Error adding orientation frame: {e}")
+    
+    def _register_key_callbacks(self):
+        """Register keyboard shortcuts for visualization control"""
+        try:
+            # R key - Reset camera view
+            self.vis.register_key_callback(ord("R"), 
+                lambda vis: self.reset_camera_view())
+            
+            # C key - Toggle camera following
+            self.vis.register_key_callback(ord("C"), 
+                lambda vis: self.toggle_camera_follow())
+            
+            # S key - Save screenshot  
+            self.vis.register_key_callback(ord("S"), 
+                lambda vis: self._save_screenshot_callback())
+            
+            # H key - Show help
+            self.vis.register_key_callback(ord("H"), 
+                lambda vis: self._show_help())
+            
+            logging.info("Registered key callbacks: R(reset camera), C(toggle follow), S(screenshot), H(help)")
+            
+        except Exception as e:
+            logging.error(f"Error registering key callbacks: {e}")
+    
+    def _save_screenshot_callback(self):
+        """Callback for screenshot key press"""
+        timestamp = int(time.time())
+        filename = f"visualization_screenshot_{timestamp}.png"
+        success = self.save_screenshot(filename)
+        if success:
+            logging.info(f"Screenshot saved: {filename}")
+        else:
+            logging.warning("Screenshot failed")
+    
+    def _show_help(self):
+        """Display help information about key controls"""
+        help_text = """
+        Visualization Controls:
+        R - Reset camera to bird's eye view
+        C - Toggle camera following drone
+        S - Save screenshot
+        H - Show this help
+        Mouse - Rotate, zoom, pan view
+        """
+        print(help_text)
+        logging.info("Help displayed")
 
 
 def create_voxel_visualizer(voxel_size=0.5, visualization_range=25.0, auto_start=True, enable_screenshots=True):
@@ -504,8 +791,8 @@ def create_voxel_visualizer(voxel_size=0.5, visualization_range=25.0, auto_start
     
     Args:
         voxel_size: Size of voxels in meters
-        visualization_range: Range around drone to visualize
-        auto_start: Whether to automatically start the visualization
+        visualization_range: Range to visualize around drone
+        auto_start: Whether to automatically start visualization
         enable_screenshots: Whether to enable screenshot functionality
     
     Returns:
@@ -521,6 +808,204 @@ def create_voxel_visualizer(voxel_size=0.5, visualization_range=25.0, auto_start
         visualizer.start_visualization()
     
     return visualizer
+
+
+def reset_camera_view(vis: o3d.visualization.Visualizer, geometries=None, 
+                     camera_height_factor=1.5, zoom_factor=0.3, add_coord_frame=True):
+    """
+    Reset camera to optimal bird's eye view showing all scene geometry.
+    
+    This function works with any Open3D visualizer and automatically computes
+    the best camera position to show all geometries in the scene.
+    
+    Args:
+        vis: Open3D Visualizer instance
+        geometries: List of geometries to consider for bounding box calculation.
+                   If None, attempts to estimate from scene or uses default bounds.
+        camera_height_factor: Multiplier for camera height above scene (default: 1.5)
+        zoom_factor: Zoom level (smaller = more zoomed in, larger = more zoomed out)
+        add_coord_frame: Whether to add coordinate frame at scene center
+    
+    Returns:
+        dict: Information about the camera setup (center, extent, distance)
+    """
+    try:
+        view_control = vis.get_view_control()
+        
+        # Collect points for bounding box calculation
+        all_points = []
+        
+        if geometries:
+            # Use provided geometries
+            for geom in geometries:
+                if hasattr(geom, 'get_axis_aligned_bounding_box'):
+                    bbox = geom.get_axis_aligned_bounding_box()
+                    # Add bbox corners to points
+                    min_bound = np.asarray(bbox.min_bound)
+                    max_bound = np.asarray(bbox.max_bound)
+                    all_points.extend([min_bound, max_bound])
+                elif hasattr(geom, 'points'):
+                    # Point cloud
+                    points = np.asarray(geom.points)
+                    if len(points) > 0:
+                        all_points.extend(points)
+        
+        # If no points collected, use reasonable defaults
+        if not all_points:
+            all_points = [
+                [-25, -25, -15], [25, 25, 15],  # Default scene bounds
+                [0, 0, 0]  # Origin
+            ]
+            logging.info("Using default scene bounds for camera reset")
+        
+        # Compute scene bounding box
+        points_array = np.array(all_points)
+        scene_min = np.min(points_array, axis=0)
+        scene_max = np.max(points_array, axis=0)
+        scene_center = (scene_min + scene_max) / 2.0
+        scene_extent = scene_max - scene_min
+        
+        # Ensure minimum scene size
+        min_extent = 10.0
+        for i in range(3):
+            if scene_extent[i] < min_extent:
+                padding = (min_extent - scene_extent[i]) / 2.0
+                scene_min[i] -= padding
+                scene_max[i] += padding
+                scene_extent[i] = min_extent
+        
+        # Recalculate after padding
+        scene_center = (scene_min + scene_max) / 2.0
+        diagonal_length = np.linalg.norm(scene_extent)
+        
+        # Set camera position and orientation
+        view_control.set_lookat(scene_center.tolist())
+        view_control.set_up([0, 1, 0])  # Y-up convention
+        
+        # Bird's eye view with slight angle for depth perception
+        view_control.set_front([0.2, -0.4, -0.9])  # Angled downward view
+        
+        # Set zoom
+        view_control.set_zoom(zoom_factor)
+        
+        # Calculate camera distance and position
+        camera_distance = diagonal_length * camera_height_factor
+        camera_height = camera_distance * 0.4  # Elevated view
+        
+        # Move camera to optimal position
+        try:
+            view_control.camera_local_translate(
+                forward=-camera_distance,
+                right=0.0,
+                up=camera_height
+            )
+        except Exception as e:
+            logging.debug(f"Camera translate failed: {e}")
+            # Fallback: adjust zoom instead
+            view_control.set_zoom(zoom_factor * 0.5)
+        
+        # Add coordinate frame for orientation
+        if add_coord_frame:
+            coord_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(
+                size=max(3.0, diagonal_length * 0.1),
+                origin=scene_center.tolist()
+            )
+            vis.add_geometry(coord_frame, reset_bounding_box=False)
+        
+        # Force render update
+        vis.poll_events()
+        vis.update_renderer()
+        
+        camera_info = {
+            'center': scene_center.tolist(),
+            'extent': scene_extent.tolist(),
+            'diagonal_length': diagonal_length,
+            'camera_distance': camera_distance
+        }
+        
+        logging.info(f"Camera reset completed - Center: {scene_center}, "
+                    f"Extent: {scene_extent}, Diagonal: {diagonal_length:.1f}m")
+        
+        return camera_info
+        
+    except Exception as e:
+        logging.error(f"Error in reset_camera_view: {e}")
+        traceback.print_exc()
+        return None
+
+
+def setup_visualization_key_callbacks(vis):
+    """
+    Set up standard key callbacks for visualization control.
+    
+    Args:
+        vis: VisualizerWithKeyCallback instance
+    
+    Key bindings:
+        R - Reset camera view
+        H - Show help
+        ESC - Exit visualization
+    """
+    try:
+        if not isinstance(vis, o3d.visualization.VisualizerWithKeyCallback):
+            logging.warning("Visualizer must be VisualizerWithKeyCallback for key callbacks")
+            return
+        
+        # R key - Reset camera
+        vis.register_key_callback(ord("R"), 
+            lambda vis: reset_camera_view(vis))
+        
+        # H key - Show help
+        def show_help(vis):
+            help_text = """
+            Visualization Controls:
+            R - Reset camera to bird's eye view
+            H - Show this help
+            ESC - Exit visualization
+            Mouse - Rotate, zoom, pan view
+            """
+            print(help_text)
+            return False
+        
+        vis.register_key_callback(ord("H"), show_help)
+        
+        # ESC key - Close visualization
+        vis.register_key_callback(256, lambda vis: vis.close())  # ESC key code
+        
+        logging.info("Key callbacks registered: R(reset), H(help), ESC(exit)")
+        
+    except Exception as e:
+        logging.error(f"Error setting up key callbacks: {e}")
+
+
+def create_visualization_with_auto_camera(window_name="Open3D Visualization", 
+                                        width=1200, height=800):
+    """
+    Create a visualization window with automatic camera reset functionality.
+    
+    Returns:
+        Configured VisualizerWithKeyCallback instance
+    """
+    try:
+        vis = o3d.visualization.VisualizerWithKeyCallback()
+        vis.create_window(window_name=window_name, width=width, height=height)
+        
+        # Set up key callbacks
+        setup_visualization_key_callbacks(vis)
+        
+        # Configure render options
+        render_option = vis.get_render_option()
+        render_option.background_color = np.asarray([0.1, 0.1, 0.15])
+        render_option.point_size = 3.0
+        render_option.line_width = 2.0
+        render_option.show_coordinate_frame = True
+        
+        logging.info(f"Created visualization window: {window_name}")
+        return vis
+        
+    except Exception as e:
+        logging.error(f"Error creating visualization: {e}")
+        return None
 
 
 if __name__ == "__main__":

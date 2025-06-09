@@ -119,9 +119,9 @@ end
 
 """
     calculate_suitability(obstacle_distance::Float64, obstacle_density::Float64; 
-                         obstacle_weight::Float64=0.7, density_weight::Float64=0.3,
-                         cutoff_distance::Float64=2.5, steepness_distance::Float64=3.0,
-                         cutoff_density::Float64=0.2, steepness_density::Float64=10.0)::Float64
+                         obstacle_weight::Float64=0.8, density_weight::Float64=0.4,  # Increased weights for safety
+                         cutoff_distance::Float64=1.5, steepness_distance::Float64=2.0,  # Adjusted for better safe distance handling
+                         cutoff_density::Float64=0.15, steepness_density::Float64=12.0)::Float64  # More sensitive to density
 
 Calculate environmental suitability based on obstacle distance and density.
 Higher values (closer to 1.0) indicate safer navigation conditions.
@@ -129,19 +129,19 @@ Higher values (closer to 1.0) indicate safer navigation conditions.
 Parameters:
 - obstacle_distance: Distance to nearest obstacle (meters)
 - obstacle_density: Density of obstacles in local region (0-1)
-- obstacle_weight: Weight for obstacle distance factor (default: 0.7)
-- density_weight: Weight for density factor (default: 0.3)
-- cutoff_distance: Distance below which suitability rapidly decreases (default: 2.5)
-- steepness_distance: Controls how quickly suitability transitions (default: 3.0)
-- cutoff_density: Density above which suitability rapidly decreases (default: 0.2)
-- steepness_density: Controls how quickly density suitability transitions (default: 10.0)
+- obstacle_weight: Weight for obstacle distance factor (default: 0.8)
+- density_weight: Weight for density factor (default: 0.4)
+- cutoff_distance: Distance below which suitability rapidly decreases (default: 1.5)
+- steepness_distance: Controls how quickly suitability transitions (default: 2.0)
+- cutoff_density: Density above which suitability rapidly decreases (default: 0.15)
+- steepness_density: Controls how quickly density suitability transitions (default: 12.0)
 
 Returns:
 - Suitability score (0-1)
 """
 function calculate_suitability(obstacle_distance::Float64, obstacle_density::Float64; 
                              obstacle_weight::Float64=0.8, density_weight::Float64=0.4,  # Increased weights for safety
-                             cutoff_distance::Float64=3.0, steepness_distance::Float64=4.0,  # Increased cutoff distance and steepness
+                             cutoff_distance::Float64=1.5, steepness_distance::Float64=2.0,  # Adjusted for better safe distance handling
                              cutoff_density::Float64=0.15, steepness_density::Float64=12.0)::Float64  # More sensitive to density
     # Safety factor using sigmoid-like function for more predictable transition
     # 1 / (1 + e^(-steepness * (distance - cutoff)))
@@ -157,14 +157,27 @@ function calculate_suitability(obstacle_distance::Float64, obstacle_density::Flo
     # As density increases, approaches 0.0
     density_factor = 1.0 / (1.0 + exp(steepness_density * (obstacle_density - cutoff_density)))
     
-    # Hard cutoff for very close obstacles - safety override
-    if obstacle_distance < 1.2  # Absolute minimum safe distance
-        safety_factor *= (obstacle_distance / 1.2)^2  # Square relation for sharper dropoff
+    # Gradual scaling for close obstacles instead of hard cutoff - smoother penalty
+    if obstacle_distance < 1.2  # Apply gradual scaling for close obstacles
+        safety_factor *= exp(-1.0 / obstacle_distance)  # Exponential scaling based on distance
     end
     
     # Hard cutoff for very high density areas
     if obstacle_density > 0.4  # Very cluttered environment
         density_factor *= max(0.2, 1.0 - (obstacle_density - 0.4) * 2.0)  # Linear reduction
+    end
+    
+    # Log key metrics for debugging
+    @info "Min obstacle distance: " obstacle_distance
+    @info "Safety factor: " safety_factor
+    
+    # Validate sigmoid shape periodically (every 10th call to avoid spam)
+    if rand() < 0.1  # 10% chance to log sigmoid validation
+        @info "Sigmoid validation for distances 0.5-5.0m:"
+        for test_dist in [0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0]
+            test_safety = 1.0 / (1.0 + exp(-steepness_distance * (test_dist - cutoff_distance)))
+            @info "Distance: $(test_dist)m -> Safety factor: $(round(test_safety, digits=3))"
+        end
     end
     
     # Combine factors with relative weights - both should be high for good suitability

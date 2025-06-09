@@ -906,10 +906,18 @@ class Scanner:
         if self.enable_visualization:
             try:
                 from voxel_visualization import VoxelGridVisualizer
-                self.visualizer = VoxelGridVisualizer(voxel_size=self.voxel_size, visualization_range=self.scan_range)
-                # Start the visualization
-                self.visualizer.start_visualization("Drone Navigation - Obstacle Detection")
-                logging.info(f"Initialized voxel visualization with voxel_size={self.voxel_size}m, range={self.scan_range}m")
+                # Pass enhanced parameters for optimal visualization and screenshots
+                self.visualizer = VoxelGridVisualizer(
+                    voxel_size=self.voxel_size, 
+                    visualization_range=self.scan_range,
+                    max_path_points=200,  # Keep good path history
+                    update_rate=8.0,      # Smooth updates
+                    enable_screenshots=self.enable_screenshots  # Pass through screenshot setting
+                )
+                # Start the visualization with enhanced window title
+                self.visualizer.start_visualization("Drone Navigation - Real-time Obstacle Detection & Planning")
+                logging.info(f"Initialized enhanced voxel visualization with voxel_size={self.voxel_size}m, "
+                           f"range={self.scan_range}m, screenshots={'enabled' if self.enable_screenshots else 'disabled'}")
             except ImportError as e:
                 logging.warning(f"Visualization not available: {e} - continuing without it")
                 self.enable_visualization = False
