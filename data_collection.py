@@ -1,14 +1,3 @@
-"""
-ACTIVE INFERENCE DRONE NAVIGATION DATA COLLECTION
-
-⚠️  IMPORTANT NOTE ABOUT VFE VALUES:
-The "VFE" values collected in this system are DERIVED from EFE pragmatic components, 
-NOT true Variational Free Energy calculations. The system uses Gaussian kernel 
-belief updating. VFE = -EFE_pragmatic_component (derived metric for analysis purposes only).
-
-This file collects experimental data from the Active Inference drone navigation system.
-"""
-
 import airsim
 import numpy as np
 import time
