@@ -216,10 +216,10 @@ DEFAULT_CONFIG = {
     "disable_all_visualizations": False,  # Master switch to disable all visualizations for headless operation
     "voxel_size": 0.5,  # Size of voxels in meters
     "visualization_range": 100,  # Range around drone to visualize in meters
-    "save_visualization_screenshots": True,  # Save screenshots during episodes
+    "save_visualization_screenshots": False,  # Save screenshots during episodes
     "screenshot_interval": 1,  # Save screenshot every N steps (changed from 10 to 1 for every step)
     "screenshot_max_retries": 3,  # Maximum retries for screenshot capture (Windows OpenGL fix)
-    "enable_screenshot_functionality": True  # Enable/disable screenshot functionality (Windows OpenGL context fix)
+    "enable_screenshot_functionality": False  # Enable/disable screenshot functionality (Windows OpenGL context fix)
 }
 
 # Add the airsim directory to the Python path
@@ -2827,18 +2827,25 @@ def move_to_waypoint(client, current_pos, waypoint, velocity=2, distance_to_targ
                 time.sleep(timeout_per_check)
             except:
                 # Error checking task status, continue with obstacle checks
-                pass
-                  # STEP 2: Now that movement is complete, rotate to face the movement direction
+                pass                  # STEP 2: Now that movement is complete, rotate to face the movement direction
         # This ensures the drone's sensors are properly oriented for future observations
-        if movement_complete and not obstacle_detected:
-            logging.debug(f"Movement complete, rotating to face movement direction: {yaw_degrees:.1f}°")
-            try:                # Rotate to the previously calculated yaw that points in the movement direction
-                rotate_task = client.rotateToYawAsync(yaw_degrees)
-                rotate_task.join()
-                logging.debug(f"Yaw rotation complete, drone sensors now facing forward")
-            except Exception as e:
-                logging.warning(f"Failed to rotate after movement: {e}")
-                # Continue without failing the movement - we at least reached the position
+        if movement_complete and not obstacle_detected:            # Check if the movement is primarily vertical - if so, skip rotation to avoid
+            # missing obstacles when the horizontal position is effectively unchanged
+            horizontal_movement = np.sqrt(movement_vector[0]**2 + movement_vector[1]**2)
+            vertical_movement = abs(movement_vector[2])
+            
+            # Skip rotation if movement is primarily vertical (horizontal movement < 10% of vertical)
+            if horizontal_movement < 0.1 * vertical_movement and vertical_movement > 0.5:
+                logging.debug(f"Movement primarily vertical (h:{horizontal_movement:.2f}m, v:{vertical_movement:.2f}m) - skipping yaw rotation")
+            else:
+                logging.debug(f"Movement complete, rotating to face movement direction: {yaw_degrees:.1f}°")
+                try:                # Rotate to the previously calculated yaw that points in the movement direction
+                    rotate_task = client.rotateToYawAsync(yaw_degrees)
+                    rotate_task.join()
+                    logging.debug(f"Yaw rotation complete, drone sensors now facing forward")
+                except Exception as e:
+                    logging.warning(f"Failed to rotate after movement: {e}")
+                    # Continue without failing the movement - we at least reached the position
         
         # Return obstacle detection status to inform caller if replanning is needed
         return obstacle_detected, obstacle_pos, obstacle_dist
@@ -2938,7 +2945,8 @@ def run_episode(episode_id: int, client: airsim.MultirotorClient,
     if config.get("debug_raycasting", False) and episode_id % 5 == 0:  # Debug every 5th episode
         logging.getLogger().setLevel(logging.DEBUG)
         logging.debug(f"Episode {episode_id}: Enhanced logging enabled for raycast debugging")
-        logging.debug(f"Using {ray_checks} rays for target validation")        # Get target from the pre-generated pool if available, otherwise fall back to sampling
+        logging.debug(f"Using {ray_checks} rays for target validation")        
+    # Get target from the pre-generated pool if available, otherwise fall back to sampling
     target_sampling_start = time.time()    
     try:
         # Use pre-generated target pool if available
