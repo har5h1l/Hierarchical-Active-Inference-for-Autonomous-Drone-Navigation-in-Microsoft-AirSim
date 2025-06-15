@@ -1,0 +1,28 @@
+{
+  "num_episodes": 15,
+  "target_distance_range": [
+    20.0,
+    100.0
+  ],
+  "random_seed": 42,
+  "max_steps_per_episode": 200,
+  "output_dir": "experiment_results",
+  "stuck_timeout": 15.0,
+  "stuck_check_interval": 3.0,
+  "episode_timeout": 240,
+  "precompile_julia": true,
+  "zmq_port": 5555,
+  "debug_raycasting": false,
+  "min_ray_checks": 3,
+  "max_ray_checks": 7,
+  "visualize_raycasts": false,
+  "visualization_duration": 60.0,
+  "enable_voxel_visualization": true,
+  "disable_all_visualizations": false,
+  "voxel_size": 0.5,
+  "visualization_range": 100,
+  "save_visualization_screenshots": false,
+  "screenshot_interval": 1,
+  "screenshot_max_retries": 3,
+  "enable_screenshot_functionality": false
+}

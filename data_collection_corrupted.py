@@ -2266,21 +2266,14 @@ class Scanner:
         Get depth camera data from AirSim and convert to point cloud
         
         Returns:
-            np.ndarray: Point cloud data in global coordinate frame (N x 3)
+            np.ndarray: Point cloud data in camera coordinate frame (N x 3)
         """
         try:
-            if not self.enable_depth_camera:
-                return np.array([]).reshape(0, 3)
-            
             # Get depth image from AirSim
-            response = self.client.simGetImage(self.depth_camera_name, airsim.ImageType.DepthPlanar)
+            response = self.client.simGetImage(self.depth_camera_name, airsim.ImageType.DepthPerspective)
             
             if response is None:
-                logging.warning("Depth camera response is None, trying DepthPerspective")
-                response = self.client.simGetImage(self.depth_camera_name, airsim.ImageType.DepthPerspective)
-                
-            if response is None:
-                logging.warning("Both depth image types failed, returning empty array")
+                logging.warning("Depth camera response is None")
                 return np.array([]).reshape(0, 3)
             
             # Convert to numpy array
@@ -2289,154 +2282,1293 @@ class Scanner:
                 logging.warning("Empty depth image data")
                 return np.array([]).reshape(0, 3)
             
-            # Reshape to 2D image
+            # Reshape to 2D image - depth is stored as grayscale
             depth_img = img_1d.reshape(self.depth_image_height, self.depth_image_width)
-            
-            # Convert depth values to meters (AirSim depth is often in different units)
-            depth_img = depth_img.astype(np.float32) / 255.0 * 100.0  # Scale to reasonable depth range
-            
-            # Create point cloud from depth image
-            points = []
-            
-            # Sample every few pixels to reduce point cloud density
-            step = 4  # Sample every 4th pixel
-            
-            for v in range(0, self.depth_image_height, step):
-                for u in range(0, self.depth_image_width, step):
-                    depth = depth_img[v, u]
-                    
-                    # Skip invalid depth values
-                    if depth <= 0.1 or depth > 50.0:  # Reasonable depth range
-                        continue
-                    
-                    # Convert pixel coordinates to camera coordinates
-                    x = (u - self.cx) * depth / self.fx
-                    y = (v - self.cy) * depth / self.fy
-                    z = depth
-                    
-                    # Transform to AirSim camera coordinate system (X-right, Y-down, Z-forward)
-                    camera_point = np.array([z, x, y])  # AirSim camera: Z-forward, X-right, Y-down
-                    points.append(camera_point)
-            
-            if not points:
-                return np.array([]).reshape(0, 3)
-                
-            # Convert to numpy array
-            camera_points = np.array(points)
-            
-            # Transform points to global coordinate frame
-            drone_state = self.client.getMultirotorState().kinematics_estimated
-            drone_pos = np.array([
-                drone_state.position.x_val,
-                drone_state.position.y_val,
-                drone_state.position.z_val
-            ])
-            
-            drone_quat = np.array([
-                drone_state.orientation.w_val,
-                drone_state.orientation.x_val,
-                drone_state.orientation.y_val,
-                drone_state.orientation.z_val
-            ])
-            
-            # Use the transform method to convert to global coordinates
-            global_points = self.transform_camera_points_to_global(camera_points, drone_pos, drone_quat)
-            
-            logging.debug(f"Depth camera: Generated {len(global_points)} points")
-            return global_points
-            
-        except Exception as e:
-            logging.error(f"Error in get_depth_camera_data: {e}")
-            import traceback
-            traceback.print_exc()
-            return np.array([]).reshape(0, 3)
+import airsim
+import numpy as np
+import time
+import logging
+import traceback
+import json
+import os
+import sys
+import uuid
+import hashlib
+import random
+from pathlib import Path
+from os import path
+from typing import Dict, Any, List, Tuple, Optional
+from datetime import datetime
+import subprocess
+import threading
+import zmq
+import socket
+import psutil
+import platform
+import pandas as pd
+from matplotlib import pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+from matplotlib.animation import FuncAnimation
+import matplotlib.patches as patches
+import math
+
+# Import visualization components with fallback
+try:
+    from voxel_visualization import VoxelGridVisualizer, create_voxel_visualizer
+except ImportError:
+    VoxelGridVisualizer = None
+    create_voxel_visualizer = None
+    logging.warning("VoxelGridVisualizer not available - 3D visualization disabled")
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+
+# Custom NumPy-aware JSON encoder
+class NumpyJSONEncoder(json.JSONEncoder):
+    """Custom JSON encoder to handle NumPy types"""
+    def default(self, obj):
+        if isinstance(obj, (np.int8, np.int16, np.int32, np.int64, np.uint8, np.uint16, np.uint32, np.uint64)):
+            return int(obj)
+        elif isinstance(obj, (np.float16, np.float32, np.float64)):
+            return float(obj)
+        elif isinstance(obj, np.ndarray):
+            return obj.tolist()
+        elif isinstance(obj, np.bool_):
+            return bool(obj)
+        elif hasattr(obj, 'dtype') and hasattr(obj, 'item'):
+            return obj.item()
+        return super(NumpyJSONEncoder, self).default(obj)
+
+def collect_system_info() -> Dict[str, Any]:
+    """Collect system and device information for experiment metadata
     
-    def transform_camera_points_to_global(self, camera_points, drone_pos, drone_quat):
-        """
-        Transform camera coordinate points to global coordinate frame
+    Returns:
+        Dict containing system information including OS, hardware, and software details
+    """
+    system_info = {
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "os": {
+            "name": platform.system(),
+            "version": platform.version(),
+            "platform": platform.platform(),
+            "release": platform.release(),
+            "architecture": platform.machine()
+        }
+    }
+    
+    # Python information
+    system_info["python"] = {
+        "version": platform.python_version(),
+        "implementation": platform.python_implementation(),
+        "compiler": platform.python_compiler()
+    }
+    
+    # Julia information
+    try:
+        julia_path = "julia"  # Default command assuming Julia is in PATH
+        julia_version_cmd = subprocess.run([julia_path, "--version"], 
+                                          capture_output=True, text=True, timeout=5)
+        if julia_version_cmd.returncode == 0:
+            system_info["julia"] = {
+                "version": julia_version_cmd.stdout.strip(),
+                "path": julia_path
+            }
+            
+            # Try to get package versions
+            get_pkg_versions_cmd = [
+                julia_path, 
+                "-e", 
+                "using Pkg; Pkg.status()"
+            ]
+            pkg_info = subprocess.run(get_pkg_versions_cmd, capture_output=True, text=True, timeout=10)
+            if pkg_info.returncode == 0:
+                system_info["julia"]["packages"] = pkg_info.stdout.strip()
+    except Exception as e:
+        system_info["julia"] = {"error": str(e)}
+    
+    # CPU information
+    try:
+        import psutil
+        cpu_info = {
+            "physical_cores": psutil.cpu_count(logical=False),
+            "total_cores": psutil.cpu_count(logical=True),
+            "usage_percent": psutil.cpu_percent(interval=0.1)
+        }
+        system_info["cpu"] = cpu_info
+    except ImportError:
+        # Fallback CPU info without psutil
+        system_info["cpu"] = {
+            "processor": platform.processor(),
+        }
+    
+    # Memory information
+    try:
+        import psutil
+        mem = psutil.virtual_memory()
+        system_info["memory"] = {
+            "total_gb": round(mem.total / (1024**3), 2),
+            "available_gb": round(mem.available / (1024**3), 2),
+            "used_percent": mem.percent
+        }
+    except ImportError:
+        system_info["memory"] = {"note": "psutil not available for detailed memory info"}
+    
+    # GPU information
+    try:
+        import GPUtil
+        gpus = GPUtil.getGPUs()
+        gpu_info = []
         
-        Args:
-            camera_points: Points in camera coordinate frame (N x 3)
-            drone_pos: Drone position in global frame (3,)
-            drone_quat: Drone orientation quaternion [w, x, y, z] (4,)
+        for gpu in gpus:
+            gpu_info.append({
+                "id": gpu.id,
+                "name": gpu.name,
+                "memory_total": gpu.memoryTotal,
+                "memory_used": gpu.memoryUsed,
+                "load": gpu.load
+            })
             
-        Returns:
-            np.ndarray: Points in global coordinate frame (N x 3)
-        """
+        system_info["gpu"] = gpu_info if gpu_info else {"note": "No GPU detected"}
+    except ImportError:
+        # Try with subprocess for NVIDIA GPUs
         try:
-            if len(camera_points) == 0:
-                return np.array([]).reshape(0, 3)
-            
-            # Validate quaternion
-            quat_norm = np.linalg.norm(drone_quat)
-            if quat_norm < 0.001:
-                drone_quat = np.array([1.0, 0.0, 0.0, 0.0])  # Identity quaternion
+            nvidia_smi = subprocess.run(["nvidia-smi", "--query-gpu=name,driver_version,memory.total,memory.used", "--format=csv"],
+                                       capture_output=True, text=True, timeout=5)
+            if nvidia_smi.returncode == 0:
+                system_info["gpu"] = {"nvidia_smi_output": nvidia_smi.stdout.strip()}
             else:
-                drone_quat = drone_quat / quat_norm
-            
-            # Quaternion utility functions
-            def quaternion_multiply(q1, q2):
-                w1, x1, y1, z1 = q1
-                w2, x2, y2, z2 = q2
-                return np.array([
-                    w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2,
-                    w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2,
-                    w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2,
-                    w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2
-                ])
-            
-            def quaternion_conjugate(q):
-                return np.array([q[0], -q[1], -q[2], -q[3]])
-            
-            def rotate_point_by_quaternion(point, quat):
-                point_quat = np.array([0.0, point[0], point[1], point[2]])
-                quat_conj = quaternion_conjugate(quat)
-                temp = quaternion_multiply(quat, point_quat)
-                rotated_quat = quaternion_multiply(temp, quat_conj)
-                return rotated_quat[1:4]
-            
-            global_points = []
-            
-            for camera_point in camera_points:
-                # Step 1: Transform from camera frame to drone body frame
-                # Account for camera offset (camera is 25cm forward of drone center)
-                body_point = camera_point + self.camera_offset
-                
-                # Step 2: Transform from drone body frame to global frame
-                global_point = rotate_point_by_quaternion(body_point, drone_quat)
-                global_point = global_point + drone_pos
-                
-                global_points.append(global_point)
-            
-            return np.array(global_points)
-            
-        except Exception as e:
-            logging.error(f"Error in transform_camera_points_to_global: {e}")
-            return np.array([]).reshape(0, 3)
+                system_info["gpu"] = {"note": "No GPU information available"}
+        except:
+            system_info["gpu"] = {"note": "Could not detect GPU information"}
     
-    def get_fused_sensor_data(self, scan_range=20.0):
-        """
-        Get fused sensor data combining LiDAR and depth camera
+    # AirSim version - check if we can get it
+    try:
+        airsim_version = airsim.__version__ if hasattr(airsim, "__version__") else "Unknown"
+        system_info["airsim"] = {"version": airsim_version}
+    except:
+        system_info["airsim"] = {"version": "Unknown"}
+    
+    # Additional library versions
+    system_info["libraries"] = {
+        "numpy": np.__version__,
+        "pandas": pd.__version__,
+        "zmq": zmq.pyzmq_version()
+    }
+    
+    return system_info
+
+# Constants and hyperparameters
+TARGET_LOCATION = [-20.0, -20.0, -30.0]  # [x, y, z] in NED coordinates
+MARGIN = 1.5  # Safety margin for waypoint generation (meters)
+WAYPOINT_SAMPLE_COUNT = 75  # Number of waypoints to consider
+POLICY_LENGTH = 3  # Number of steps in the policy
+
+# Dynamic density radius calculation based on max action length
+MAX_ACTION_LENGTH = 3.0  # Maximum action magnitude observed in experiments (from line 3865: min(3.0, action_magnitude))
+DENSITY_BUFFER = 1.0     # Additional buffer beyond max action length for comprehensive density evaluation
+DENSITY_RADIUS = MAX_ACTION_LENGTH + DENSITY_BUFFER  # 4.0m total radius (was 5.0m fixed)
+
+ARRIVAL_THRESHOLD = 1.5 # meters
+MAX_ITERATIONS = 100
+DEFAULT_ZMQ_PORT = 5555  # Default ZMQ server port
+ZMQ_TIMEOUT = 10000  # ZMQ socket timeout in milliseconds (10 seconds)
+ZMQ_MAX_RETRIES = 3  # Maximum number of retries for ZMQ communication
+
+# Default experiment configuration
+DEFAULT_CONFIG = {
+    "num_episodes": 15,
+    "target_distance_range": (20.0, 100.0),  # min, max in meters
+    "random_seed": 42,
+    "max_steps_per_episode": 200,
+    "output_dir": "experiment_results",
+    "stuck_timeout": 15.0,  # seconds to consider the drone stuck
+    "stuck_check_interval": 3.0,  # seconds between stuck checks
+    "episode_timeout": 240,  # maximum episode duration in seconds
+    "precompile_julia": True,  # whether to precompile Julia packages
+    "zmq_port": DEFAULT_ZMQ_PORT,  # ZMQ server port
+    
+    # Raycasting debug configuration
+    "debug_raycasting": False,  # Enable debug mode for raycasts
+    "min_ray_checks": 3,  # Minimum number of rays for target validation
+    "max_ray_checks": 7,  # Maximum number of rays for target validation 
+    "visualize_raycasts": False,  # Visualize raycasts in AirSim
+    "visualization_duration": 60.0,  # Duration of visualization markers in seconds
+      # Voxel grid visualization configuration
+    "enable_voxel_visualization": True,  # Enable real-time 3D voxel visualization (can be turned off for performance)
+    "disable_all_visualizations": False,  # Master switch to disable all visualizations for headless operation
+    "voxel_size": 0.5,  # Size of voxels in meters
+    "visualization_range": 100,  # Range around drone to visualize in meters
+    "save_visualization_screenshots": False,  # Save screenshots during episodes
+    "screenshot_interval": 1,  # Save screenshot every N steps (changed from 10 to 1 for every step)
+    "screenshot_max_retries": 3,  # Maximum retries for screenshot capture (Windows OpenGL fix)
+    "enable_screenshot_functionality": False  # Enable/disable screenshot functionality (Windows OpenGL context fix)
+}
+
+# Add the airsim directory to the Python path
+sys.path.append(path.join(path.dirname(path.abspath(__file__)), 'airsim'))
+
+# Import the scanner (optional)
+try:
+    from Sensory_Input_Processing import EnvironmentScanner
+except ImportError:
+    try:
+        from airsim.Sensory_Input_Processing import EnvironmentScanner
+    except ImportError:
+        EnvironmentScanner = None
+        logging.warning("EnvironmentScanner not available - using built-in Scanner implementation")
+
+class JuliaServer:
+    """Manages the Julia environment and ZMQ server for active inference"""
+    
+    def __init__(self):
+        self.cwd = os.path.dirname(os.path.abspath(__file__))
+        self.server_process = None
+        self.julia_path = self._find_julia_executable()
+    
+    def _find_julia_executable(self):
+        """Find the Julia executable on the system"""
+        print("Locating Julia executable...")
+        
+        # Default command assuming Julia is in PATH
+        julia_path = "julia"
+        
+        if platform.system() == "Windows":
+            # Windows-specific Julia paths
+            possible_paths = [
+                r"C:\Julia-1.9.3\bin\julia.exe",
+                r"C:\Julia-1.9.2\bin\julia.exe",
+                r"C:\Julia-1.9.1\bin\julia.exe",
+                r"C:\Julia-1.9.0\bin\julia.exe",
+                r"C:\Julia-1.8.5\bin\julia.exe",
+                r"C:\Users\%USERNAME%\AppData\Local\Programs\Julia-1.9.3\bin\julia.exe",
+                r"C:\Users\%USERNAME%\AppData\Local\Programs\Julia-1.9.2\bin\julia.exe",
+                r"C:\Users\%USERNAME%\AppData\Local\Programs\Julia-1.9.1\bin\julia.exe",
+                r"C:\Users\%USERNAME%\AppData\Local\Programs\Julia-1.9.0\bin\julia.exe",
+                r"C:\Users\%USERNAME%\AppData\Local\Programs\Julia-1.8.5\bin\julia.exe"
+            ]
+            
+            # Expand %USERNAME% environment variable
+            username = os.environ.get('USERNAME', '')
+            possible_paths = [p.replace('%USERNAME%', username) for p in possible_paths]
+            
+            # Check each path
+            for path in possible_paths:
+                if os.path.exists(path):
+                    julia_path = path
+                    print(f"Found Julia at: {julia_path}")
+                    break
+        
+        # Test if Julia is actually available
+        try:
+            result = subprocess.run([julia_path, "--version"], 
+                                    capture_output=True, text=True, timeout=5)
+            if result.returncode == 0:
+                print(f"Julia version: {result.stdout.strip()}")
+            else:
+                print(f"Julia executable found but returned error: {result.stderr}")
+        except Exception as e:
+            print(f"Warning: Error testing Julia executable: {e}")
+        
+        return julia_path
+    
+    def precompile_packages(self):
+        """Precompile Julia packages to speed up server startup"""
+        print("\n==== Precompiling Julia Packages ====")
+        
+        # Check if precompilation has already been done
+        precomp_success_flag = os.path.join(self.cwd, ".precompilation_success")
+        if os.path.exists(precomp_success_flag):
+            print(f"✅ Precompilation success flag found. Removing flag to force precompilation.")
+            try:
+                os.remove(precomp_success_flag)
+            except Exception as e:
+                print(f"Failed to remove precompilation flag: {e}")
+        
+        # Run precompile script
+        precompile_script = os.path.join(self.cwd, "precompile.jl")
+        if not os.path.exists(precompile_script):
+            print(f"❌ Precompilation script not found at {precompile_script}")
+            return False
+        
+        print("Running Julia precompilation (this may take a few minutes)...")
+        try:
+            # Use a more reliable process management approach
+            if platform.system() == "Windows":
+                # Windows-specific precompilation
+                precompile_log = os.path.join(self.cwd, "julia_precompile.log")
+                
+                # Create a visible window process
+                startupinfo = subprocess.STARTUPINFO()
+                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                startupinfo.wShowWindow = 1  # SW_SHOWNORMAL
+                
+                with open(precompile_log, "wb") as log_file:  # Use binary mode to avoid encoding issues
+                    process = subprocess.Popen(
+                        [self.julia_path, precompile_script],
+                        cwd=self.cwd,
+                        stdout=log_file,
+                        stderr=log_file,
+                        startupinfo=startupinfo
+                    )
+                
+                # Wait with a reasonable timeout
+                try:
+                    print("Waiting for precompilation to complete (timeout: 10 min)...")
+                    return_code = process.wait(timeout=600)
+                    
+                    if return_code == 0:
+                        print("✅ Precompilation completed successfully")
+                        return True
+                    else:
+                        print(f"⚠️ Precompilation returned code {return_code}")
+                        
+                        # Show the log tail with proper encoding handling
+                        try:
+                            with open(precompile_log, 'rb') as f:  # Use binary mode
+                                log_data = f.read()
+                                # Try different encodings to handle special characters
+                                encodings = ['utf-8', 'latin-1', 'cp1252']
+                                log_text = None
+                                
+                                for encoding in encodings:
+                                    try:
+                                        log_text = log_data.decode(encoding, errors='replace')
+                                        break
+                                    except Exception:
+                                        continue
+                                
+                                if log_text:
+                                    log_lines = log_text.splitlines()[-10:]
+                                    print("Last 10 lines of precompilation log:")
+                                    for line in log_lines:
+                                        print(f"  {line}")
+                        except Exception as e:
+                            print(f"Could not read precompilation log: {e}")
+                        
+                        # Check status file which is JSON and should be more reliable
+                        status_file = os.path.join(self.cwd, ".precompilation_status.json")
+                        if os.path.exists(status_file):
+                            try:
+                                with open(status_file, 'r') as f:
+                                    status_data = json.load(f)
+                                    print(f"Precompilation status: {status_data.get('status')} - {status_data.get('message')}")
+                            except Exception as e:
+                                print(f"Could not read status file: {e}")
+                                
+                        # If success flag exists, consider it successful despite return code
+                        if os.path.exists(precomp_success_flag):
+                            print("✅ Success flag found despite return code. Continuing.")
+                            return True
+                            
+                        return False
+                except subprocess.TimeoutExpired:
+                    print("⚠️ Precompilation timed out after 10 minutes")
+                    process.terminate()
+                    return False
+            else:
+                # Unix approach
+                result = subprocess.run(
+                    [self.julia_path, precompile_script],
+                    cwd=self.cwd,
+                    capture_output=True,
+                    text=True,
+                    encoding='latin-1',  # Use latin-1 encoding which can handle all byte values
+                    timeout=600
+                )
+                
+                if result.returncode == 0:
+                    print("✅ Precompilation completed successfully")
+                    return True
+                else:
+                    print(f"⚠️ Precompilation failed with code {result.returncode}")
+                    print(f"Output: {result.stderr[:500]}")
+                    
+                    # Check for success flag anyway
+                    if os.path.exists(precomp_success_flag):
+                        print("✅ Success flag found despite return code. Continuing.")
+                        return True
+                        
+                    return False
+                
+        except Exception as e:
+            print(f"❌ Error during precompilation: {e}")
+            traceback.print_exc()
+            
+            # Check for success flag anyway
+            if os.path.exists(precomp_success_flag):
+                print("✅ Success flag found despite exception. Continuing.")
+                return True
+                
+            return False
+    
+    def start_server(self, port=DEFAULT_ZMQ_PORT):
+        """Start the ZMQ server"""
+        print("\n==== Starting ZMQ Server ====")
+        
+        # Check if server is already running
+        server_running_flag = os.path.join(self.cwd, ".zmq_server_running")
+        server_status_file = os.path.join(self.cwd, ".zmq_server_status.json")
+        
+        # First attempt to ping an already running server to verify it's truly responding
+        if os.path.exists(server_running_flag) and os.path.exists(server_status_file):
+            try:
+                with open(server_status_file, 'r') as f:
+                    status_data = json.load(f)
+                    if status_data.get('status') == 'running':
+                        port = status_data.get('port', DEFAULT_ZMQ_PORT)
+                        print(f"Found server status file indicating a running server on port {port}")
+                        
+                        # Try to connect and ping the server to verify it's actually responding
+                        print("Verifying server is responsive...")
+                        try:
+                            # Quick connection test
+                            context = zmq.Context()
+                            socket = context.socket(zmq.REQ)
+                            socket.setsockopt(zmq.LINGER, 500)
+                            socket.setsockopt(zmq.RCVTIMEO, 2000)  # Short timeout for ping
+                            socket.setsockopt(zmq.SNDTIMEO, 2000)
+                            socket.connect(f"tcp://localhost:{port}")
+                            
+                            # Send ping and wait for response
+                            socket.send_string("ping")
+                            response = socket.recv_string()
+                            
+                            if response == "pong":
+                                print(f"✅ Existing ZMQ server is responsive on port {port}")
+                                socket.close()
+                                context.term()
+                                return port
+                            else:
+                                print(f"⚠️ Unexpected response from server: {response}")
+                        except Exception as e:
+                            print(f"⚠️ Existing server not responsive: {e}")
+                        finally:
+                            try:
+                                socket.close()
+                                context.term()
+                            except:
+                                pass
+                        
+                        # If we get here, the server wasn't responsive
+                        print("Detected a non-responsive server. Will restart it.")
+                        # Clean up stale server flags
+                        if os.path.exists(server_running_flag):
+                            os.remove(server_running_flag)
+                        # No return here - fall through to start a new server
+            except Exception as e:
+                print(f"Error reading server status: {e}")
+                # Clean up potentially corrupted files
+                for file in [server_running_flag, server_status_file]:
+                    if os.path.exists(file):
+                        try:
+                            os.remove(file)
+                        except:
+                            pass
+        
+        # Find the server script
+        server_script = os.path.join(self.cwd, "actinf", "zmq_server.jl")
+        if not os.path.exists(server_script):
+            print(f"❌ Server script not found at {server_script}")
+            return None
+        
+        print(f"Starting ZMQ server from {server_script}...")
+        
+        try:
+            # Make sure any existing server process is terminated before starting a new one
+            if hasattr(self, 'server_process') and self.server_process:
+                try:
+                    if self.server_process.poll() is None:  # Still running
+                        print("Terminating previous server process...")
+                        self.server_process.terminate()
+                        try:
+                            self.server_process.wait(timeout=3)
+                        except subprocess.TimeoutExpired:
+                            self.server_process.kill()
+                            print("Force-killed previous server process")
+                except:
+                    pass
+            
+            # Julia command with additional flags to address the signal handler issue
+            julia_cmd = [
+                self.julia_path,
+                "--project=.",  # Use project in current directory
+                "--startup-file=no",  # Don't load startup file
+                "--handle-signals=no",  # Disable Julia's signal handling
+                server_script
+            ]
+            
+            # Add environment variables to configure ZMQ server
+            env = os.environ.copy()
+            env["JULIA_ZMQ_PORT"] = str(port)
+            env["JULIA_DEBUG"] = "ZMQServer"  # Enable debug logging for the server
+            
+            print(f"Starting Julia with command: {' '.join(julia_cmd)}")
+            
+            # Start the server as a background process with a visible console for easier debugging
+            if platform.system() == "Windows":
+                # Windows needs different flags to start detached with visible window
+                startupinfo = subprocess.STARTUPINFO()
+                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                startupinfo.wShowWindow = 1  # SW_SHOWNORMAL
+                
+                self.server_process = subprocess.Popen(
+                    julia_cmd,
+                    cwd=self.cwd,
+                    creationflags=subprocess.CREATE_NEW_CONSOLE,
+                    startupinfo=startupinfo,
+                    env=env
+                )
+            else:
+                # Unix-like systems
+                self.server_process = subprocess.Popen(
+                    julia_cmd,
+                    cwd=self.cwd,
+                    start_new_session=True,
+                    env=env
+                )
+            
+            # Wait for server to start and check status file for port
+            print("Waiting for server to initialize...")
+            
+            # Try several times to get the server port from status file
+            max_attempts = 15  # Increased timeout for server startup
+            server_port = None
+            
+            for attempt in range(max_attempts):
+                time.sleep(1)  # Wait a bit between checks
+                
+                if os.path.exists(server_status_file):
+                    try:
+                        with open(server_status_file, 'r') as f:
+                            status_data = json.load(f)
+                            if status_data.get('status') == 'running':
+                                server_port = status_data.get('port', DEFAULT_ZMQ_PORT)
+                                print(f"✅ ZMQ server started successfully on port {server_port}")
+                                
+                                # Verify server is actually responsive with a ping
+                                try:
+                                    context = zmq.Context()
+                                    socket = context.socket(zmq.REQ)
+                                    socket.setsockopt(zmq.LINGER, 500)
+                                    socket.setsockopt(zmq.RCVTIMEO, 2000)
+                                    socket.setsockopt(zmq.SNDTIMEO, 2000)
+                                    socket.connect(f"tcp://localhost:{server_port}")
+                                    
+                                    socket.send_string("ping")
+                                    response = socket.recv_string()
+                                    
+                                    if response == "pong":
+                                        print(f"✅ ZMQ server verified responsive on port {server_port}")
+                                        socket.close()
+                                        context.term()
+                                        break
+                                    else:
+                                        print(f"⚠️ Unexpected response from server: {response}")
+                                except Exception as e:
+                                    print(f"⚠️ Server not immediately responsive, will retry: {e}")
+                                finally:
+                                    try:
+                                        socket.close()
+                                        context.term()
+                                    except:
+                                        pass
+                    except Exception as e:
+                        print(f"Error reading status file (attempt {attempt+1}): {e}")
+                
+                # Check if process is still running
+                if self.server_process.poll() is not None:
+                    print(f"❌ Server process exited with code {self.server_process.returncode}")
+                    # Try to read any error logs
+                    log_file = os.path.join(self.cwd, "zmq_server.log")
+                    if os.path.exists(log_file):
+                        try:
+                            with open(log_file, 'r') as f:
+                                log_tail = f.readlines()[-20:]  # Last 20 lines
+                                print("Server log tail:")
+                                for line in log_tail:
+                                    print(f"  {line.strip()}")
+                        except Exception as log_e:
+                            print(f"Error reading server log: {log_e}")
+                    return None
+                
+                print(f"Waiting for server to start... (attempt {attempt+1}/{max_attempts})")
+            
+            # Return the port (or default if not found)
+            return server_port or DEFAULT_ZMQ_PORT
+                
+        except Exception as e:
+            print(f"❌ Error starting server: {e}")
+            traceback.print_exc()
+            return None
+    
+    def shutdown(self):
+        """Shutdown the server if running"""
+        if self.server_process and self.server_process.poll() is None:
+            print("Shutting down ZMQ server...")
+            try:
+                # Try to terminate gracefully first
+                self.server_process.terminate()
+                
+                # Wait a bit to let it close
+                try:
+                    self.server_process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    # Force kill if needed
+                    self.server_process.kill()
+                    print("Server process had to be forcefully terminated")
+            except Exception as e:
+                print(f"Error shutting down server: {e}")
+
+class ZMQInterface:
+    """Interface for communicating with the Julia Active Inference server via ZMQ"""
+    
+    def __init__(self, server_port=DEFAULT_ZMQ_PORT):
+        """Initialize ZMQ connection to Julia server"""
+        self.server_address = f"tcp://localhost:{server_port}"
+        print(f"Initializing ZMQ interface: {self.server_address}")
+        
+        # Initialize socket
+        self.context = None
+        self.socket = None
+        
+        # Connect to the server
+        self._setup_connection()
+    
+    def _setup_connection(self):
+        """Set up the ZMQ connection with proper error handling"""
+        try:
+            # Close existing connections first
+            self._close_connection()
+            
+            # Create new context and socket
+            self.context = zmq.Context()
+            self.socket = self.context.socket(zmq.REQ)
+            
+            # Configure socket options
+            self.socket.setsockopt(zmq.LINGER, 1000)  # Wait up to 1 second when closing
+            self.socket.setsockopt(zmq.RCVTIMEO, ZMQ_TIMEOUT)  # Receive timeout
+            self.socket.setsockopt(zmq.SNDTIMEO, ZMQ_TIMEOUT)  # Send timeout
+            self.socket.setsockopt(zmq.REQ_RELAXED, 1)  # More relaxed REQ socket behavior
+            self.socket.setsockopt(zmq.REQ_CORRELATE, 1)  # Correlate replies with requests
+            
+            # Connect to server
+            print(f"Connecting to server at {self.server_address}...")
+            self.socket.connect(self.server_address)
+            
+            # Test connection with ping
+            print("Testing connection with ping...")
+            try:
+                self.socket.send_string("ping")
+                poller = zmq.Poller()
+                poller.register(self.socket, zmq.POLLIN)
+                
+                if poller.poll(5000):  # 5 second timeout for first ping
+                    response = self.socket.recv_string()
+                    if response == "pong":
+                        print("✅ ZMQ connection established successfully")
+                        return True
+                    else:
+                        print(f"⚠️ Unexpected ping response: {response}")
+                else:
+                    print("⚠️ No response to ping")
+            except Exception as e:
+                print(f"⚠️ Error during ping test: {e}")
+            
+            return False
+        
+        except Exception as e:
+            print(f"❌ Failed to setup ZMQ connection: {e}")
+            self._close_connection()
+            return False
+    
+    def _close_connection(self):
+        """Close the ZMQ connection cleanly"""
+        if hasattr(self, 'socket') and self.socket:
+            try:
+                self.socket.close()
+            except:
+                pass
+            self.socket = None
+            
+        if hasattr(self, 'context') and self.context:
+            try:
+                self.context.term()
+            except:
+                pass
+            self.context = None
+    
+    def send_observation_and_receive_action(self, observation):
+        """Send observation data to Julia and receive next waypoint
         
         Args:
-            scan_range: Maximum distance for obstacle detection (meters)
-            
+            observation: Dict containing drone observation data
+                
         Returns:
-            tuple: (combined_positions, combined_distances) from both sensors
+            tuple: (next_waypoint, policy) or (None, None) if communication failed
         """
         try:
-            # Get LiDAR data using existing method
-            lidar_positions, lidar_distances = self.fetch_density_distances(use_cache=False)
+            print("\nSending observation to Active Inference engine...")
             
-            # Get depth camera data
-            camera_points = self.get_depth_camera_data()
+            # Validate the observation data to prevent sending invalid data
+            # Check for NaN or Inf values in drone_position and target_position
+            for key in ["drone_position", "target_position"]:
+                if key in observation:
+                    pos = observation[key]
+                    if any(np.isnan(val) or np.isinf(val) for val in pos):
+                        print(f"❌ Invalid {key} with NaN/Inf values: {pos}")
+                        # Replace with a valid default if needed
+                        if key == "drone_position":
+                            observation[key] = [0.0, 0.0, -5.0]  # Default position
+                        else:
+                            observation[key] = [10.0, 0.0, -5.0]  # Default target
+                        print(f"✓ Replaced with default: {observation[key]}")
             
-            # Convert camera points to positions and distances if we have data
-            camera_positions = []
-            camera_distances = []
+            # Add a request type field to make the protocol more explicit
+            observation["request_type"] = "get_waypoint"
+            observation["client_timestamp"] = time.time()
             
-            if len(camera_points) > 0:
-                # Get current drone position for distance calculation
+            # Convert observation to JSON string
+            obs_json = json.dumps(observation, cls=NumpyJSONEncoder)
+            
+            # Send with retry mechanism
+            for retry in range(ZMQ_MAX_RETRIES):
+                try:
+                    # Reset socket on first retry and after errors
+                    if retry > 0:
+                        print(f"Retry {retry}/{ZMQ_MAX_RETRIES}: Resetting connection...")
+                        self._setup_connection()
+                        time.sleep(1)  # Give time for reconnection
+                    
+                    # Send observation data
+                    self.socket.send_string(obs_json)
+                    print(f"Sent observation data (attempt {retry+1}/{ZMQ_MAX_RETRIES})")
+                    
+                    # Wait for response
+                    poller = zmq.Poller()
+                    poller.register(self.socket, zmq.POLLIN)
+                    
+                    if poller.poll(ZMQ_TIMEOUT):
+                        # Receive and parse response
+                        response = self.socket.recv_string()
+                        print(f"Received response ({len(response)} bytes)")
+                        
+                        # Validate the response to handle invalid JSON
+                        try:
+                            result = json.loads(response)
+                        except json.JSONDecodeError as e:
+                            print(f"❌ Invalid JSON response: {e}")
+                            print(f"Response preview: {response[:100]}...")
+                            continue  # Try again
+                        
+                        # Check for error message in response
+                        if "error" in result:
+                            print(f"❌ Server error: {result.get('message', 'Unknown error')}")
+                            continue  # Try again
+                        
+                        # Extract waypoint and policy
+                        waypoint = result.get("next_waypoint")
+                        policy = result.get("policy", [])
+                        
+                        # Validate the waypoint
+                        if waypoint is None or len(waypoint) != 3:
+                            print(f"❌ Invalid waypoint format: {waypoint}")
+                            continue  # Try again
+                        
+                        # Check for NaN or Inf in waypoint
+                        if any(np.isnan(p) or np.isinf(p) for p in waypoint):
+                            print(f"❌ Waypoint contains NaN/Inf values: {waypoint}")
+                            continue  # Try again
+                        
+                        print(f"Next waypoint: {[round(p, 2) for p in waypoint]}")
+                        return waypoint, policy
+                    else:
+                        print(f"Response timeout (attempt {retry+1}/{ZMQ_MAX_RETRIES})")
+                        
+                except zmq.ZMQError as e:
+                    print(f"ZMQ error (attempt {retry+1}/{ZMQ_MAX_RETRIES}): {e}")
+                except Exception as e:
+                    print(f"Unexpected error (attempt {retry+1}/{ZMQ_MAX_RETRIES}): {e}")
+                    traceback.print_exc()
+            
+            # If we get here, all retries failed
+            print("❌ Failed to get valid response after all retries")
+            
+            # Last resort: try a simple ping to check if server is still responsive
+            try:
+                print("Sending ping to check server status...")
+                self.socket.close()
+                self.socket = self.context.socket(zmq.REQ)
+                self.socket.setsockopt(zmq.RCVTIMEO, 2000)  # Short timeout for ping
+                self.socket.connect(self.server_address)
+                self.socket.send_string("ping")
+                
+                response = self.socket.recv_string()
+                if response == "pong":
+                    print("✅ Server is responsive to ping but failed to process observation")
+                else:
+                    print(f"❓ Server responded to ping with: {response}")
+            except Exception as e:
+                print(f"❌ Server is not responsive to ping: {e}")
+            
+            # Generate a simple fallback waypoint in the general target direction
+            try:
+                drone_pos = observation.get("drone_position", [0, 0, -5])
+                target_pos = observation.get("target_position", [10, 0, -5])
+                
+                # Calculate direction to target
+                direction = np.array(target_pos) - np.array(drone_pos)
+                distance = np.linalg.norm(direction)
+                
+                if distance > 0:
+                    # Normalize and scale to a small step (1-3 meters)
+                    direction = direction / distance
+                    step_size = min(distance / 2, 3.0)
+                    fallback_waypoint = (np.array(drone_pos) + direction * step_size).tolist()
+                    
+                    print(f"⚠️ Using fallback waypoint: {[round(p, 2) for p in fallback_waypoint]}")
+                    return fallback_waypoint, []
+            except Exception as e:
+                print(f"❌ Failed to generate fallback waypoint: {e}")
+            
+            return None, None
+                
+        except Exception as e:
+            print(f"❌ Unhandled error in active inference processing: {e}")
+            traceback.print_exc()
+            return None, None
+    
+    def __del__(self):
+        """Clean up resources when object is destroyed"""
+        self._close_connection()
+
+class Scanner:
+    """Scanner for obstacle detection using AirSim's LiDAR data"""
+    def __init__(self, client, scan_range=20.0, enable_visualization=False, voxel_size=0.5, enable_screenshots=True, 
+                 enable_depth_camera=True, depth_camera_name="front_center"):
+        """Initialize the Scanner with obstacle detection capabilities
+        
+        Args:
+            client: AirSim client instance
+            scan_range: Maximum distance for obstacle detection (meters)
+            enable_visualization: Whether to enable 3D visualization
+            voxel_size: Size of voxels for spatial discretization (meters)
+            enable_screenshots: Whether to enable screenshot capture functionality
+            enable_depth_camera: Whether to enable depth camera data processing
+            depth_camera_name: Name of the depth camera in AirSim settings
+        """
+        self.client = client
+        self.scan_range = scan_range
+        self.voxel_size = voxel_size
+        self.enable_visualization = enable_visualization
+        self.enable_screenshots = enable_screenshots
+        self.enable_depth_camera = enable_depth_camera
+        self.depth_camera_name = depth_camera_name
+        
+        # Sensor positioning from settings.json
+        # Camera position relative to drone center
+        self.camera_offset = np.array([0.25, 0.0, 0.0])  # X: 0.25m forward
+        # LiDAR position relative to drone center  
+        self.lidar_offset = np.array([0.0, 0.0, -0.1])   # Z: 0.1m down
+        
+        # Depth camera parameters
+        self.depth_image_width = 640
+        self.depth_image_height = 480
+        self.depth_camera_fov = 90.0  # Field of view in degrees
+        
+        # Calculate camera intrinsic parameters
+        self.fx = self.depth_image_width / (2.0 * np.tan(np.radians(self.depth_camera_fov / 2.0)))
+        self.fy = self.fx  # Assuming square pixels
+        self.cx = self.depth_image_width / 2.0
+        self.cy = self.depth_image_height / 2.0
+        
+        # Clustering configuration for improved density calculation
+        self.clustering_method = "connected_components"  # Options: "connected_components", "dbscan", "none"
+        self.cluster_radius = 1.5  # Radius for connected components clustering
+        self.dbscan_eps = 1.5      # Epsilon for DBSCAN clustering  
+        self.dbscan_min_samples = 2  # Minimum samples for DBSCAN core points
+        
+        # Cache for obstacle detection to improve performance
+        self.cached_positions = []
+        self.cached_distances = []
+        self.last_scan_time = 0
+        self.scan_cache_ttl = 0.1  # Cache time-to-live in seconds
+        self.last_cluster_info = []  # Store information about last clustering operation
+        
+        # Initialize visualization if enabled
+        self.visualizer = None
+        if self.enable_visualization:
+            try:
+                from voxel_visualization import VoxelGridVisualizer
+                # Pass enhanced parameters for optimal visualization and screenshots
+                self.visualizer = VoxelGridVisualizer(
+                    voxel_size=self.voxel_size, 
+                    visualization_range=self.scan_range,
+                    max_path_points=200,  # Keep good path history
+                    update_rate=8.0,      # Smooth updates
+                    enable_screenshots=self.enable_screenshots  # Pass through screenshot setting
+                )
+                # Start the visualization with enhanced window title
+                self.visualizer.start_visualization("Drone Navigation - Real-time Obstacle Detection & Planning")
+                logging.info(f"Initialized enhanced voxel visualization with voxel_size={self.voxel_size}m, "
+                           f"range={self.scan_range}m, screenshots={'enabled' if self.enable_screenshots else 'disabled'}")
+            except ImportError as e:
+                logging.warning(f"Visualization not available: {e} - continuing without it")
+                self.enable_visualization = False
+                self.visualizer = None
+            except Exception as e:
+                logging.warning(f"Failed to start visualization: {e} - continuing without it")
+                self.enable_visualization = False
+                self.visualizer = None
+        
+        logging.info(f"Scanner initialized - LiDAR: enabled, DepthCamera: {'enabled' if enable_depth_camera else 'disabled'}")
+
+    def _cluster_obstacles_for_density(self, obstacle_positions, obstacle_distances, cluster_radius=1.5):
+        """
+        Cluster nearby obstacles using connected components to treat them as single entities
+        for density calculation. This prevents inflated density from large obstacles 
+        represented as many adjacent voxels.
+        
+        Args:
+            obstacle_positions: List of obstacle positions [x, y, z]
+            obstacle_distances: List of distances to each obstacle from drone
+            cluster_radius: Maximum distance between obstacles to consider them part of same cluster
+            
+        Returns:
+            tuple: (clustered_positions, clustered_distances, cluster_info)
+                - clustered_positions: Representative positions for each cluster
+                - clustered_distances: Distances to cluster representatives  
+                - cluster_info: Additional info about each cluster (size, extent, etc.)
+        """
+        if not obstacle_positions or len(obstacle_positions) == 0:
+            return [], [], []
+        
+        try:
+            import numpy as np
+            from collections import defaultdict
+            
+            positions = np.array(obstacle_positions)
+            distances = np.array(obstacle_distances)
+            n_obstacles = len(positions)
+            
+            # Build adjacency graph for connected components
+            visited = set()
+            clusters = []
+            
+            def dfs_cluster(start_idx, current_cluster):
+                """Depth-first search to find connected obstacles"""
+                if start_idx in visited:
+                    return
+                
+                visited.add(start_idx)
+                current_cluster.append(start_idx)
+                
+                # Find all neighbors within cluster_radius
+                start_pos = positions[start_idx]
+                for neighbor_idx in range(n_obstacles):
+                    if neighbor_idx not in visited:
+                        neighbor_pos = positions[neighbor_idx]
+                        distance = np.linalg.norm(start_pos - neighbor_pos)
+                        if distance <= cluster_radius:
+                            dfs_cluster(neighbor_idx, current_cluster)
+            
+            # Find all connected components
+            for i in range(n_obstacles):
+                if i not in visited:
+                    cluster = []
+                    dfs_cluster(i, cluster)
+                    if cluster:
+                        clusters.append(cluster)
+            
+            # Process each cluster to create representative obstacles
+            clustered_positions = []
+            clustered_distances = []
+            cluster_info = []
+            
+            for cluster_indices in clusters:
+                cluster_positions = positions[cluster_indices]
+                cluster_distances = distances[cluster_indices]
+                
+                # Calculate cluster properties
+                cluster_center = np.mean(cluster_positions, axis=0)
+                min_distance = np.min(cluster_distances)
+                max_distance = np.max(cluster_distances)
+                cluster_size = len(cluster_indices)
+                
+                # Calculate cluster extent (maximum distance between any two points in cluster)
+                max_extent = 0.0
+                if cluster_size > 1:
+                    for i in range(len(cluster_positions)):
+                        for j in range(i + 1, len(cluster_positions)):
+                            extent = np.linalg.norm(cluster_positions[i] - cluster_positions[j])
+                            max_extent = max(max_extent, extent)
+                
+                # Use the position of the closest obstacle in the cluster as representative
+                closest_idx = np.argmin(cluster_distances)
+                representative_position = cluster_positions[closest_idx]
+                representative_distance = cluster_distances[closest_idx]
+                
+                clustered_positions.append(representative_position.tolist())
+                clustered_distances.append(float(representative_distance))
+                
+                cluster_info.append({
+                    'center': cluster_center.tolist(),
+                    'representative_position': representative_position.tolist(),
+                    'size': cluster_size,
+                    'min_distance': float(min_distance),
+                    'max_distance': float(max_distance),
+                    'extent': float(max_extent),
+                    'original_indices': cluster_indices
+                })
+            
+            logging.debug(f"Clustered {len(obstacle_positions)} obstacles into {len(clustered_positions)} clusters")
+            return clustered_positions, clustered_distances, cluster_info
+            
+        except Exception as e:
+            logging.error(f"Error in obstacle clustering: {e}")
+            # Fallback to original obstacles if clustering fails
+            return obstacle_positions, obstacle_distances, []
+    
+    def _merge_nearby_obstacles(self, obstacle_positions, obstacle_distances, merge_distance=1.0):
+        """Merge obstacles that are within merge_distance of each other to prevent path planning between them
+        
+        Args:
+            obstacle_positions: List of obstacle positions [x, y, z]
+            obstacle_distances: List of distances to each obstacle from drone
+            merge_distance: Distance threshold for merging obstacles (meters)
+            
+        Returns:
+            list: List of tuples (merged_position, min_distance) for merged obstacle groups
+        """
+        try:
+            if not obstacle_positions or len(obstacle_positions) == 0:
+                return []
+            
+            # Convert to numpy arrays for easier processing
+            positions = np.array(obstacle_positions)
+            distances = np.array(obstacle_distances)
+            
+            # Track which obstacles have been processed
+            processed = set()
+            merged_obstacles = []
+            
+            for i, pos in enumerate(positions):
+                if i in processed:
+                    continue
+                
+                # Find all obstacles within merge distance of this one
+                distances_to_others = np.linalg.norm(positions - pos, axis=1)
+                nearby_indices = np.where(distances_to_others <= merge_distance)[0]
+                
+                # Create a merged obstacle representing this group
+                nearby_positions = positions[nearby_indices]
+                nearby_distances = distances[nearby_indices]
+                
+                # Use the center of mass as the merged position
+                merged_position = np.mean(nearby_positions, axis=0)
+                
+                # Use the minimum distance from the group (closest obstacle in the group)
+                min_distance = np.min(nearby_distances)
+                
+                merged_obstacles.append((merged_position.tolist(), min_distance))
+                
+                # Mark all nearby obstacles as processed
+                processed.update(nearby_indices)
+            
+            logging.debug(f"Merged {len(obstacle_positions)} obstacles into {len(merged_obstacles)} groups "
+                         f"with merge distance {merge_distance}m")
+            
+            return merged_obstacles
+            
+        except Exception as e:
+            logging.error(f"Error in _merge_nearby_obstacles: {e}")
+            traceback.print_exc()
+            # Return original obstacles as fallback
+            return list(zip(obstacle_positions, obstacle_distances))
+    
+    def _cluster_obstacles_dbscan_like(self, obstacle_positions, obstacle_distances, eps=1.5, min_samples=2):
+        """
+        Alternative clustering method using DBSCAN-like approach for obstacle density calculation.
+        This method is more robust to noise and provides better handling of sparse obstacles.
+        
+        Args:
+            obstacle_positions: List of obstacle positions [x, y, z]
+            obstacle_distances: List of distances to each obstacle from drone
+            eps: Maximum distance between two samples for them to be considered neighbors
+            min_samples: Minimum number of samples in a neighborhood for a point to be core
+            
+        Returns:
+            tuple: (clustered_positions, clustered_distances, cluster_info)
+        """
+        if not obstacle_positions or len(obstacle_positions) == 0:
+            return [], [], []
+        
+        try:
+            import numpy as np
+            
+            positions = np.array(obstacle_positions)
+            distances = np.array(obstacle_distances)
+            n_obstacles = len(positions)
+            
+            # Initialize cluster labels (-1 means noise/outlier)
+            labels = np.full(n_obstacles, -1, dtype=int)
+            cluster_id = 0
+            
+            # Core points identification and clustering
+            for i in range(n_obstacles):
+                if labels[i] != -1:  # Already processed
+                    continue
+                
+                # Find neighbors within eps distance
+                neighbors = []
+                for j in range(n_obstacles):
+                    if i != j and np.linalg.norm(positions[i] - positions[j]) <= eps:
+                        neighbors.append(j)
+                
+                # If point has enough neighbors, start a new cluster
+                if len(neighbors) >= min_samples - 1:  # -1 because we don't count the point itself
+                    labels[i] = cluster_id
+                    
+                    # Expand cluster using queue-based approach
+                    queue = neighbors.copy()
+                    while queue:
+                        neighbor_idx = queue.pop(0)
+                        
+                        # If neighbor is noise, add to current cluster
+                        if labels[neighbor_idx] == -1:
+                            labels[neighbor_idx] = cluster_id
+                            
+                            # Find neighbors of this neighbor
+                            neighbor_neighbors = []
+                            for k in range(n_obstacles):
+                                if neighbor_idx != k and np.linalg.norm(positions[neighbor_idx] - positions[k]) <= eps:
+                                    neighbor_neighbors.append(k)
+                            
+                            # If this neighbor is also a core point, add its neighbors to queue
+                            if len(neighbor_neighbors) >= min_samples - 1:
+                                for nn in neighbor_neighbors:
+                                    if labels[nn] == -1:  # Only add unprocessed points
+                                        queue.append(nn)
+                        
+                        # If neighbor is unassigned, assign to current cluster
+                        elif labels[neighbor_idx] == -1:
+                            labels[neighbor_idx] = cluster_id
+                    
+                    cluster_id += 1
+            
+            # Process clusters and noise points
+            clustered_positions = []
+            clustered_distances = []
+            cluster_info = []
+            
+            # Handle clustered points
+            for cid in range(cluster_id):
+                cluster_mask = labels == cid
+                cluster_indices = np.where(cluster_mask)[0]
+                
+                if len(cluster_indices) == 0:
+                    continue
+                
+                cluster_positions = positions[cluster_indices]
+                cluster_distances = distances[cluster_indices]
+                
+                # Calculate cluster properties
+                cluster_center = np.mean(cluster_positions, axis=0)
+                min_distance = np.min(cluster_distances)
+                max_distance = np.max(cluster_distances)
+                cluster_size = len(cluster_indices)
+                
+                # Calculate cluster extent
+                max_extent = 0.0
+                if cluster_size > 1:
+                    for i in range(len(cluster_positions)):
+                        for j in range(i + 1, len(cluster_positions)):
+                            extent = np.linalg.norm(cluster_positions[i] - cluster_positions[j])
+                            max_extent = max(max_extent, extent)
+                
+                # Use closest point in cluster as representative
+                closest_idx = np.argmin(cluster_distances)
+                representative_position = cluster_positions[closest_idx]
+                representative_distance = cluster_distances[closest_idx]
+                
+                clustered_positions.append(representative_position.tolist())
+                clustered_distances.append(float(representative_distance))
+                
+                cluster_info.append({
+                    'center': cluster_center.tolist(),
+                    'representative_position': representative_position.tolist(),
+                    'size': cluster_size,
+                    'min_distance': float(min_distance),
+                    'max_distance': float(max_distance),
+                    'extent': float(max_extent),
+                    'original_indices': cluster_indices.tolist(),
+                    'cluster_type': 'core'
+                })
+            
+            # Handle noise points (outliers) - include them as individual obstacles
+            # These are often important isolated obstacles
+            noise_mask = labels == -1
+            noise_indices = np.where(noise_mask)[0]
+            
+            for idx in noise_indices:
+                pos = positions[idx]
+                dist = distances[idx]
+                
+                # Only include noise points that are within reasonable distance
+                # and not too close to existing clustered obstacles
+                min_dist_to_clusters = float('inf')
+                for cluster_pos in clustered_positions:
+                    cluster_pos_array = np.array(cluster_pos)
+                    dist_to_cluster = np.linalg.norm(pos - cluster_pos_array)
+                    min_dist_to_clusters = min(min_dist_to_clusters, dist_to_cluster)
+                
+                # Include noise point if it's far enough from existing clusters
+                if min_dist_to_clusters > eps * 0.5:  # Half the clustering radius
+                    clustered_positions.append(pos.tolist())
+                    clustered_distances.append(float(dist))
+                    
+                    cluster_info.append({
+                        'center': pos.tolist(),
+                        'representative_position': pos.tolist(),
+                        'size': 1,
+                        'min_distance': float(dist),
+                        'max_distance': float(dist),
+                        'extent': 0.0,
+                        'original_indices': [int(idx)],
+                        'cluster_type': 'noise'
+                    })
+            
+            logging.debug(f"DBSCAN-like clustering: {len(obstacle_positions)} obstacles -> {cluster_id} core clusters + {len(noise_indices)} noise points -> {len(clustered_positions)} final obstacles")
+            return clustered_positions, clustered_distances, cluster_info
+            
+        except Exception as e:
+            logging.error(f"Error in DBSCAN-like clustering: {e}")
+            # Fallback to original obstacles if clustering fails
+            return obstacle_positions, obstacle_distances, []
+    
+    def scan_in_direction(self, direction, max_distance=10.0, cone_angle=45.0):
+        """Scan for obstacles in a specific direction with a cone-shaped field of view
+        
+        Args:
+            direction: Direction vector [x, y, z]
+            max_distance: Maximum distance to scan
+            cone_angle: Half-angle of the cone field of view in degrees
+            
+        Returns:
+            tuple: (obstacle_positions, obstacle_distances) within the cone
+        """
+        try:
+            # First get all obstacle positions
+            all_positions, all_distances = self.fetch_density_distances(use_cache=True)
+            
+            if not all_positions:
+                return [], []
+                
+            # Get current drone position and orientation
+            try:
                 drone_state = self.client.getMultirotorState().kinematics_estimated
                 drone_pos = np.array([
                     drone_state.position.x_val,
@@ -2444,24 +3576,1600 @@ class Scanner:
                     drone_state.position.z_val
                 ])
                 
-                for point in camera_points:
-                    distance = np.linalg.norm(point - drone_pos)
-                    if distance <= scan_range and distance > 0.1:  # Within range and not too close
-                        camera_positions.append(point.tolist())
-                        camera_distances.append(distance)
+                # Get drone orientation quaternion (w, x, y, z)
+                drone_quat = np.array([
+                    drone_state.orientation.w_val,
+                    drone_state.orientation.x_val, 
+                    drone_state.orientation.y_val,
+                    drone_state.orientation.z_val
+                ])
+                
+                # Normalize quaternion if needed
+                quat_norm = np.linalg.norm(drone_quat)
+                if quat_norm > 0.001:
+                    drone_quat = drone_quat / quat_norm
+                else:
+                    drone_quat = np.array([1.0, 0.0, 0.0, 0.0])  # Identity quaternion
+                
+                # Calculate drone's actual forward direction in world coordinates
+                # In NED (North-East-Down) coordinates, forward is typically [1, 0, 0]
+                local_forward = np.array([1.0, 0.0, 0.0])  
+                
+                # Helper functions for quaternion operations
+                def quaternion_multiply(q1, q2):
+                    """Multiply two quaternions"""
+                    w1, x1, y1, z1 = q1
+                    w2, x2, y2, z2 = q2
+                    return np.array([
+                        w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2,
+                        w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2,
+                        w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2,
+                        w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2
+                    ])
+                
+                def quaternion_conjugate(q):
+                    """Get quaternion conjugate"""
+                    return np.array([q[0], -q[1], -q[2], -q[3]])
+                
+                def rotate_vector_by_quaternion(v, q):
+                    """Rotate a vector by a quaternion"""
+                    # Convert vector to pure quaternion (0, x, y, z)
+                    v_quat = np.array([0.0, v[0], v[1], v[2]])
+                    q_conj = quaternion_conjugate(q)
+                    # Apply rotation: q * v * q^-1
+                    rotated = quaternion_multiply(
+                        quaternion_multiply(q, v_quat),
+                        q_conj
+                    )
+                    # Extract vector part
+                    return rotated[1:4]
+                
+                # Calculate drone's actual forward direction
+                drone_forward = rotate_vector_by_quaternion(local_forward, drone_quat)
+                drone_forward = drone_forward / np.linalg.norm(drone_forward)
+                
+                # For directional scanning, we want to bias toward the actual drone orientation
+                # but still use the provided direction as primary
+                direction = np.array(direction)
+                direction_norm = np.linalg.norm(direction)
+                
+                if direction_norm > 0.001:
+                    direction = direction / direction_norm
+                    
+                    # Calculate the angle between requested direction and drone forward
+                    alignment = np.dot(direction, drone_forward)
+                    
+                    # If they're well aligned (>60 degrees), trust the direction
+                    # If not well aligned, blend them for better sensor coverage
+                    if alignment > 0.5:  # cos(60°) ≈ 0.5
+                        # Use mostly the requested direction
+                        final_direction = 0.8 * direction + 0.2 * drone_forward
+                    else:
+                        # Blend more heavily toward drone forward for better sensor alignment
+                        final_direction = 0.5 * direction + 0.5 * drone_forward
+                    
+                    # Normalize the final direction
+                    final_direction = final_direction / np.linalg.norm(final_direction)
+                else:
+                    # If no valid direction provided, use drone forward
+                    final_direction = drone_forward
+                    
+                direction = final_direction
+                logging.debug(f"Using corrected direction vector: {direction}")
+                
+            except Exception as e:
+                logging.warning(f"Error getting drone orientation for directional scan: {e}")
+                # Fall back to just using the provided direction vector
+                direction = np.array(direction)
+                direction_norm = np.linalg.norm(direction)
+                if direction_norm > 0.001:
+                    direction = direction / direction_norm
+                else:
+                    return [], []
+                drone_pos = np.array([0.0, 0.0, 0.0])  # Fallback position
             
-            # Combine sensor data
-            combined_positions = lidar_positions + camera_positions
-            combined_distances = lidar_distances + camera_distances
+            # Calculate cosine of cone angle for dot product comparison
+            cos_angle = np.cos(np.radians(cone_angle))
             
-            logging.debug(f"Sensor fusion: LiDAR={len(lidar_positions)}, Camera={len(camera_positions)}, Combined={len(combined_positions)}")
+            # Multi-stage obstacle detection for improved reliability
+            detected_obstacles = []
             
-            return combined_positions, combined_distances
+            # Stage 1: Check for very close obstacles (critical proximity)
+            critical_distance = 2.0  # Critical proximity threshold
+            
+            for i, pos in enumerate(all_positions):
+                if i >= len(all_distances):
+                    continue
+                
+                obstacle_pos = np.array(pos)
+                distance_to_obstacle = all_distances[i]
+                
+                # Vector from drone to obstacle
+                to_obstacle = obstacle_pos - drone_pos
+                to_obstacle_dist = np.linalg.norm(to_obstacle)
+                
+                if to_obstacle_dist < 0.001:
+                    continue
+                
+                # For very close obstacles, use a wider cone to ensure detection
+                if distance_to_obstacle <= critical_distance:
+                    # Use wider cone angle for close obstacles
+                    close_cos_angle = np.cos(np.radians(min(cone_angle * 1.5, 90.0)))
+                    to_obstacle_norm = to_obstacle / to_obstacle_dist
+                    
+                    angle_cos = np.dot(direction, to_obstacle_norm)
+                    if angle_cos > close_cos_angle:
+                        detected_obstacles.append({
+                            'position': pos,
+                            'distance': distance_to_obstacle,
+                            'angle_cos': angle_cos,
+                            'priority': 1  # Highest priority for close obstacles
+                        })
+            
+            # Stage 2: Standard cone detection for medium-range obstacles
+            medium_distance = 6.0
+            
+            for i, pos in enumerate(all_positions):
+                if i >= len(all_distances):
+                    continue
+                
+                obstacle_pos = np.array(pos)
+                distance_to_obstacle = all_distances[i]
+                
+                # Skip if already detected in stage 1 or beyond max distance
+                if distance_to_obstacle <= critical_distance or distance_to_obstacle > max_distance:
+                    continue
+                
+                # Vector from drone to obstacle
+                to_obstacle = obstacle_pos - drone_pos
+                to_obstacle_dist = np.linalg.norm(to_obstacle)
+                
+                if to_obstacle_dist < 0.001:
+                    continue
+                
+                to_obstacle_norm = to_obstacle / to_obstacle_dist
+                angle_cos = np.dot(direction, to_obstacle_norm)
+                
+                # For medium-range obstacles, use standard cone
+                if distance_to_obstacle <= medium_distance:
+                    if angle_cos > cos_angle:
+                        detected_obstacles.append({
+                            'position': pos,
+                            'distance': distance_to_obstacle,
+                            'angle_cos': angle_cos,
+                            'priority': 2
+                        })
+                else:
+                    # Stage 3: Distant obstacles - use narrower cone to reduce false positives
+                    # but only moderately to still detect large obstacles
+                    distance_factor = min(1.0, (distance_to_obstacle - medium_distance) / (max_distance - medium_distance))
+                    
+                    # Narrow the cone gradually, but not too much to miss large obstacles
+                    narrowed_angle = cone_angle * (1.0 - 0.3 * distance_factor)  # Max 30% narrowing
+                    required_cos_angle = np.cos(np.radians(narrowed_angle))
+                    
+                    if angle_cos > required_cos_angle:
+                        detected_obstacles.append({
+                            'position': pos,
+                            'distance': distance_to_obstacle,
+                            'angle_cos': angle_cos,
+                            'priority': 3
+                        })
+            
+            # Sort obstacles by priority, then by distance
+            detected_obstacles.sort(key=lambda x: (x['priority'], x['distance']))
+            
+            # Extract positions and distances
+            in_cone_positions = [obs['position'] for obs in detected_obstacles]
+            in_cone_distances = [obs['distance'] for obs in detected_obstacles]
+            
+            logging.debug(f"Directional scan found {len(in_cone_positions)} obstacles "
+                         f"in {cone_angle}° cone at direction {direction}")
+            
+            return in_cone_positions, in_cone_distances
             
         except Exception as e:
-            logging.error(f"Error in get_fused_sensor_data: {e}")
-            # Fallback to LiDAR only
-            return self.fetch_density_distances(use_cache=False)
+            logging.error(f"Error in scan_in_direction: {e}")
+            traceback.print_exc()
+            return [], []
+
+    def get_comprehensive_obstacle_scan(self, include_raw_points=False):
+        """Perform a comprehensive obstacle scan providing detailed information for navigation
+        
+        Args:
+            include_raw_points: Whether to include raw point cloud data in results
+            
+        Returns:
+            dict: Comprehensive obstacle information including:
+                - obstacle_positions: List of obstacle positions
+                - obstacle_distances: List of distances to each obstacle  
+                - obstacle_sizes: Estimated sizes of obstacles
+                - density_map: Local obstacle density information
+                - directional_analysis: Obstacle distribution by direction
+                - critical_obstacles: Very close/dangerous obstacles
+                - raw_points: Original point cloud data (if requested)
+        """
+        try:
+            # Get basic obstacle information
+            obstacle_positions, obstacle_distances = self.fetch_density_distances(use_cache=False)
+            
+            # Get drone state for reference
+            drone_state = self.client.getMultirotorState().kinematics_estimated
+            drone_pos = np.array([
+                drone_state.position.x_val,
+                drone_state.position.y_val,
+                drone_state.position.z_val
+            ])
+            
+            result = {
+                'obstacle_positions': obstacle_positions,
+                'obstacle_distances': obstacle_distances,
+                'drone_position': drone_pos.tolist(),
+                'scan_timestamp': time.time()
+            }
+            
+            if not obstacle_positions:
+                # Return empty analysis if no obstacles
+                result.update({
+                    'obstacle_sizes': [],
+                    'density_map': {'local_density': 0.0, 'zones': {}},
+                    'directional_analysis': {'sectors': {}, 'clear_directions': []},
+                    'critical_obstacles': [],
+                    'summary': {
+                        'total_obstacles': 0,
+                        'closest_distance': float('inf'),
+                        'average_distance': 0.0,
+                        'obstacle_density': 0.0
+                    }
+                })
+                if include_raw_points:
+                    result['raw_points'] = []
+                return result
+            
+            # Convert positions to numpy array for analysis
+            obs_positions = np.array(obstacle_positions)
+            obs_distances = np.array(obstacle_distances)
+            
+            # === OBSTACLE SIZE ESTIMATION ===
+            obstacle_sizes = []
+            cluster_radius = 1.0  # Radius to consider points as part of same obstacle
+            
+            for i, pos in enumerate(obs_positions):
+                # Find nearby obstacles that might be part of the same structure
+                distances_to_others = np.linalg.norm(obs_positions - pos, axis=1)
+                nearby_indices = np.where(distances_to_others <= cluster_radius)[0]
+                
+                if len(nearby_indices) > 1:
+                    # Multiple points, estimate size from spread
+                    nearby_positions = obs_positions[nearby_indices]
+                    # Calculate bounding box dimensions
+                    mins = np.min(nearby_positions, axis=0)
+                    maxs = np.max(nearby_positions, axis=0)
+                    size_estimate = np.linalg.norm(maxs - mins)
+                else:
+                    # Single point, use minimum detectable size
+                    size_estimate = 0.1
+                
+                obstacle_sizes.append(max(0.1, size_estimate))  # Minimum 10cm
+            
+            # === DENSITY MAP ANALYSIS ===
+            density_zones = {
+                'very_close': {'radius': 2.0, 'count': 0, 'obstacles': []},
+                'close': {'radius': 5.0, 'count': 0, 'obstacles': []},
+                'medium': {'radius': 10.0, 'count': 0, 'obstacles': []},
+                'far': {'radius': float('inf'), 'count': 0, 'obstacles': []}
+            }
+            
+            for i, dist in enumerate(obs_distances):
+                obs_info = {
+                    'position': obstacle_positions[i],
+                    'distance': dist,
+                    'size': obstacle_sizes[i]
+                }
+                
+                if dist <= 2.0:
+                    density_zones['very_close']['count'] += 1
+                    density_zones['very_close']['obstacles'].append(obs_info)
+                elif dist <= 5.0:
+                    density_zones['close']['count'] += 1
+                    density_zones['close']['obstacles'].append(obs_info)
+                elif dist <= 10.0:
+                    density_zones['medium']['count'] += 1
+                    density_zones['medium']['obstacles'].append(obs_info)
+                else:
+                    density_zones['far']['count'] += 1
+                    density_zones['far']['obstacles'].append(obs_info)
+            
+            # Calculate local density (obstacles per cubic meter in 5m radius)
+            local_radius = 5.0
+            nearby_count = np.sum(obs_distances <= local_radius)
+            local_volume = (4/3) * np.pi * (local_radius ** 3)
+            local_density = nearby_count / local_volume
+            
+            density_map = {
+                'local_density': local_density,
+                'zones': density_zones
+            }
+            
+            # === DIRECTIONAL ANALYSIS ===
+            # Divide space into 8 sectors (45 degrees each) around the drone
+            sectors = {}
+            sector_angle = 45.0  # degrees
+            num_sectors = int(360 / sector_angle)
+            
+            for sector_id in range(num_sectors):
+                start_angle = sector_id * sector_angle
+                end_angle = (sector_id + 1) * sector_angle
+                sectors[f"sector_{sector_id}"] = {
+                    'start_angle': start_angle,
+                    'end_angle': end_angle,
+                    'obstacle_count': 0,
+                    'closest_distance': float('inf'),
+                    'obstacles': []
+                }
+            
+            # Classify obstacles by direction
+            for i, pos in enumerate(obs_positions):
+                # Calculate angle from drone to obstacle (in horizontal plane)
+                relative_pos = pos - drone_pos
+                angle_rad = np.arctan2(relative_pos[1], relative_pos[0])  # Y, X for correct quadrant
+                angle_deg = np.degrees(angle_rad)
+                
+                # Normalize to 0-360 range
+                if angle_deg < 0:
+                    angle_deg += 360
+                
+                # Find which sector this belongs to
+                sector_id = int(angle_deg // sector_angle) % num_sectors
+                sector_key = f"sector_{sector_id}"
+                
+                sectors[sector_key]['obstacle_count'] += 1
+                sectors[sector_key]['closest_distance'] = min(
+                    sectors[sector_key]['closest_distance'], 
+                    obs_distances[i]
+                )
+                sectors[sector_key]['obstacles'].append({
+                    'position': obstacle_positions[i],
+                    'distance': obs_distances[i],
+                    'size': obstacle_sizes[i]
+                })
+            
+            # Identify clear directions (sectors with no obstacles or only distant ones)
+            clear_directions = []
+            for sector_key, sector_data in sectors.items():
+                if (sector_data['obstacle_count'] == 0 or 
+                    sector_data['closest_distance'] > 8.0):  # Consider > 8m as "clear"
+                    clear_directions.append({
+                        'sector': sector_key,
+                        'angle_range': [sector_data['start_angle'], sector_data['end_angle']],
+                        'obstacle_count': sector_data['obstacle_count'],
+                        'closest_distance': sector_data['closest_distance']
+                    })
+            
+            directional_analysis = {
+                'sectors': sectors,
+                'clear_directions': clear_directions
+            }
+            
+            # === CRITICAL OBSTACLES ===
+            critical_distance = 3.0  # Consider obstacles within 3m as critical
+            critical_obstacles = []
+            
+            for i, dist in enumerate(obs_distances):
+                if dist <= critical_distance:
+                    critical_obstacles.append({
+                        'position': obstacle_positions[i],
+                        'distance': dist,
+                        'size': obstacle_sizes[i],
+                        'priority': 'critical' if dist <= 1.5 else 'warning'
+                    })
+            
+            # Sort critical obstacles by distance (closest first)
+            critical_obstacles.sort(key=lambda x: x['distance'])
+            
+            # === SUMMARY STATISTICS ===
+            summary = {
+                'total_obstacles': len(obstacle_positions),
+                'closest_distance': float(np.min(obs_distances)) if len(obs_distances) > 0 else float('inf'),
+                'average_distance': float(np.mean(obs_distances)) if len(obs_distances) > 0 else 0.0,
+                'obstacle_density': local_density,
+                'critical_count': len(critical_obstacles),
+                'average_size': float(np.mean(obstacle_sizes)) if len(obstacle_sizes) > 0 else 0.0
+            }
+            
+            # Add all analysis to result
+            result.update({
+                'obstacle_sizes': obstacle_sizes,
+                'density_map': density_map,
+                'directional_analysis': directional_analysis,
+                'critical_obstacles': critical_obstacles,
+                'summary': summary
+            })
+            
+            # Add raw point cloud data if requested
+            if include_raw_points:
+                try:
+                    lidar_data = self.client.getLidarData()
+                    if len(lidar_data.point_cloud) >= 3:
+                        points = np.array(lidar_data.point_cloud, dtype=np.float32).reshape(-1, 3)
+                        result['raw_points'] = points.tolist()
+                    else:
+                        result['raw_points'] = []
+                except Exception as e:
+                    logging.warning(f"Could not retrieve raw point cloud: {e}")
+                    result['raw_points'] = []
+            
+            logging.debug(f"Comprehensive scan complete: {summary['total_obstacles']} obstacles, "
+                         f"density: {local_density:.3f}, closest: {summary['closest_distance']:.2f}m")
+            
+            # Update visualization if enabled
+            if self.enable_visualization and self.visualizer:
+                try:
+                    self.visualizer.update_drone_position(drone_pos.tolist())
+                    self.visualizer.update_obstacles(obstacle_positions, self.voxel_size)
+                except Exception as e:
+                    logging.debug(f"Error updating visualization: {e}")
+            
+            return result
+            
+        except Exception as e:
+            logging.error(f"Error in comprehensive obstacle scan: {e}")
+            traceback.print_exc()
+            return {
+                'obstacle_positions': [],
+                'obstacle_distances': [],
+                'error': str(e)
+            }
+    
+    def update_visualization_target(self, target_position: List[float]):
+        """Update the target position in the visualization"""
+        if self.enable_visualization and self.visualizer:
+            try:
+                self.visualizer.update_target_position(target_position)
+            except Exception as e:
+                logging.debug(f"Error updating visualization target: {e}")
+    
+    def update_visualization_drone(self, drone_position: List[float]):
+        """Update the drone position in the visualization"""
+        if self.enable_visualization and self.visualizer:
+            try:
+                self.visualizer.update_drone_position(drone_position)
+            except Exception as e:
+                logging.debug(f"Error updating visualization drone position: {e}")
+    
+    def save_visualization_screenshot(self, filename: str, max_retries: int = 3):
+        """Save a screenshot of the current visualization"""
+        if self.enable_visualization and self.visualizer:
+            try:
+                # The VoxelGridVisualizer's save_screenshot method only takes filename
+                # It handles retries internally, so we just call it directly
+                return self.visualizer.save_screenshot(filename)
+            except Exception as e:
+                logging.warning(f"Error saving visualization screenshot: {e}")
+                return False
+        else:
+            logging.debug("Visualization not enabled or visualizer not available for screenshot")
+        return False
+    
+    def stop_visualization(self):
+        """Stop the visualization if running"""
+        if self.enable_visualization and self.visualizer:
+            try:
+                self.visualizer.stop_visualization()
+                self.visualizer = None
+                logging.info("Stopped voxel grid visualization")
+            except Exception as e:
+                logging.warning(f"Error stopping visualization: {e}")
+    
+    def get_visualization_stats(self):
+        """Get visualization statistics"""
+        if self.enable_visualization and self.visualizer:
+            try:
+                return self.visualizer.get_visualization_stats()
+            except Exception as e:
+                logging.debug(f"Error getting visualization stats: {e}")
+        return {'is_running': False, 'error': 'Visualization not available'}
+
+    def set_clustering_method(self, method="connected_components", cluster_radius=1.5, dbscan_eps=1.5, dbscan_min_samples=2):
+        """
+        Set the clustering method and parameters for obstacle density calculation.
+        
+        Args:
+            method: Clustering method to use ("connected_components", "dbscan", or "none")
+            cluster_radius: Radius for connected components clustering (meters)
+            dbscan_eps: Epsilon parameter for DBSCAN clustering (meters)
+            dbscan_min_samples: Minimum samples parameter for DBSCAN clustering
+        """
+        valid_methods = ["connected_components", "dbscan", "none"]
+        if method not in valid_methods:
+            logging.warning(f"Invalid clustering method '{method}'. Using 'connected_components'.")
+            method = "connected_components"
+        
+        self.clustering_method = method
+        self.cluster_radius = cluster_radius
+        self.dbscan_eps = dbscan_eps
+        self.dbscan_min_samples = dbscan_min_samples
+        
+        logging.info(f"Clustering method set to '{method}' with parameters: "
+                    f"radius={cluster_radius}, eps={dbscan_eps}, min_samples={dbscan_min_samples}")
+    
+    def test_clustering_methods(self, obstacle_positions, obstacle_distances):
+        """
+        Test and compare different clustering methods on the given obstacle data.
+        Returns detailed comparison information for analysis.
+        
+        Args:
+            obstacle_positions: List of obstacle positions [x, y, z]
+            obstacle_distances: List of distances to each obstacle from drone
+            
+        Returns:
+            dict: Comparison results for different clustering methods
+        """
+        if not obstacle_positions:
+            return {"error": "No obstacle data provided for testing"}
+        
+        results = {}
+        original_count = len(obstacle_positions)
+        
+        # Test connected components clustering
+        try:
+            cc_pos, cc_dist, cc_info = self._cluster_obstacles_for_density(
+                obstacle_positions, obstacle_distances, cluster_radius=1.5
+            )
+            results["connected_components"] = {
+                "clustered_count": len(cc_pos),
+                "reduction_ratio": len(cc_pos) / original_count if original_count > 0 else 0,
+                "cluster_info": cc_info
+            }
+        except Exception as e:
+            results["connected_components"] = {"error": str(e)}
+        
+        # Test DBSCAN-like clustering
+        try:
+            db_pos, db_dist, db_info = self._cluster_obstacles_dbscan_like(
+                obstacle_positions, obstacle_distances, eps=1.5, min_samples=2
+            )
+            results["dbscan"] = {
+                "clustered_count": len(db_pos),
+                "reduction_ratio": len(db_pos) / original_count if original_count > 0 else 0,
+                "cluster_info": db_info
+            }
+        except Exception as e:
+            results["dbscan"] = {"error": str(e)}
+        
+        # No clustering (original)
+        results["none"] = {
+            "clustered_count": original_count,
+            "reduction_ratio": 1.0,
+            "cluster_info": []
+        }
+        
+        # Add summary
+        results["summary"] = {
+            "original_obstacle_count": original_count,
+            "best_reduction": min([r.get("reduction_ratio", 1.0) for r in results.values() 
+                                  if isinstance(r, dict) and "reduction_ratio" in r])
+        }
+        
+        return results
+
+    def fetch_density_distances(self, use_cache=False):
+        """Get obstacle positions and distances with comprehensive multi-scale detection
+        
+        Args:
+            use_cache: Whether to use cached results if available within TTL
+            
+        Returns:
+            tuple: (obstacle_positions, obstacle_distances)
+        """
+        try:
+            current_time = time.time()
+            
+            # Check if we can use cached results
+            if use_cache and current_time - self.last_scan_time < self.scan_cache_ttl:
+                return self.cached_positions, self.cached_distances
+            
+            # Initialize empty lists for return values
+            obstacle_positions = []
+            obstacle_distances = []
+
+            # Get drone state
+            drone_state = self.client.getMultirotorState().kinematics_estimated
+            drone_pos = np.array([
+                drone_state.position.x_val, 
+                drone_state.position.y_val, 
+                drone_state.position.z_val
+            ])
+            
+            # Get drone orientation quaternion (w, x, y, z)
+            drone_quat = np.array([
+                drone_state.orientation.w_val,
+                drone_state.orientation.x_val, 
+                drone_state.orientation.y_val,
+                drone_state.orientation.z_val
+            ])
+            
+            # Validate drone position
+            if np.any(np.isnan(drone_pos)) or np.any(np.isinf(drone_pos)):
+                logging.warning("Invalid drone position detected, using default [0,0,0]")
+                drone_pos = np.array([0.0, 0.0, 0.0])
+            
+            # Validate drone orientation
+            quat_norm = np.linalg.norm(drone_quat)
+            if quat_norm < 0.001 or np.any(np.isnan(drone_quat)) or np.any(np.isinf(drone_quat)):
+                logging.warning("Invalid drone orientation detected, using identity quaternion")
+                drone_quat = np.array([1.0, 0.0, 0.0, 0.0])  # Identity quaternion
+            else:
+                # Normalize quaternion
+                drone_quat = drone_quat / quat_norm
+            
+            # Get lidar data
+            lidar_data = self.client.getLidarData()
+            
+            if len(lidar_data.point_cloud) < 3:
+                logging.debug("No lidar points detected")
+                return [], []
+            
+            # Convert point cloud to positions
+            try:
+                points = np.array(lidar_data.point_cloud, dtype=np.float32).reshape(-1, 3)
+            except (ValueError, TypeError) as e:
+                logging.error(f"Error reshaping point cloud: {e}")
+                return [], []
+
+            # Improved quaternion utility functions with better numerical stability
+            def quaternion_multiply(q1, q2):
+                """Multiply two quaternions (w, x, y, z format)"""
+                w1, x1, y1, z1 = q1
+                w2, x2, y2, z2 = q2
+                return np.array([
+                    w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2,  # w
+                    w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2,  # x
+                    w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2,  # y
+                    w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2   # z
+                ])
+            
+            def quaternion_conjugate(q):
+                """Get quaternion conjugate (w, x, y, z) -> (w, -x, -y, -z)"""
+                return np.array([q[0], -q[1], -q[2], -q[3]])
+            
+            def rotate_point_by_quaternion(point, quat):
+                """Rotate a 3D point by a quaternion using proper formula"""
+                # Convert point to pure quaternion (0, x, y, z)
+                point_quat = np.array([0.0, point[0], point[1], point[2]])
+                
+                # Apply rotation: q * p * q_conjugate
+                quat_conj = quaternion_conjugate(quat)
+                temp = quaternion_multiply(quat, point_quat)
+                rotated_quat = quaternion_multiply(temp, quat_conj)
+                
+                # Extract the vector part (x, y, z)
+                return rotated_quat[1:4]
+
+            # ===== MULTI-SCALE OBSTACLE DETECTION =====
+            # Process points in multiple stages for comprehensive obstacle detection
+            
+            # Stage 1: Direct Point Analysis (for isolated/sparse obstacles)
+            processed_points = 0
+            valid_points = 0
+            all_global_points = []
+            
+            # Transform all points to global coordinates first
+            for point in points:
+                # Skip invalid points
+                if np.any(np.isnan(point)) or np.any(np.isinf(point)):
+                    continue
+                    
+                processed_points += 1
+                
+                try:
+                    # Transform point from drone's local coordinate system to global coordinates
+                    global_point = rotate_point_by_quaternion(point, drone_quat)
+                    global_point = global_point + drone_pos
+                    
+                    # Calculate distance from drone
+                    dist = np.linalg.norm(global_point - drone_pos)
+                    
+                    # Skip invalid distances and points too close (likely drone itself)
+                    if np.isnan(dist) or np.isinf(dist) or dist < 0.1:
+                        continue
+                    
+                    # Only include obstacles within scan range
+                    if dist <= self.scan_range:
+                        valid_points += 1
+                        all_global_points.append({
+                            'position': global_point,
+                            'distance': dist,
+                            'original_point': point
+                        })
+                        
+                except Exception as e:
+                    logging.debug(f"Error processing point {point}: {e}")
+                    continue
+            
+            if not all_global_points:
+                logging.debug("No valid transformed points")
+                return [], []
+            
+            # Stage 2: Distance-based Adaptive Voxelization
+            # Use different voxel sizes based on distance to preserve detail where needed
+            distance_zones = [
+                {'max_dist': 2.0, 'voxel_size': 0.05, 'min_points': 1},   # Very close: 5cm voxels, single points OK
+                {'max_dist': 5.0, 'voxel_size': 0.08, 'min_points': 1},   # Close: 8cm voxels, single points OK  
+                {'max_dist': 10.0, 'voxel_size': 0.12, 'min_points': 1},  # Medium: 12cm voxels, single points OK
+                {'max_dist': float('inf'), 'voxel_size': 0.20, 'min_points': 2}  # Far: 20cm voxels, need 2+ points
+            ]
+            
+            # Process each distance zone separately
+            zone_obstacles = []
+            
+            for zone in distance_zones:
+                zone_points = [p for p in all_global_points 
+                             if p['distance'] <= zone['max_dist'] and 
+                                (len(zone_obstacles) == 0 or p['distance'] > distance_zones[distance_zones.index(zone)-1]['max_dist'] if distance_zones.index(zone) > 0 else True)]
+                
+                if not zone_points:
+                    continue
+                
+                # Create voxel grid for this zone
+                voxel_grid = {}
+                voxel_size = zone['voxel_size']
+                min_points = zone['min_points']
+                
+                for point_data in zone_points:
+                    global_point = point_data['position']
+                    dist = point_data['distance']
+                    
+                    # Calculate voxel index for this zone
+                    voxel_idx = tuple(np.floor(global_point / voxel_size).astype(int))
+                    
+                    # Add to voxel grid
+                    if voxel_idx in voxel_grid:
+                        voxel_grid[voxel_idx]["count"] += 1
+                        voxel_grid[voxel_idx]["min_dist"] = min(voxel_grid[voxel_idx]["min_dist"], dist)
+                        voxel_grid[voxel_idx]["max_dist"] = max(voxel_grid[voxel_idx]["max_dist"], dist)
+                        
+                        # Update centroid with running average
+                        current_count = voxel_grid[voxel_idx]["count"]
+                        old_pos = np.array(voxel_grid[voxel_idx]["position"])
+                        voxel_grid[voxel_idx]["position"] = (
+                            (old_pos * (current_count - 1) + global_point) / current_count
+                        ).tolist()
+                        
+                        # Store all points for density calculation
+                        voxel_grid[voxel_idx]["points"].append(global_point.tolist())
+                    else:
+                        voxel_grid[voxel_idx] = {
+                            "count": 1,
+                            "position": global_point.tolist(),
+                            "min_dist": dist,
+                            "max_dist": dist,
+                            "points": [global_point.tolist()],
+                            "zone": zone['max_dist']
+                        }
+                
+                # Extract obstacles from this zone
+                for voxel_data in voxel_grid.values():
+                    if voxel_data["count"] >= min_points:
+                        zone_obstacles.append({
+                            'position': voxel_data["position"],
+                            'distance': voxel_data["min_dist"],
+                            'point_count': voxel_data["count"],
+                            'extent': voxel_data["max_dist"] - voxel_data["min_dist"],
+                            'zone': voxel_data["zone"]
+                        })
+            
+            # Stage 3: Critical Safety Detection (for very close obstacles)
+            # Always include obstacles within critical safety distance regardless of clustering
+            critical_distance = 1.5  # Critical safety threshold
+            critical_obstacles = []
+            
+            for point_data in all_global_points:
+                if point_data['distance'] <= critical_distance:
+                    # Check if this point is already represented in zone obstacles
+                    is_already_included = False
+                    for zone_obs in zone_obstacles:
+                        if np.linalg.norm(np.array(zone_obs['position']) - point_data['position']) < 0.1:
+                            is_already_included = True
+                            break
+                    
+                    if not is_already_included:
+                        critical_obstacles.append({
+                            'position': point_data['position'].tolist(),
+                            'distance': point_data['distance'],
+                            'point_count': 1,
+                            'extent': 0.0,
+                            'zone': 'critical'
+                        })
+            
+            # Stage 4: Outlier Detection (for sparse but important obstacles)
+            # Find isolated points that might represent important obstacles
+            outlier_obstacles = []
+            outlier_threshold = 0.5  # Distance threshold for considering points isolated
+            
+            for point_data in all_global_points:
+                # Skip if already included in zone obstacles or critical obstacles
+                is_included = False
+                for obs_list in [zone_obstacles, critical_obstacles]:
+                    for obs in obs_list:
+                        if np.linalg.norm(np.array(obs['position']) - np.array(point_data['position'])) < 0.15:
+                            is_included = True
+                            break
+                    if is_included:
+                        break
+                
+                if not is_included and point_data['distance'] <= self.scan_range * 0.7:  # Only consider outliers in closer range
+                    # Check if this point is isolated (no other points nearby)
+                    nearby_count = 0                    
+                    for other_point in all_global_points:
+                        if (other_point is not point_data and 
+                            np.linalg.norm(other_point['position'] - point_data['position']) < outlier_threshold):
+                            nearby_count += 1
+                    
+                    # If isolated (few nearby points), consider it a valid obstacle
+                    if nearby_count <= 2:  # Allow up to 2 nearby points for isolated obstacles
+                        outlier_obstacles.append({
+                            'position': point_data['position'].tolist(),
+                            'distance': point_data['distance'],
+                            'point_count': 1,
+                            'extent': 0.0,
+                            'zone': 'outlier'
+                        })
+            
+            # Stage 5: Combine all obstacle detections
+            all_obstacles = zone_obstacles + critical_obstacles + outlier_obstacles
+            
+            # Remove duplicates based on proximity
+            final_obstacles = []
+            duplicate_threshold = 0.1  # 10cm threshold for considering obstacles as duplicates
+            
+            # Sort by distance (closest first) to prioritize closer obstacles in deduplication
+            all_obstacles.sort(key=lambda x: x['distance'])
+            
+            for obs in all_obstacles:
+                is_duplicate = False
+                for existing_obs in final_obstacles:
+                    if np.linalg.norm(np.array(obs['position']) - np.array(existing_obs['position'])) < duplicate_threshold:
+                        # Found a duplicate, keep the one with more points or closer distance
+                        if (obs['point_count'] > existing_obs['point_count'] or 
+                            (obs['point_count'] == existing_obs['point_count'] and obs['distance'] < existing_obs['distance'])):
+                            # Replace existing with current (better) obstacle
+                            final_obstacles.remove(existing_obs)
+                            final_obstacles.append(obs)
+                        is_duplicate = True
+                        break
+                
+                if not is_duplicate:
+                    final_obstacles.append(obs)
+            
+            # Extract final positions and distances
+            raw_positions = []
+            raw_distances = []
+            for obs in final_obstacles:
+                raw_positions.append(obs['position'])
+                raw_distances.append(obs['distance'])
+            
+            # ===== APPLY CLUSTERING FOR DENSITY CALCULATION =====
+            # Cluster the obstacles to get better density representation
+            if self.clustering_method == "connected_components":
+                clustered_positions, clustered_distances, cluster_info = self._cluster_obstacles_for_density(
+                    raw_positions, raw_distances, cluster_radius=self.cluster_radius
+                )
+            elif self.clustering_method == "dbscan":
+                clustered_positions, clustered_distances, cluster_info = self._cluster_obstacles_dbscan_like(
+                    raw_positions, raw_distances, eps=self.dbscan_eps, min_samples=self.dbscan_min_samples
+                )
+            else:  # clustering_method == "none"
+                clustered_positions = raw_positions
+                clustered_distances = raw_distances
+                cluster_info = []
+            
+            # Use clustered results as the final output for density calculation
+            obstacle_positions = clustered_positions
+            obstacle_distances = clustered_distances
+            
+            # Update cache with clustered data
+            self.cached_positions = obstacle_positions
+            self.cached_distances = obstacle_distances
+            self.last_scan_time = current_time
+            
+            # Enhanced logging with clustering information
+            zone_counts = {}
+            for obs in final_obstacles:
+                zone = obs.get('zone', 'unknown')
+                zone_counts[zone] = zone_counts.get(zone, 0) + 1
+            
+            logging.debug(f"Multi-scale obstacle detection: {processed_points} processed, {valid_points} valid, "
+                         f"{len(raw_positions)} raw obstacles, {len(obstacle_positions)} clustered obstacles. "
+                         f"Zones: {zone_counts}")
+            
+            # Store cluster info for debugging if needed
+            self.last_cluster_info = cluster_info
+            
+            # Update visualization if enabled
+            if self.enable_visualization and self.visualizer and obstacle_positions:
+                try:
+                    self.visualizer.update_obstacles(obstacle_positions, self.voxel_size)
+                except Exception as e:
+                    logging.debug(f"Error updating visualization in fetch_density_distances: {e}")
+            
+            return obstacle_positions, obstacle_distances
+        
+        except Exception as e:
+            logging.error(f"Error in enhanced fetch_density_distances: {e}")            
+            import traceback
+            traceback.print_exc()
+            return [], []
+
+    def scan_path_for_obstacles(self, start_pos, end_pos, safety_radius=2.0):
+        """
+        Scan along a path from start to end position to check for obstacles.
+        Returns (obstacle_detected: bool, obstacle_pos: List[float], obstacle_dist: float)
+        """
+        try:
+            # Convert to numpy arrays for easier calculation
+            start = np.array(start_pos)
+            end = np.array(end_pos)
+            
+            # Calculate path vector and distance
+            path_vector = end - start
+            path_distance = np.linalg.norm(path_vector)
+            
+            if path_distance < 0.1:  # Very short path, no obstacles
+                return False, None, None
+            
+            # Normalize path direction
+            path_direction = path_vector / path_distance
+            
+            # Scan in the direction of the path
+            obstacles, distances = self.scan_in_direction(
+                path_direction, max_distance=path_distance + safety_radius, cone_angle=30.0
+            )
+            
+            if not obstacles or not distances:
+                return False, None, None
+            
+            # Filter obstacles that are within the safety radius of the path
+            path_obstacles = []
+            for i, (obstacle, distance) in enumerate(zip(obstacles, distances)):
+                if distance <= safety_radius:
+                    path_obstacles.append((obstacle, distance))
+            
+            if not path_obstacles:
+                return False, None, None
+            
+            # Find the closest obstacle
+            closest_obstacle, closest_distance = min(path_obstacles, key=lambda x: x[1])
+            
+            return True, closest_obstacle, closest_distance
+            
+        except Exception as e:
+            print(f"Error in scan_path_for_obstacles: {e}")
+            return False, None, None
+
+def generate_target_pool(start_pos: List[float], distance_range: Tuple[float, float],
+                      client: airsim.MultirotorClient, num_targets: int = 100,
+                      max_attempts: int = 300, seed: int = None,
+                      ray_checks: int = 7) -> List[List[float]]:
+    """Pre-generate a pool of valid target positions for use throughout the experiment
+    
+    Args:
+        start_pos: Starting drone position [x, y, z]
+        distance_range: (min_distance, max_distance) in meters
+        client: AirSim client instance
+        num_targets: Number of targets to generate for the pool
+        max_attempts: Maximum sampling attempts per target
+        seed: Random seed for deterministic behavior
+        ray_checks: Number of rays to use for validating each target
+        
+    Returns:
+        List[List[float]]: List of target positions [x, y, z] in NED coordinates
+        
+    Raises:
+        ValueError: If unable to generate enough valid targets
+    """
+    logging.info(f"Generating pool of {num_targets} valid target locations...")
+    
+    # Create a separate random generator for deterministic target generation
+    if seed is not None:
+        target_rng = random.Random(seed)
+    else:
+        target_rng = random.Random()
+    
+    target_pool = []
+    total_attempts = 0
+    max_total_attempts = max_attempts * num_targets * 2  # Upper bound to prevent infinite loops
+    
+    # Start time to track performance
+    start_time = time.time()
+    
+    # Try to generate the requested number of targets
+    while len(target_pool) < num_targets and total_attempts < max_total_attempts:
+        try:
+            # For each target, we'll use a different "episode id" to ensure diversity
+            # This lets us leverage the existing sample_visible_target logic directly
+            fake_episode_id = len(target_pool)
+            
+            # Get a valid target location
+            target_pos = sample_visible_target(
+                start_pos,
+                distance_range,
+                client,
+                max_attempts=max(50, max_attempts // num_targets),
+                episode_id=fake_episode_id,
+                seed=seed,
+                ray_checks=ray_checks
+            )
+            
+            if target_pos:
+                target_pool.append(target_pos)
+                
+                # Log progress periodically
+                if len(target_pool) % 10 == 0 or len(target_pool) == num_targets:
+                    elapsed = time.time() - start_time
+                    logging.info(f"Generated {len(target_pool)}/{num_targets} targets "
+                                f"in {elapsed:.1f}s ({total_attempts} attempts)")
+        
+        except Exception as e:
+            logging.warning(f"Error generating target {len(target_pool)}: {e}")
+        
+        total_attempts += 1
+    
+    # Check if we generated enough targets
+    if len(target_pool) < num_targets:
+        logging.warning(f"Could only generate {len(target_pool)}/{num_targets} valid targets "
+                      f"after {total_attempts} attempts")
+        if len(target_pool) == 0:
+            raise ValueError("Failed to generate any valid targets for the pool")
+    else:
+        logging.info(f"Successfully generated pool of {len(target_pool)} targets "
+                   f"in {time.time() - start_time:.1f}s")
+    
+    return target_pool
+
+def move_to_waypoint(client, current_pos, waypoint, velocity=2, distance_to_target=None, high_density=False):
+    """Move to waypoint with calculated yaw so drone faces direction of travel
+    
+    Args:
+        client: AirSim client instance
+        current_pos: Current drone position [x, y, z]
+        waypoint: Target waypoint [x, y, z]
+        velocity: Movement velocity in m/s
+        distance_to_target: Optional distance to final target (for adaptive behavior)
+        high_density: Whether we're in a high density obstacle area
+        
+    Returns:
+        tuple: (obstacle_detected, obstacle_pos, obstacle_dist) - 
+               Boolean indicating if obstacle was detected, the position and distance of the obstacle
+    """
+    try:
+        # Calculate movement vector and distance
+        movement_vector = np.array(waypoint) - np.array(current_pos)
+        distance = np.linalg.norm(movement_vector)
+          # Adjust velocity based on context
+        adaptive_velocity = velocity
+        if high_density:
+            # More conservative velocity in high density areas
+            adaptive_velocity = min(velocity, 1.5)
+        
+        # If we're close to target, reduce velocity for more precise control
+        near_goal = distance_to_target is not None and distance_to_target < 5.0
+        if near_goal:
+            adaptive_velocity = min(adaptive_velocity, 1.5)
+        
+        # If velocity was adjusted, log it
+        if adaptive_velocity != velocity:
+            logging.debug(f"Adjusted velocity from {velocity:.1f} to {adaptive_velocity:.1f} m/s based on environment")
+          # Create scanner for obstacle detection during movement (needed before checking minimum distance)
+        scanner = Scanner(client, scan_range=8.0)  # Use a shorter scan range for immediate obstacles
+          
+        # Enforce minimum movement distance - with adaptive behavior based on context
+        # Base minimum movement distance
+        min_movement_distance = 1.0  # Default minimum to ensure significant movement
+        
+        # Reduce minimum distance when close to target for more precise positioning
+        if distance_to_target is not None and distance_to_target < 2.0:
+            min_movement_distance = 0.2  # Much smaller minimum when very close to target
+            logging.debug(f"Very close to target ({distance_to_target:.2f}m) - allowing smaller movements (min: {min_movement_distance}m)")
+        # Also reduce minimum distance in high-density areas for more precise obstacle avoidance
+        elif high_density:
+            min_movement_distance = 0.5  # Smaller minimum in obstacle-dense areas
+            logging.debug(f"In high density area - allowing smaller movements (min: {min_movement_distance}m)")
+        
+        if distance < min_movement_distance:
+            logging.warning(f"Waypoint too close ({distance:.2f}m), extending to minimum distance {min_movement_distance}m")
+            # Extend the waypoint in the same direction to meet minimum distance
+            if distance > 0.001:  # Avoid division by zero
+                # Normalize the movement vector and scale to minimum distance
+                normalized_vector = movement_vector / distance
+                extended_vector = normalized_vector * min_movement_distance
+                waypoint = (np.array(current_pos) + extended_vector).tolist()
+                # Recalculate movement vector and distance
+                movement_vector = np.array(waypoint) - np.array(current_pos)
+                distance = np.linalg.norm(movement_vector)
+            else:
+                # If distance is effectively zero, create movement in a default direction
+                logging.warning("Movement distance effectively zero, creating default movement direction")
+                # Add movement in multiple directions as options
+                possible_directions = [
+                    [1.0, 0.0, 0.0],  # Forward
+                    [0.0, 1.0, 0.0],  # Right
+                    [-1.0, 0.0, 0.0], # Backward
+                    [0.0, -1.0, 0.0]  # Left
+                ]
+                
+                # Try to find a direction that moves toward the target if possible
+                if distance_to_target is not None:
+                    # Calculate direction to target
+                    to_target = np.array(waypoint) - np.array(current_pos)
+                    if np.linalg.norm(to_target) > 0.001:
+                        to_target = to_target / np.linalg.norm(to_target)
+                        possible_directions.insert(0, to_target.tolist())  # Add target direction as first option
+                
+                # Use the first valid direction that doesn't immediately lead to an obstacle
+                valid_direction_found = False
+                for direction in possible_directions:
+                    test_waypoint = [
+                        current_pos[0] + direction[0] * min_movement_distance,
+                        current_pos[1] + direction[1] * min_movement_distance, 
+                        current_pos[2] + direction[2] * min_movement_distance
+                    ]
+                    
+                    # Check if this direction is obstacle-free
+                    obstacle_check = scanner.scan_path_for_obstacles(
+                        current_pos, test_waypoint, safety_radius=2.0
+                    )
+                    
+                    if not obstacle_check[0]:  # No obstacle detected
+                        waypoint = test_waypoint
+                        logging.info(f"Using alternative direction: {direction}")
+                        valid_direction_found = True
+                        break
+                
+                # If no valid direction found, just use the first one
+                if not valid_direction_found:
+                    direction = possible_directions[0]
+                    waypoint = [
+                        current_pos[0] + direction[0] * min_movement_distance,
+                        current_pos[1] + direction[1] * min_movement_distance, 
+                        current_pos[2] + direction[2] * min_movement_distance
+                    ]
+                    logging.warning(f"No obstacle-free direction found, using default: {direction}")
+                
+                # Recalculate movement vector and distance
+                movement_vector = np.array(waypoint) - np.array(current_pos)
+                distance = np.linalg.norm(movement_vector)
+          # Calculate yaw angle in radians
+        # In NED coordinates, yaw is measured from North (x-axis) and increases clockwise
+        # atan2(y, x) will give us the angle in the standard math frame, but we need to ensure
+        # it's properly mapped to the NED coordinate system
+        yaw = math.atan2(movement_vector[1], movement_vector[0])
+        
+        # Convert to degrees for display and for AirSim's YawMode
+        yaw_degrees = math.degrees(yaw)
+        
+        # AirSim expects yaw in degrees, ranging from -180 to 180 or 0 to 360
+        # We already have this range from atan2, but ensure it's clamped correctly
+        if yaw_degrees < -180:
+            yaw_degrees += 360
+        elif yaw_degrees > 180:
+            yaw_degrees -= 360
+            
+        # Get current drone orientation quaternion for sensor orientation correction
+        drone_orientation = client.simGetVehiclePose().orientation
+        current_yaw = airsim.to_eularian_angles(drone_orientation)[2]
+        current_yaw_degrees = math.degrees(current_yaw)
+          # Calculate the difference between desired yaw and current yaw
+        # This is just for logging purposes now
+        yaw_difference = yaw_degrees - current_yaw_degrees
+        
+        # Normalize to -180 to 180 range for smallest rotation
+        if yaw_difference > 180:
+            yaw_difference -= 360
+        elif yaw_difference < -180:
+            yaw_difference += 360
+            
+        # No pre-rotation step - we'll rely only on the YawMode in moveToPositionAsync 
+        # to ensure the drone faces the correct direction during movement
+        logging.debug(f"Moving with yaw: {yaw_degrees:.1f}° at velocity: {adaptive_velocity} m/s")
+        logging.debug(f"Movement vector: [{movement_vector[0]:.2f}, {movement_vector[1]:.2f}, {movement_vector[2]:.2f}]")
+          # Create scanner for obstacle detection during movement
+        scanner = Scanner(client, scan_range=10.0)  # Increased range for better forward planning
+        
+        # Determine safety radius based on context
+        # More conservative in high density areas or when far from goal
+        safety_radius = 2.5  # Default safety radius
+        if high_density:
+            safety_radius = 3.5  # Increased safety in high density areas
+            
+        # When close to target but in a high-density environment, use sector scanning
+        # to find potential passages to the target
+        if high_density and distance_to_target and distance_to_target < 10.0:
+            logging.info("Close to target in high-density area, performing sector scanning")
+            
+            # Determine direction to target
+            if distance_to_target > 0.2:  # Only if target is not right under us
+                target_vector = np.array(waypoint) - np.array(current_pos)
+                if np.linalg.norm(target_vector) > 0.001:
+                    target_vector = target_vector / np.linalg.norm(target_vector)
+                    
+                    # Scan in sectors focusing toward target direction
+                    sector_results = []
+                    sector_angles = [-30, -15, 0, 15, 30]  # Angles to check in degrees
+                    
+                    for angle in sector_angles:
+                        # Create rotated direction vector
+                        angle_rad = math.radians(angle)
+                        rotated_x = target_vector[0] * math.cos(angle_rad) - target_vector[1] * math.sin(angle_rad)
+                        rotated_y = target_vector[0] * math.sin(angle_rad) + target_vector[1] * math.cos(angle_rad)
+                        rotated_direction = np.array([rotated_x, rotated_y, target_vector[2]])
+                        
+                        # Normalize direction
+                        if np.linalg.norm(rotated_direction) > 0.001:
+                            rotated_direction = rotated_direction / np.linalg.norm(rotated_direction)
+                            
+                            # Check distance to obstacles in this direction
+                            obstacles, distances = scanner.scan_in_direction(
+                                rotated_direction, max_distance=8.0, cone_angle=10.0
+                            )
+                            
+                            min_distance = 100.0 if not distances else min(distances)
+                            sector_results.append((angle, min_distance, rotated_direction))
+                    
+                    # Prefer sectors with greater obstacle clearance
+                    if sector_results:
+                        # Sort by distance (descending)
+                        sector_results.sort(key=lambda x: x[1], reverse=True)
+                        
+                        # If best sector has good clearance, use it
+                        best_sector = sector_results[0]
+                        if best_sector[1] > 3.0:  # Good clearance threshold
+                            # Update movement vector based on best sector
+                            best_direction = best_sector[2]
+                            movement_vector = best_direction * distance
+                            logging.info(f"Using sector scan to find clearer path: {best_sector[0]}° with {best_sector[1]:.2f}m clearance")
+                            
+                            # Recalculate waypoint
+                            waypoint = [
+                                current_pos[0] + movement_vector[0],
+                                current_pos[1] + movement_vector[1],
+                                current_pos[2] + movement_vector[2]
+                            ]
+                            
+                            # Calculate new yaw angle based on adjusted direction
+                            yaw = math.atan2(movement_vector[1], movement_vector[0])
+                            yaw_degrees = math.degrees(yaw)
+          # Perform a pre-check for obstacles on the planned path (FOR INFORMATION ONLY)
+        obstacle_detected, obstacle_pos, obstacle_dist = scanner.scan_path_for_obstacles(
+            current_pos, waypoint, safety_radius=safety_radius
+        )
+          # Log the pre-check result but DO NOT trigger replanning yet
+        if obstacle_detected:
+            logging.warning(f"Pre-movement check: Obstacle detected on planned path at {obstacle_dist:.2f}m distance")
+            logging.info(f"Proceeding with movement and will replan if obstacle persists during execution")
+        
+        # STEP 1: First move to position without forcing yaw rotation
+        logging.debug(f"Moving to waypoint at velocity: {adaptive_velocity} m/s")
+        
+        # Execute the movement without changing yaw (or minimal change for stability)
+        # Use MaxDegreeOfFreedom drivetrain for more freedom of movement
+        move_task = client.moveToPositionAsync(
+            waypoint[0], waypoint[1], waypoint[2],
+            adaptive_velocity,
+            drivetrain=airsim.DrivetrainType.MaxDegreeOfFreedom,
+            yaw_mode=airsim.YawMode(is_rate=False, yaw_or_rate=current_yaw_degrees)  # Use current yaw
+        )
+        
+        # Direction vector (normalized)
+        if distance > 0:
+            direction = movement_vector / distance
+        else:
+            direction = np.array([1.0, 0.0, 0.0])  # Default to forward direction            # Parameters for obstacle monitoring
+        check_interval = 0.1  # Check for obstacles every 100ms
+        start_time = time.time()
+        progress_timeout = max(5.0, distance / adaptive_velocity * 3)  # Timeout is 3x expected travel time, minimum 5 seconds
+        
+        # More aggressive monitoring in high density areas
+        if high_density:
+            check_interval = 0.05  # More frequent checks in high density areas (50ms)
+            progress_timeout = max(5.0, distance / adaptive_velocity * 2)  # Shorter timeout in dense areas
+        
+        # Monitor movement and check for obstacles
+        obstacle_detected = False
+        obstacle_pos = None
+        obstacle_dist = None
+        last_check_time = start_time
+        
+        # Use a timeout-based polling approach instead of relying on done() method
+        movement_complete = False
+        timeout_per_check = 0.05  # 50ms timeout for each join attempt
+        
+        # Set up adaptive obstacle detection parameters
+        safety_scan_radius = safety_radius
+        safety_threshold = 2.0  # Default obstacle distance threshold to trigger replanning
+        
+        if high_density:
+            # In high density areas, use more aggressive scanning parameters
+            safety_scan_radius = safety_radius * 1.2  # Increase scan radius
+            safety_threshold = 2.5  # Higher threshold to trigger earlier replanning
+        
+        while not movement_complete:
+            current_time = time.time()
+            
+            # Check if we've exceeded timeout (stuck detection)
+            if current_time - start_time > progress_timeout:
+                logging.warning("Movement taking too long, cancelling and replanning")
+                client.cancelLastTask()
+                # Create a virtual obstacle at the waypoint to avoid this path in future planning
+                obstacle_pos = waypoint
+                obstacle_dist = distance * 0.5  # Assume obstacle is halfway along path
+                return True, obstacle_pos, obstacle_dist            # Only check for obstacles at specified intervals to avoid overloading            if current_time - last_check_time < check_interval:
+                # Short sleep to prevent CPU hogging, but periodically check task status
+                try:
+                    # Check for collisions DURING movement - proactive collision detection
+                    collision_info = client.simGetCollisionInfo()
+                    if collision_info.has_collided:
+                        logging.warning("Collision detected during movement, cancelling task immediately")
+                        client.cancelLastTask()
+                        # Force a hover to stabilize
+                        client.hoverAsync().join()
+                        obstacle_detected = True
+                        # Use collision normal as a hint for better recovery direction
+                        if collision_info.normal.x_val != 0 or collision_info.normal.y_val != 0 or collision_info.normal.z_val != 0:
+                            obstacle_pos = [
+                                collision_info.impact_point.x_val,
+                                collision_info.impact_point.y_val,
+                                collision_info.impact_point.z_val
+                            ]
+                        else:
+                            obstacle_pos = waypoint  # Default if normal vector not available
+                        obstacle_dist = 0.0  # We've already collided
+                        return True, obstacle_pos, obstacle_dist
+                except Exception as e:
+                    logging.error(f"Error checking for collisions: {e}")
+                      # Try to check if task is done without using timeout in join
+                    try:
+                        if move_task.is_done():
+                            movement_complete = True  # Task is done
+                            break
+                        # If not done, we'll continue obstacle checking
+                        time.sleep(timeout_per_check)
+                    except Exception:
+                        # Error checking task status, continue with obstacle checks
+                        time.sleep(0.01)
+                    continue
+                
+            last_check_time = current_time
+                
+            # Get current drone position
+            try:
+                drone_state = client.getMultirotorState().kinematics_estimated
+                drone_pos = np.array([
+                    drone_state.position.x_val,
+                    drone_state.position.y_val,
+                    drone_state.position.z_val
+                ])
+            except:
+                # If we can't get position, wait and try again
+                time.sleep(check_interval)
+                continue
+                  # Check remaining distance to waypoint
+            remaining_dist = np.linalg.norm(np.array(waypoint) - drone_pos)
+            
+            # Check for collisions again
+            collision_info = client.simGetCollisionInfo()
+            if collision_info.has_collided:
+                logging.warning("Collision detected during movement, cancelling task immediately")
+                client.cancelLastTask()
+                # Force a hover to stabilize
+                client.hoverAsync().join()
+                obstacle_detected = True
+                # Use collision normal as a hint for better recovery direction
+                if collision_info.normal.x_val != 0 or collision_info.normal.y_val != 0 or collision_info.normal.z_val != 0:
+                    obstacle_pos = [
+                        collision_info.impact_point.x_val,
+                        collision_info.impact_point.y_val,
+                        collision_info.impact_point.z_val
+                    ]
+                else:
+                    obstacle_pos = waypoint  # Default if normal vector not available
+                obstacle_dist = 0.0  # We've already collided
+                return True, obstacle_pos, obstacle_dist
+            
+            if remaining_dist < 0.5:  # Almost at waypoint, just let it complete
+                # Even when close to waypoint, still do a final safety check
+                obs_check, _, obs_dist = scanner.scan_path_for_obstacles(
+                    drone_pos.tolist(), waypoint, safety_radius=safety_scan_radius * 0.8
+                )
+                
+                # If an obstacle is detected very close, stop anyway
+                if obs_check and obs_dist is not None and obs_dist < 1.0:
+                    logging.warning(f"Obstacle detected at {obs_dist:.2f}m when approaching waypoint")
+                    client.cancelLastTask()
+                    obstacle_detected = True
+                    break
+                
+                try:
+                    # Wait for the movement to actually complete
+                    move_task.join()
+                    movement_complete = True
+                except:
+                    # If the join fails, we'll continue - the drone is close enough anyway
+                    pass
+                break            # Use the optimized scanner methods to check for obstacles
+            # First check directly along the path
+            obstacle_detected, detected_obstacle_pos, detected_obstacle_dist = scanner.scan_path_for_obstacles(
+                drone_pos.tolist(), waypoint, safety_scan_radius
+            )
+            
+            # Get the current drone orientation to properly scan in the direction of travel
+            try:
+                drone_orientation = client.simGetVehiclePose().orientation
+                current_yaw = airsim.to_eularian_angles(drone_orientation)[2]
+                # Create direction vector from current yaw
+                forward_direction = np.array([
+                    math.cos(current_yaw),
+                    math.sin(current_yaw),
+                    0.0  # Keep scanning in horizontal plane
+                ])
+            except Exception as e:
+                logging.warning(f"Failed to get drone orientation: {e}")
+                # Fallback to using direction to waypoint
+                forward_direction = direction
+            
+            if obstacle_detected:
+                obstacle_pos = detected_obstacle_pos
+                obstacle_dist = detected_obstacle_dist
+                
+                if obstacle_dist is not None:
+                    logging.warning(f"Obstacle detected at {obstacle_dist:.2f}m during movement execution")
+                    
+                    # In high density areas, avoid obstacles more conservatively
+                    if high_density or obstacle_dist < safety_threshold:
+                        # Cancel the movement and signal replanning
+                        client.cancelLastTask()
+                        break
+                    else:
+                        # For distant obstacles in low-density areas, log but continue
+                        # (we may get past them or they'll trigger cone detection if needed)
+                        logging.info("Obstacle not imminent, continuing with caution")
+                else:
+                    logging.warning("Obstacle detected during movement execution (distance unknown)")
+                    # Cancel the movement and signal replanning
+                    client.cancelLastTask()
+                    break            # Also check in the forward direction with a cone scan (can detect dynamic obstacles better)
+            # Adapt cone parameters based on context
+            cone_angle = 45.0  # Increased from 35.0 for wider field of view
+            forward_scan_distance = 8.0  # Increased from 6.0 for longer range detection
+              # Initialize variables to avoid UnboundLocalError
+            cone_obstacles = []
+            cone_distances = []
+            closest_idx = 0
+            
+            # Set up thresholds for obstacle detection
+            cone_threshold = 2.5  # Default threshold
+            if high_density:
+                cone_angle = 60.0  # Increased from 45.0 for much wider detection in complex environments
+                forward_scan_distance = 10.0  # Increased from 8.0 for longer detection range
+                cone_threshold = 3.5  # Increased threshold for high density areas# Multi-cone scanning for high density environments
+            if high_density:
+                # Use multiple overlapping cones to better detect passages and gaps
+                cone_angles = [-30, -15, 0, 15, 30]  # Angles in degrees
+                min_overall_dist = float('inf')
+                min_cone_obstacles = None
+                min_cone_idx = None
+                
+                # Scan in multiple directions to build a more comprehensive picture
+                for angle_offset in cone_angles:
+                    # Create rotated direction vector based on current yaw (forward direction)
+                    angle_rad = math.radians(angle_offset)
+                    rotated_x = forward_direction[0] * math.cos(angle_rad) - forward_direction[1] * math.sin(angle_rad)
+                    rotated_y = forward_direction[0] * math.sin(angle_rad) + forward_direction[1] * math.cos(angle_rad)
+                    rotated_direction = np.array([rotated_x, rotated_y, forward_direction[2]])
+                    
+                    # Normalize the rotated direction
+                    if np.linalg.norm(rotated_direction) > 0.001:
+                        rotated_direction = rotated_direction / np.linalg.norm(rotated_direction)
+                        
+                        # Perform cone scan in this direction
+                        cone_obs, cone_dists = scanner.scan_in_direction(
+                            rotated_direction, max_distance=forward_scan_distance, 
+                            cone_angle=cone_angle/2  # Smaller angle for each sub-cone
+                        )
+                        
+                        # Track closest obstacle across all cones
+                        if cone_obs and cone_dists:
+                            min_cone_dist = min(cone_dists)
+                            if min_cone_dist < min_overall_dist:
+                                min_overall_dist = min_cone_dist
+                                min_cone_obstacles = cone_obs
+                                min_cone_idx = cone_dists.index(min_cone_dist)
+                
+                # Use the minimum distance found in any cone direction
+                if min_overall_dist < float('inf'):
+                    cone_obstacles = min_cone_obstacles
+                    cone_distances = [min_overall_dist]
+                    closest_idx = 0
+                    
+                    # Check against threshold for high density areas
+                    if min_overall_dist < cone_threshold:
+                        obstacle_pos = min_cone_obstacles[min_cone_idx]
+                        obstacle_dist = min_overall_dist
+                        logging.warning(f"Forward obstacle detected at {min_overall_dist:.2f}m during movement (multi-cone scan)")
+                        logging.debug(f"Obstacle position: {obstacle_pos}")
+                        
+                        # Cancel movement and signal replanning needed
+                        client.cancelLastTask()
+                        obstacle_detected = True
+                        break
+                else:
+                    cone_obstacles = []
+                    cone_distances = []
+            else:                # Standard single cone scan for lower density environments
+                cone_obstacles, cone_distances = scanner.scan_in_direction(
+                    forward_direction, max_distance=forward_scan_distance, cone_angle=cone_angle
+                )
+            
+            # Initialize min_cone_dist for safety
+            min_cone_dist = float('inf')
+            
+            # Process obstacles if any were detected
+            if cone_obstacles and cone_distances:
+                min_cone_dist = min(cone_distances)
+                
+                # If obstacle is very close in forward direction, halt movement
+                if min_cone_dist < cone_threshold:
+                    closest_idx = cone_distances.index(min_cone_dist)
+                    obstacle_pos = cone_obstacles[closest_idx]
+                    obstacle_dist = min_cone_dist
+                    logging.warning(f"Forward obstacle detected at {min_cone_dist:.2f}m during movement")
+                    logging.debug(f"Obstacle position: {obstacle_pos}")
+                    
+                    # Cancel movement and signal replanning needed
+                    client.cancelLastTask()
+                    obstacle_detected = True
+                    break            # Check if the movement has completed without using timeout in join
+            try:
+                if move_task.is_done():
+                    movement_complete = True  # Task is done
+                    break
+                # If not done, wait a bit and continue obstacle checks
+                time.sleep(timeout_per_check)
+            except:
+                # Error checking task status, continue with obstacle checks
+                pass                  # STEP 2: Now that movement is complete, rotate to face the movement direction
+        # This ensures the drone's sensors are properly oriented for future observations
+        if movement_complete and not obstacle_detected:            # Check if the movement is primarily vertical - if so, skip rotation to avoid
+            # missing obstacles when the horizontal position is effectively unchanged
+            horizontal_movement = np.sqrt(movement_vector[0]**2 + movement_vector[1]**2)
+            vertical_movement = abs(movement_vector[2])
+            
+            # Skip rotation if movement is primarily vertical (horizontal movement < 10% of vertical)
+            if horizontal_movement < 0.1 * vertical_movement and vertical_movement > 0.5:
+                logging.debug(f"Movement primarily vertical (h:{horizontal_movement:.2f}m, v:{vertical_movement:.2f}m) - skipping yaw rotation")
+            else:
+                logging.debug(f"Movement complete, rotating to face movement direction: {yaw_degrees:.1f}°")
+                try:                # Rotate to the previously calculated yaw that points in the movement direction
+                    rotate_task = client.rotateToYawAsync(yaw_degrees)
+                    rotate_task.join()
+                    logging.debug(f"Yaw rotation complete, drone sensors now facing forward")
+                except Exception as e:
+                    logging.warning(f"Failed to rotate after movement: {e}")
+                    # Continue without failing the movement - we at least reached the position
+        
+        # Return obstacle detection status to inform caller if replanning is needed
+        return obstacle_detected, obstacle_pos, obstacle_dist
+        
+    except Exception as e:
+        logging.error(f"Error in move_to_waypoint: {e}")
+        traceback.print_exc()
+        # In case of error, hover in place
+        try:
+            hover_task = client.hoverAsync()
+            hover_task.join()  # Wait for hover command to complete
+        except Exception as hover_e:
+            logging.error(f"Additional error during hover: {hover_e}")
+        return False, None, None  # No explicit obstacle detected on error
 
 def run_episode(episode_id: int, client: airsim.MultirotorClient, 
                 zmq_interface: ZMQInterface, scanner: Scanner, 
@@ -4774,251 +7482,6 @@ def plot_metrics(metrics_file, output_dir):
         logging.error(f"Error creating plots: {e}")
         traceback.print_exc()
         return False
-
-def move_to_waypoint(client, current_pos, waypoint, velocity=2, distance_to_target=None, high_density=False):
-    """Move to waypoint with calculated yaw so drone faces direction of travel
-    
-    Args:
-        client: AirSim client instance
-        current_pos: Current drone position [x, y, z]
-        waypoint: Target waypoint [x, y, z]
-        velocity: Movement velocity in m/s
-        distance_to_target: Optional distance to final target (for adaptive behavior)
-        high_density: Whether we're in a high density obstacle area
-        
-    Returns:
-        tuple: (obstacle_detected, obstacle_pos, obstacle_dist) - 
-               Boolean indicating if obstacle was detected, the position and distance of the obstacle
-    """
-    try:
-        # Calculate movement vector and distance
-        movement_vector = np.array(waypoint) - np.array(current_pos)
-        distance = np.linalg.norm(movement_vector)
-        
-        # Adjust velocity based on context
-        adaptive_velocity = velocity
-        if high_density:
-            # More conservative velocity in high density areas
-            adaptive_velocity = min(velocity, 1.5)
-        
-        # If we're close to target, reduce velocity for more precise control
-        near_goal = distance_to_target is not None and distance_to_target < 5.0
-        if near_goal:
-            adaptive_velocity = min(adaptive_velocity, 1.5)
-        
-        # If velocity was adjusted, log it
-        if adaptive_velocity != velocity:
-            logging.debug(f"Adjusted velocity from {velocity:.1f} to {adaptive_velocity:.1f} m/s based on environment")
-        
-        # Create scanner for obstacle detection during movement
-        scanner = Scanner(client, scan_range=8.0)  # Use a shorter scan range for immediate obstacles
-        
-        # Enforce minimum movement distance - with adaptive behavior based on context
-        min_movement_distance = 1.0  # Default minimum to ensure significant movement
-        
-        # Reduce minimum distance when close to target for more precise positioning
-        if distance_to_target is not None and distance_to_target < 2.0:
-            min_movement_distance = 0.2  # Much smaller minimum when very close to target
-            logging.debug(f"Very close to target ({distance_to_target:.2f}m) - allowing smaller movements (min: {min_movement_distance}m)")
-        # Also reduce minimum distance in high-density areas for more precise obstacle avoidance
-        elif high_density:
-            min_movement_distance = 0.5  # Smaller minimum in obstacle-dense areas
-            logging.debug(f"In high density area - allowing smaller movements (min: {min_movement_distance}m)")
-        
-        if distance < min_movement_distance:
-            logging.warning(f"Waypoint too close ({distance:.2f}m), extending to minimum distance {min_movement_distance}m")
-            # Extend the waypoint in the same direction to meet minimum distance
-            if distance > 0.001:  # Avoid division by zero
-                # Normalize the movement vector and scale to minimum distance
-                normalized_vector = movement_vector / distance
-                extended_vector = normalized_vector * min_movement_distance
-                waypoint = (np.array(current_pos) + extended_vector).tolist()
-                # Recalculate movement vector and distance
-                movement_vector = np.array(waypoint) - np.array(current_pos)
-                distance = np.linalg.norm(movement_vector)
-            else:
-                # If distance is effectively zero, create movement in a default direction
-                logging.warning("Movement distance effectively zero, creating default movement direction")
-                # Add movement in multiple directions as options
-                possible_directions = [
-                    [1.0, 0.0, 0.0],  # Forward
-                    [0.0, 1.0, 0.0],  # Right
-                    [-1.0, 0.0, 0.0], # Backward
-                    [0.0, -1.0, 0.0]  # Left
-                ]
-                
-                # Try to find a direction that moves toward the target if possible
-                if distance_to_target is not None:
-                    # Calculate direction to target
-                    to_target = np.array(waypoint) - np.array(current_pos)
-                    if np.linalg.norm(to_target) > 0.001:
-                        to_target = to_target / np.linalg.norm(to_target)
-                        possible_directions.insert(0, to_target.tolist())  # Add target direction as first option
-                
-                # Use the first valid direction that doesn't immediately lead to an obstacle
-                valid_direction_found = False
-                for direction in possible_directions:
-                    test_waypoint = [
-                        current_pos[0] + direction[0] * min_movement_distance,
-                        current_pos[1] + direction[1] * min_movement_distance, 
-                        current_pos[2] + direction[2] * min_movement_distance
-                    ]
-                    
-                    # Check if this direction is obstacle-free
-                    obstacle_check = scanner.scan_path_for_obstacles(
-                        current_pos, test_waypoint, safety_radius=2.0
-                    )
-                    
-                    if not obstacle_check[0]:  # No obstacle detected
-                        waypoint = test_waypoint
-                        logging.info(f"Using alternative direction: {direction}")
-                        valid_direction_found = True
-                        break
-                
-                # If no valid direction found, just use the first one
-                if not valid_direction_found:
-                    direction = possible_directions[0]
-                    waypoint = [
-                        current_pos[0] + direction[0] * min_movement_distance,
-                        current_pos[1] + direction[1] * min_movement_distance, 
-                        current_pos[2] + direction[2] * min_movement_distance
-                    ]
-                    logging.warning(f"No obstacle-free direction found, using default: {direction}")
-                
-                # Recalculate movement vector and distance
-                movement_vector = np.array(waypoint) - np.array(current_pos)
-                distance = np.linalg.norm(movement_vector)
-        
-        # Calculate yaw angle in radians
-        yaw = math.atan2(movement_vector[1], movement_vector[0])
-        yaw_degrees = math.degrees(yaw)
-        
-        # AirSim expects yaw in degrees, ranging from -180 to 180
-        if yaw_degrees < -180:
-            yaw_degrees += 360
-        elif yaw_degrees > 180:
-            yaw_degrees -= 360
-        
-        logging.debug(f"Moving {distance:.2f}m to waypoint {waypoint} at {adaptive_velocity:.1f} m/s, yaw: {yaw_degrees:.1f}°")
-        
-        # Initialize obstacle detection variables
-        obstacle_detected = False
-        obstacle_pos = None
-        obstacle_dist = None
-        
-        # STEP 1: Execute the movement with obstacle monitoring
-        move_task = client.moveToPositionAsync(waypoint[0], waypoint[1], waypoint[2], adaptive_velocity)
-        
-        # Monitor movement progress and check for obstacles
-        movement_complete = False
-        check_interval = 0.5  # Check every 0.5 seconds
-        timeout_per_check = 2.0  # Maximum time to wait for each check
-        safety_scan_radius = 2.5  # Safety radius for obstacle detection
-        safety_threshold = 2.0  # Distance threshold for immediate obstacle response
-        
-        last_check_time = time.time()
-        
-        while not movement_complete and not obstacle_detected:
-            current_time = time.time()
-            
-            # Only perform checks at specified intervals to avoid overwhelming the system
-            if current_time - last_check_time < check_interval:
-                time.sleep(0.1)  # Short sleep to prevent busy waiting
-                continue
-            
-            last_check_time = current_time
-            
-            # Get current drone position
-            try:
-                drone_state = client.getMultirotorState().kinematics_estimated
-                drone_pos = np.array([
-                    drone_state.position.x_val,
-                    drone_state.position.y_val,
-                    drone_state.position.z_val
-                ])
-            except:
-                # If we can't get position, wait and try again
-                time.sleep(check_interval)
-                continue
-            
-            # Check remaining distance to waypoint
-            remaining_dist = np.linalg.norm(np.array(waypoint) - drone_pos)
-            
-            # Check for collisions
-            collision_info = client.simGetCollisionInfo()
-            if collision_info.has_collided:
-                logging.warning("Collision detected during movement, cancelling task immediately")
-                client.cancelLastTask()
-                # Force a hover to stabilize
-                client.hoverAsync().join()
-                obstacle_detected = True
-                # Use collision normal as a hint for better recovery direction
-                if collision_info.normal.x_val != 0 or collision_info.normal.y_val != 0 or collision_info.normal.z_val != 0:
-                    obstacle_pos = [
-                        collision_info.impact_point.x_val,
-                        collision_info.impact_point.y_val,
-                        collision_info.impact_point.z_val
-                    ]
-                else:
-                    obstacle_pos = waypoint  # Default if normal vector not available
-                obstacle_dist = 0.0  # We've already collided
-                return True, obstacle_pos, obstacle_dist
-            
-            if remaining_dist < 0.5:  # Almost at waypoint, just let it complete
-                try:
-                    # Wait for the movement to actually complete
-                    move_task.join()
-                    movement_complete = True
-                except:
-                    # If the join fails, we'll continue - the drone is close enough anyway
-                    pass
-                break
-            
-            # Check if the movement has completed without using timeout in join
-            try:
-                if move_task.is_done():
-                    movement_complete = True  # Task is done
-                    break
-                # If not done, wait a bit and continue obstacle checks
-                time.sleep(timeout_per_check)
-            except:
-                # Error checking task status, continue with obstacle checks
-                pass
-        
-        # STEP 2: Now that movement is complete, rotate to face the movement direction
-        if movement_complete and not obstacle_detected:
-            # Check if the movement is primarily vertical - if so, skip rotation
-            horizontal_movement = np.sqrt(movement_vector[0]**2 + movement_vector[1]**2)
-            vertical_movement = abs(movement_vector[2])
-            
-            # Skip rotation if movement is primarily vertical
-            if horizontal_movement < 0.1 * vertical_movement and vertical_movement > 0.5:
-                logging.debug(f"Movement primarily vertical (h:{horizontal_movement:.2f}m, v:{vertical_movement:.2f}m) - skipping yaw rotation")
-            else:
-                logging.debug(f"Movement complete, rotating to face movement direction: {yaw_degrees:.1f}°")
-                try:
-                    # Rotate to the previously calculated yaw that points in the movement direction
-                    rotate_task = client.rotateToYawAsync(yaw_degrees)
-                    rotate_task.join()
-                    logging.debug(f"Yaw rotation complete, drone sensors now facing forward")
-                except Exception as e:
-                    logging.warning(f"Failed to rotate after movement: {e}")
-                    # Continue without failing the movement - we at least reached the position
-        
-        # Return obstacle detection status to inform caller if replanning is needed
-        return obstacle_detected, obstacle_pos, obstacle_dist
-        
-    except Exception as e:
-        logging.error(f"Error in move_to_waypoint: {e}")
-        import traceback
-        traceback.print_exc()
-        # In case of error, hover in place
-        try:
-            hover_task = client.hoverAsync()
-            hover_task.join()  # Wait for hover command to complete
-        except Exception as hover_e:
-            logging.error(f"Additional error during hover: {hover_e}")
-        return False, None, None  # No explicit obstacle detected on error
 
 if __name__ == "__main__":
     main()
